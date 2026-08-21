@@ -20,6 +20,50 @@ export type ClipDuration = 5 | 10 | 15
 export const FILM_DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 
 /**
+ * Stable English identifiers for the film-type selector. These are the values
+ * stored in wizard state and sent to `enhance-prompt`; the display labels are
+ * the same English strings. Legacy Persian values from PR #135 are normalized
+ * to these identifiers on read (see `normalizeFilmType`) so existing user data
+ * keeps working without destructive changes.
+ */
+export const FILM_TYPE_VALUES = [
+  'Advertisement',
+  'Product Showcase',
+  'Manufacturing Process',
+  'Project Application',
+  'Comparison',
+  'Brand Story',
+] as const
+
+export type FilmType = (typeof FILM_TYPE_VALUES)[number]
+
+const FILM_TYPE_LEGACY: Record<string, FilmType> = {
+  'تبلیغاتی': 'Advertisement',
+  'معرفی محصول': 'Product Showcase',
+  'فرآیند ساخت': 'Manufacturing Process',
+  'کاربرد در پروژه': 'Project Application',
+  'مقایسهای': 'Comparison',
+  'برند': 'Brand Story',
+}
+
+/** Normalize a stored film-type value (English or legacy Persian) to a stable English identifier. */
+export function normalizeFilmType(value: string | null | undefined): FilmType | '' {
+  if (!value) return ''
+  if ((FILM_TYPE_VALUES as readonly string[]).includes(value)) return value as FilmType
+  return FILM_TYPE_LEGACY[value] ?? ''
+}
+
+/** Scenario tone guidance per film type, shared by the wizard and enhance-prompt. */
+export const FILM_TYPE_TONES: Record<FilmType, string> = {
+  'Advertisement': 'ADVERTISEMENT tone: persuasive, energetic, conversion-focused. Build desire for the product with dynamic visuals and clear call-to-action.',
+  'Product Showcase': 'PRODUCT SHOWCASE tone: clear, informative, engaging. Demonstrate features and benefits smoothly. Educational yet captivating.',
+  'Manufacturing Process': 'PROCESS DOCUMENTARY tone: documentary-style, showing journey from raw materials to finished product. Emphasize craftsmanship, precision, and scale.',
+  'Project Application': 'CASE STUDY tone: practical, results-oriented. Show real-world application and impact on actual projects.',
+  'Comparison': 'COMPARISON tone: analytical, clear contrasts. Use split-screen or sequential before/after visuals to highlight advantages.',
+  'Brand Story': 'BRAND STORYTELLING tone: emotional, aspirational, values-driven. Focus on brand story, mission, and emotional connection rather than product features.',
+}
+
+/**
  * How many sequential scenes a total duration expects. Mirrors the
  * scenario-write edge function so the frontend and backend agree.
  *   5->1, 10->1, 15->1, 30->2, 45->3, 60->4, 90->6, 135->9
@@ -539,21 +583,13 @@ export function buildPlanClipPrompt(
  * If the returned section count doesn't match, we throw a readable error so the
  * caller can retry or surface it to the user.
  */
-export function buildFilmPlans(
+function assemblePlans(
   totalDurationSeconds: number,
-  scenarioText: string,
+  scenarioParts: string[],
   fullNarration: string | undefined,
 ): FilmPlan[] {
   const planCount = expectedPlanCount(totalDurationSeconds)
   const coverage = computePlanCoverage(totalDurationSeconds)
-  const scenarioParts = splitScenarioIntoPlans(scenarioText, planCount)
-
-  if (scenarioParts.length !== planCount) {
-    throw new Error(
-      `The AI returned ${scenarioParts.length} plan section${scenarioParts.length === 1 ? '' : 's'} for a ${totalDurationSeconds}-second film, but ${planCount} sections are required. Please try again.`,
-    )
-  }
-
   const narrationParts = splitNarrationAcrossPlans(fullNarration, planCount)
 
   return Array.from({ length: planCount }, (_, i) => ({
@@ -565,6 +601,51 @@ export function buildFilmPlans(
     scenarioText: scenarioParts[i] ?? '',
     narrationText: narrationParts[i],
   }))
+}
+
+export function buildFilmPlans(
+  totalDurationSeconds: number,
+  scenarioText: string,
+  fullNarration: string | undefined,
+): FilmPlan[] {
+  const planCount = expectedPlanCount(totalDurationSeconds)
+  const scenarioParts = splitScenarioIntoPlans(scenarioText, planCount)
+
+  if (scenarioParts.length !== planCount) {
+    throw new Error(
+      `The AI returned ${scenarioParts.length} plan section${scenarioParts.length === 1 ? '' : 's'} for a ${totalDurationSeconds}-second film, but ${planCount} sections are required. Please try again.`,
+    )
+  }
+
+  return assemblePlans(totalDurationSeconds, scenarioParts, fullNarration)
+}
+
+/**
+ * Build plan objects from an array of already-split plan strings.
+ *
+ * The scenario-write backend returns validated plans as an array (one string
+ * per 5-second plan). When that array already has the exact expected count, we
+ * preserve its boundaries directly instead of re-joining with blank lines and
+ * re-parsing — re-parsing destroys plan boundaries when a plan's text contains
+ * its own newlines (e.g. an embedded narration line), which is what caused the
+ * "1 plan section ... 6 required" failure.
+ *
+ * When the array does NOT match the expected count (a legacy single string
+ * carrying ===SCENE=== delimiters, or a backend fallback), we fall back to the
+ * delimiter/paragraph parsing in buildFilmPlans, which throws a readable error
+ * so the caller can retry.
+ */
+export function buildFilmPlansFromScenes(
+  totalDurationSeconds: number,
+  scenes: string[],
+  fullNarration: string | undefined,
+): FilmPlan[] {
+  const planCount = expectedPlanCount(totalDurationSeconds)
+  const cleaned = scenes.map((s) => s.trim()).filter((s) => s.length > 0)
+  if (cleaned.length === planCount) {
+    return assemblePlans(totalDurationSeconds, cleaned, fullNarration)
+  }
+  return buildFilmPlans(totalDurationSeconds, cleaned.join('\n\n'), fullNarration)
 }
 
 /**

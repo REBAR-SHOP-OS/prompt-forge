@@ -21,6 +21,7 @@ import {
   sanitizeProductName,
   FILM_DURATIONS,
   buildFilmPlans,
+  buildFilmPlansFromScenes,
   validateFilmPlans,
   splitNarrationAcrossPlans,
   splitScenarioIntoPlans,
@@ -28,6 +29,9 @@ import {
   buildPlanClipPrompt,
   computePlanCredits,
   type FilmPlan,
+  normalizeFilmType,
+  FILM_TYPE_VALUES,
+  FILM_TYPE_TONES,
 } from './makeFilmWizard'
 
 const CAMERA: Record<string, string> = {
@@ -554,6 +558,62 @@ describe('buildFilmPlans', () => {
   })
 })
 
+describe('buildFilmPlansFromScenes', () => {
+  it('preserves array boundaries when the scene count already matches (30s -> 6 plans)', () => {
+    const scenes = [
+      'Plan one: opening shot.',
+      'Plan two: close-up detail.',
+      'Plan three: product in use.',
+      'Plan four: dynamic angle.',
+      'Plan five: character interaction.',
+      'Plan six: final call-to-action.',
+    ]
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+    expect(plans.map((p) => p.scenarioText)).toEqual(scenes)
+    expect(plans.map((p) => p.coverage)).toEqual(['wide', 'medium', 'close', 'wide', 'medium', 'close'])
+  })
+
+  it('preserves a plan whose text contains its own newlines (embedded narration line)', () => {
+    // A plan with an embedded narration line would collapse under paragraph
+    // parsing; the array path must keep it intact.
+    const scenes = [
+      'Plan one: opening shot.\nNarration: "Welcome to the film."',
+      'Plan two: close-up detail.',
+      'Plan three: product in use.',
+      'Plan four: dynamic angle.',
+      'Plan five: character interaction.',
+      'Plan six: final call-to-action.',
+    ]
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+    expect(plans[0].scenarioText).toBe(scenes[0])
+    expect(plans[0].scenarioText).toContain('Narration:')
+  })
+
+  it('falls back to delimiter parsing when the array is a single legacy string', () => {
+    const scenes = ['Scene one. ===SCENE=== Scene two. ===SCENE=== Scene three. ===SCENE=== Scene four. ===SCENE=== Scene five. ===SCENE=== Scene six.']
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+  })
+
+  it('throws a readable error on a malformed (wrong-count) array', () => {
+    const scenes = ['Only one plan.']
+    expect(() => buildFilmPlansFromScenes(30, scenes, undefined)).toThrow(/1 plan section.*6 sections are required/)
+  })
+
+  it('handles every supported duration with a correctly-sized array', () => {
+    for (const duration of FILM_DURATIONS) {
+      const planCount = expectedPlanCount(duration)
+      const scenes = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film.`)
+      const plans = buildFilmPlansFromScenes(duration, scenes, undefined)
+      expect(plans).toHaveLength(planCount)
+      const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
+      expect(total).toBe(duration)
+    }
+  })
+})
+
 describe('validateFilmPlans', () => {
   it('validates correct plans', () => {
     const plans = buildFilmPlans(15, 'First shot. ===SCENE=== Second shot. ===SCENE=== Third shot.', undefined)
@@ -688,5 +748,51 @@ describe('computePlanCredits', () => {
     expect(computePlanCredits(3)).toBe(3)
     expect(computePlanCredits(6, 2)).toBe(12)
     expect(computePlanCredits(27)).toBe(27)
+  })
+})
+
+describe('film type identifiers', () => {
+  it('normalizes legacy Persian values to stable English identifiers', () => {
+    expect(normalizeFilmType('تبلیغاتی')).toBe('Advertisement')
+    expect(normalizeFilmType('معرفی محصول')).toBe('Product Showcase')
+    expect(normalizeFilmType('فرآیند ساخت')).toBe('Manufacturing Process')
+    expect(normalizeFilmType('کاربرد در پروژه')).toBe('Project Application')
+    expect(normalizeFilmType('مقایسهای')).toBe('Comparison')
+    expect(normalizeFilmType('برند')).toBe('Brand Story')
+  })
+
+  it('passes through English identifiers unchanged', () => {
+    expect(normalizeFilmType('Advertisement')).toBe('Advertisement')
+    expect(normalizeFilmType('Product Showcase')).toBe('Product Showcase')
+    expect(normalizeFilmType('Manufacturing Process')).toBe('Manufacturing Process')
+    expect(normalizeFilmType('Project Application')).toBe('Project Application')
+    expect(normalizeFilmType('Comparison')).toBe('Comparison')
+    expect(normalizeFilmType('Brand Story')).toBe('Brand Story')
+  })
+
+  it('returns empty string for null, undefined, empty, or unknown values', () => {
+    expect(normalizeFilmType(null)).toBe('')
+    expect(normalizeFilmType(undefined)).toBe('')
+    expect(normalizeFilmType('')).toBe('')
+    expect(normalizeFilmType('Unknown Type')).toBe('')
+  })
+
+  it('exposes exactly six stable identifiers in order', () => {
+    expect(FILM_TYPE_VALUES).toEqual([
+      'Advertisement',
+      'Product Showcase',
+      'Manufacturing Process',
+      'Project Application',
+      'Comparison',
+      'Brand Story',
+    ])
+  })
+
+  it('provides a tone for every film type (Comparison regression)', () => {
+    for (const value of FILM_TYPE_VALUES) {
+      expect(FILM_TYPE_TONES[value]).toBeTruthy()
+    }
+    expect(FILM_TYPE_TONES['Comparison']).toContain('COMPARISON tone')
+    expect(FILM_TYPE_TONES['Comparison']).toContain('split-screen')
   })
 })

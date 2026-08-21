@@ -1,4 +1,4 @@
-import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookmarkCheck,
@@ -113,6 +113,7 @@ import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
+import { TransitionPicker } from '@/modules/generator-ui/components/TransitionPicker'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
@@ -124,6 +125,7 @@ import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { externalApiAdapterGateway, type LocalVideoStatusResult } from '@/modules/external-api-adapter/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { TRANSITION_LABEL, DEFAULT_TRANSITION_DURATION, transitionSpecFor, applyTransitionToAll } from '@/modules/generator-ui/lib/transitions'
 import { mergeVideoUrlsWebCodecs, canEncodeWithWebCodecs, WebCodecsUnsupportedError } from '@/modules/generator-ui/lib/mergeVideosWebCodecs'
 import { awaitUploadWithLateCleanup, createFinalFilmPipeline } from '@/modules/generator-ui/lib/finalFilmPipeline'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
@@ -170,31 +172,20 @@ import {
 } from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
+import {
+  autoFilmPreviewReducer,
+  createAutoFilmPreviewState,
+  summarizeAutoFilmBatch,
+} from '@/modules/generator-ui/lib/autoFilmPreview'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
 
 
-const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
-  { id: 'cut', label: 'Cut', durationMs: 0 },
-  { id: 'fade', label: 'Fade', durationMs: 500 },
-  { id: 'crossfade', label: 'Crossfade', durationMs: 500 },
-  { id: 'slide-left', label: 'Slide ←', durationMs: 500 },
-  { id: 'slide-right', label: 'Slide →', durationMs: 500 },
-  { id: 'wipe', label: 'Wipe', durationMs: 500 },
-  { id: 'zoom', label: 'Zoom', durationMs: 500 },
-]
-const TRANSITION_LABEL: Record<TransitionId, string> = TRANSITION_OPTIONS.reduce(
-  (acc, o) => { acc[o.id] = o.label; return acc },
-  {} as Record<TransitionId, string>,
-)
-const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.reduce(
-  (acc, o) => { acc[o.id] = o.durationMs; return acc },
-  {} as Record<TransitionId, number>,
-)
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
+import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
   CAMERA_STYLES,
@@ -1081,7 +1072,7 @@ export default function DashboardPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
-  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string } | null>(null)
+  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string; narrationText: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -1551,21 +1542,24 @@ export default function DashboardPage() {
   const composerRef = useRef<HTMLFormElement | null>(null)
   const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
     if (typeof window === 'undefined') return 600
-    return Math.max(240, window.innerHeight - 320)
+    return Math.max(240, Math.round(Math.min(window.innerHeight - 320, window.innerHeight * 0.72) * 0.88))
   })
   useEffect(() => {
-    const SAFE_GAP = 24 // breathing room between preview card and composer
-    const TOP_RESERVE = 56 // top header strip (Start Over / Final Film / Music)
+    const SAFE_GAP = 28 // breathing room between preview card and composer
+    const TOP_RESERVE = 76 // top header strip (Start Over / Final Film / Music) + gap
+    const PREVIEW_SCALE = 0.88 // ~12% smaller preview for visual balance
+    const VERTICAL_MAX_VH = 0.72 // cap vertical (9:16) preview at ~72vh
     const recompute = () => {
       const el = composerRef.current
       const vh = window.innerHeight
       if (!el) {
-        setPreviewMaxHeightPx(Math.max(240, vh - 320))
+        setPreviewMaxHeightPx(Math.max(240, Math.round(Math.min(vh - 320, vh * VERTICAL_MAX_VH) * PREVIEW_SCALE)))
         return
       }
       const top = el.getBoundingClientRect().top
       const budget = Math.max(240, top - TOP_RESERVE - SAFE_GAP)
-      setPreviewMaxHeightPx(budget)
+      const capped = Math.min(budget, vh * VERTICAL_MAX_VH)
+      setPreviewMaxHeightPx(Math.round(capped * PREVIEW_SCALE))
     }
     recompute()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recompute) : null
@@ -1605,6 +1599,14 @@ export default function DashboardPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [previewDismissed, setPreviewDismissed] = useState(false)
+  // Ephemeral by design: only a user-started Make Full Film batch can populate
+  // this reducer. It is never hydrated or persisted, so refreshes, old clips,
+  // single-clip jobs and ordinary polling cannot auto-open Preview.
+  const [autoFilmPreview, dispatchAutoFilmPreview] = useReducer(
+    autoFilmPreviewReducer,
+    undefined,
+    createAutoFilmPreviewState,
+  )
   // Re-open preview whenever a card is explicitly selected.
   useEffect(() => {
     if (previewVideoId) setPreviewDismissed(false)
@@ -1612,6 +1614,7 @@ export default function DashboardPage() {
   const closePreview = () => {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
+    dispatchAutoFilmPreview({ type: 'dismiss' })
     setTranscriptOpen(false)
     setTranscriptVideoUrl(null)
   }
@@ -2432,7 +2435,25 @@ export default function DashboardPage() {
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
   type ProjectAudioTrack = { url: string; name: string }
-  type ProjectAudio = { music?: ProjectAudioTrack; voiceover?: ProjectAudioTrack }
+  /** Full audio-mix settings captured at finalization so "Reopen for editing"
+   *  restores the exact Final Film sound (ranges, timelines, volumes, mix mode).
+   *  Every field is optional for backward compatibility with older snapshots. */
+  type ProjectAudioSettings = {
+    musicRange?: [number, number]
+    musicTimeline?: [number, number]
+    musicVolume?: number
+    voiceoverRange?: [number, number]
+    voiceoverTimeline?: [number, number]
+    voiceoverVolume?: number
+    clipVolume?: number
+    voiceoverClipVolume?: number
+    soundtrackMode?: 'music-only' | 'mix'
+  }
+  type ProjectAudio = {
+    music?: ProjectAudioTrack
+    voiceover?: ProjectAudioTrack
+    settings?: ProjectAudioSettings
+  }
   const [projectAudio, setProjectAudio] = useState<Record<string, ProjectAudio>>({})
   const projectAudioKey = userId ? `project-audio:${userId}` : null
   useEffect(() => {
@@ -3198,7 +3219,7 @@ export default function DashboardPage() {
       throw err instanceof Error ? err : new Error(msg)
     }
   }
-  const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
+  const [transitions, setTransitions] = useState<Record<string, TransitionSpec>>({})
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
@@ -3230,6 +3251,9 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  // Bumped on Start Over / workspace reset to clear VoiceoverDialog's transient
+  // state (text, generated audio, translation) without touching durable data.
+  const [voiceoverResetKey, setVoiceoverResetKey] = useState(0)
   // Saved products live in `archiveProductImages`, which is normally filled when
   // the Archive dialog opens. Users often open Voiceover → Product narration
   // directly, so load them on demand when the Voiceover dialog opens.
@@ -4878,7 +4902,7 @@ export default function DashboardPage() {
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
     | { kind: 'image'; image: UserImageItem }
-    | { kind: 'sequence'; clips: UnifiedClip[] }
+    | { kind: 'sequence'; clips: UnifiedClip[]; autoPlayAttemptId?: string }
 
   // A clip is "playable" in the live sequential preview if it's a ready video
   // (completed + has a storage_path) or an uploaded image.
@@ -4906,9 +4930,36 @@ export default function DashboardPage() {
     return Math.max(1, Math.round(total))
   }, [playableSequenceClips])
 
+  // Track the previous film length so we can detect when a new clip extends
+  // the project and auto-extend a full-length music timeline to match.
+  const prevMergedDurationRef = useRef(mergedDurationSec)
+
+  // When the project grows (a new clip is added), a music track that was
+  // previously covering the full film should auto-extend to the new end so the
+  // new clip isn't silent. A manually-shortened timeline is left untouched.
+  useEffect(() => {
+    const prev = prevMergedDurationRef.current
+    const next = mergedDurationSec
+    prevMergedDurationRef.current = next
+    const newEnd = resolveMusicTimelineEnd({
+      prevDurationSec: prev,
+      nextDurationSec: next,
+      hasMusic: Boolean(musicUrl),
+      hasMusicRange: musicRange[1] > musicRange[0],
+      timeline: musicTimeline,
+    })
+    if (newEnd !== null) {
+      setMusicTimeline(([start]) => [start, newEnd])
+    }
+  }, [mergedDurationSec, musicUrl, musicRange, musicTimeline])
+
 
 
   const previewItem = useMemo<PreviewItem | null>(() => {
+    // While a Make Full Film batch is generating, keep the central preview
+    // empty (only per-card loading/progress shows) until the whole batch
+    // settles and auto-opens.
+    if (isAutoFilming) return null
     // Highest priority: the transient Final Film output (not a card).
     if (lastMergedPreview) {
       const synthetic: JobDetail = {
@@ -4940,6 +4991,22 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
+    // A completed Make Full Film batch auto-opens its full sequence exactly
+    // once. It is placed after manual selection + dismissal so the user can
+    // still click a card or close it, and before the Library/sequence fallback
+    // so it wins over the generic "2+ playable clips" auto-stitch.
+    if (autoFilmPreview.active) {
+      return {
+        kind: 'sequence',
+        autoPlayAttemptId: autoFilmPreview.active.batchId,
+        clips: autoFilmPreview.active.clips.map((job) => ({
+          kind: 'video' as const,
+          id: job.id,
+          createdAt: job.created_at,
+          job,
+        })),
+      }
+    }
     // When the user is viewing a Library project, lock the preview to that
     // exact merged project. Never substitute another Library entry.
     if (selectedProjectId) {
@@ -4970,7 +5037,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, selectedProjectId, visibleVideos, playableSequenceClips])
+  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, autoFilmPreview.active, isAutoFilming, selectedProjectId, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
@@ -6333,8 +6400,17 @@ export default function DashboardPage() {
     setVoiceoverDuration(0)
     setVoiceoverRange([0, 0])
     setVoiceoverTimeline([0, 0])
+    setMusicVolume(1)
+    setVoiceoverVolume(1)
+    setClipVolume(1)
+    setVoiceoverClipVolume(0.3)
+    setSoundtrackMode('mix')
     delete draftAudioSnapshotRef.current[draftId]
     if (!audio) return
+    const audioSettings = audio.settings
+    if (audioSettings?.clipVolume !== undefined) setClipVolume(audioSettings.clipVolume)
+    if (audioSettings?.voiceoverClipVolume !== undefined) setVoiceoverClipVolume(audioSettings.voiceoverClipVolume)
+    if (audioSettings?.soundtrackMode) setSoundtrackMode(audioSettings.soundtrackMode)
     // Always persist the restored audio under the draft scope so it survives
     // refresh / draft switch even when this was driven by an override (move).
     if (audio.music || audio.voiceover) {
@@ -6364,7 +6440,9 @@ export default function DashboardPage() {
         }
         setMusicName(name)
         setMusicUrl(url)
-        setMusicTimeline([0, mergedDurationSec])
+        setMusicTimeline(audioSettings?.musicTimeline ?? [0, mergedDurationSec])
+        if (audioSettings?.musicRange) setMusicRange(audioSettings.musicRange)
+        if (audioSettings?.musicVolume !== undefined) setMusicVolume(audioSettings.musicVolume)
         try {
           const a = new Audio()
           a.src = url
@@ -6372,8 +6450,8 @@ export default function DashboardPage() {
             const d = a.duration
             if (Number.isFinite(d) && d > 0) {
               setMusicDuration(d)
-              setMusicRange([0, d])
-              if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+              if (!audioSettings?.musicRange) setMusicRange([0, d])
+              if (mergedDurationSec <= 0 && !audioSettings?.musicTimeline) setMusicTimeline([0, tlEnd(d)])
             }
           })
         } catch { /* ignore */ }
@@ -6397,7 +6475,9 @@ export default function DashboardPage() {
         }
         setVoiceoverName(name)
         setVoiceoverUrl(url)
-        setVoiceoverTimeline([0, mergedDurationSec])
+        setVoiceoverTimeline(audioSettings?.voiceoverTimeline ?? [0, mergedDurationSec])
+        if (audioSettings?.voiceoverRange) setVoiceoverRange(audioSettings.voiceoverRange)
+        if (audioSettings?.voiceoverVolume !== undefined) setVoiceoverVolume(audioSettings.voiceoverVolume)
         try {
           const a = new Audio()
           a.src = url
@@ -6405,8 +6485,8 @@ export default function DashboardPage() {
             const d = a.duration
             if (Number.isFinite(d) && d > 0) {
               setVoiceoverDuration(d)
-              setVoiceoverRange([0, d])
-              if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+              if (!audioSettings?.voiceoverRange) setVoiceoverRange([0, d])
+              if (mergedDurationSec <= 0 && !audioSettings?.voiceoverTimeline) setVoiceoverTimeline([0, tlEnd(d)])
             }
           })
         } catch { /* ignore */ }
@@ -7185,6 +7265,8 @@ export default function DashboardPage() {
       theme?: string
       /** When false, no narration/voiceover is produced for any clip. */
       withNarration?: boolean
+      /** Wizard batches stay closed until their bounded poll produces Preview. */
+      suppressPreviewUntilBatchSettles?: boolean
       /** Explicit flag: true when the wizard produced plan-based 5s shots. */
       isPlanBased?: boolean
     },
@@ -7398,10 +7480,13 @@ export default function DashboardPage() {
           setLockedProjectRatio(effectiveRatio)
           persistLockedRatio(effectiveRatio)
         }
-        // Keep the preview on the full sequential auto-stitch instead of
-        // pinning to each pending clip as it's queued.
-        setPreviewVideoId(null)
-        setPreviewDismissed(false)
+        // Other scenario flows preserve their existing live-preview behavior.
+        // The reviewed Make Full Film path opens exactly once after its own
+        // batch settles, never once per queued or polled card.
+        if (!opts?.suppressPreviewUntilBatchSettles) {
+          setPreviewVideoId(null)
+          setPreviewDismissed(false)
+        }
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
@@ -7476,12 +7561,18 @@ export default function DashboardPage() {
   // Poll every wizard clip independently with a hard deadline. Successful
   // cards are preserved as they settle; failed and timed-out clips stay
   // separate in the returned summary.
-  async function waitForApprovedFilmBatch(jobIds: string[]): Promise<SceneBatchResult> {
-    return await waitForSceneBatch(jobIds, jobOrchestratorGateway.getJob, {
+  async function waitForApprovedFilmBatch(
+    jobIds: string[],
+  ): Promise<{ result: SceneBatchResult; settled: Map<string, JobDetail> }> {
+    const settled = new Map<string, JobDetail>()
+    const result = await waitForSceneBatch(jobIds, jobOrchestratorGateway.getJob, {
       onSettled: (detail) => {
-        setGeneratedVideos((cur) => mergeJob(cur, detail as JobDetail))
+        const job = detail as JobDetail
+        settled.set(job.id, job)
+        setGeneratedVideos((cur) => mergeJob(cur, job))
       },
     })
+    return { result, settled }
   }
 
   // ── Gated "Make Full Film" wizard helpers ────────────────────────────────
@@ -7741,6 +7832,7 @@ export default function DashboardPage() {
         cameraStyle: options?.creative?.cameraStyle,
         theme: options?.creative?.theme,
         withNarration: options?.withNarration,
+        suppressPreviewUntilBatchSettles: true,
       })
       const requestedSceneCount = scenes.filter((scene) => scene.trim().length > 0).length
       const queueFailedCount = Math.max(0, requestedSceneCount - createdJobIds.length)
@@ -7755,7 +7847,7 @@ export default function DashboardPage() {
       // Wait for queued clips with a bounded poll. Completed cards are kept
       // even when another clip fails or remains pending at the deadline.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
-      const batch = await waitForApprovedFilmBatch(createdJobIds)
+      const { result: batch, settled } = await waitForApprovedFilmBatch(createdJobIds)
       const failedCount = queueFailedCount + batch.failed.length
       if (batch.completed.length === 0) {
         setComposerError('The scenes did not finish rendering — please try again.')
@@ -7768,6 +7860,20 @@ export default function DashboardPage() {
       if (failedCount > 0) statusParts.push(`${failedCount} failed`)
       if (batch.pending.length > 0) statusParts.push(`${batch.pending.length} still pending`)
       setVideoColumnMessage(`${statusParts.join('; ')}. Use Final Film when you are ready to assemble them.`)
+      // Auto-open the full sequence ONLY when every expected card completed.
+      // A failed/cancelled/pending card keeps the existing error/retry surface
+      // and never auto-plays an incomplete preview.
+      if (batch.failed.length === 0 && batch.pending.length === 0) {
+        const summary = summarizeAutoFilmBatch(createdJobIds, settled, new Set(batch.pending))
+        setLastMergedPreview(null)
+        setPreviewVideoId(null)
+        setPreviewDismissed(false)
+        dispatchAutoFilmPreview({
+          type: 'batch-settled',
+          batchId: summary.batchId,
+          clips: summary.completed,
+        })
+      }
     } catch (err) {
       const rootError = err instanceof GlobalSceneBatchError ? err.cause : err
       const msg = generationStartErrorMessage(rootError, 'Could not generate the film.')
@@ -8495,8 +8601,8 @@ export default function DashboardPage() {
         transitionsForMerge.push({ id: 'cut', durationMs: 0 })
       }
       for (const clip of eligibleClips.slice(0, -1)) {
-        const id = transitions[clip.id] ?? 'cut'
-        transitionsForMerge.push({ id, durationMs: TRANSITION_DURATION[id] ?? 0 })
+        const spec = transitions[clip.id]
+        transitionsForMerge.push(spec ?? { id: 'cut', durationMs: 0 })
       }
 
 
@@ -8753,6 +8859,19 @@ export default function DashboardPage() {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
             if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
           }
+          // Capture the full mix so "Reopen for editing" restores the exact
+          // Final Film sound, not just the raw music/voiceover files.
+          entry.settings = {
+            musicRange: hasMusic ? musicRange : undefined,
+            musicTimeline: hasMusic ? musicTimeline : undefined,
+            musicVolume: hasMusic ? musicVolume : undefined,
+            voiceoverRange: hasVoiceover ? voiceoverRange : undefined,
+            voiceoverTimeline: hasVoiceover ? voiceoverTimeline : undefined,
+            voiceoverVolume: hasVoiceover ? voiceoverVolume : undefined,
+            clipVolume,
+            voiceoverClipVolume,
+            soundtrackMode,
+          }
           if (entry.music || entry.voiceover) {
             const nextAudio = { ...projectAudio, [mergedId]: entry }
             setProjectAudio(nextAudio)
@@ -8964,6 +9083,9 @@ export default function DashboardPage() {
     setMergeStage(null)
     // Drop the transient Final Film preview so Start Over fully clears it.
     setLastMergedPreview(null)
+    // Clear the currently displayed automatic batch while preserving its
+    // consumed guard, so Start Over cannot resurrect an old batch.
+    dispatchAutoFilmPreview({ type: 'clear-active' })
     // Reset the composer to a fresh state.
     setPromptText('')
     setSelectedCharacter(null)
@@ -9002,6 +9124,11 @@ export default function DashboardPage() {
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
+
+    // Clear the Voiceover dialog's transient state (text, generated audio,
+    // translation) so a new project opens with a clean TEXT field. Durable
+    // Draft/Final Film voiceovers and Library files are untouched.
+    setVoiceoverResetKey((k) => k + 1)
 
     // No server-side cleanup: Library files in `merged-videos` are kept.
   }
@@ -10240,10 +10367,11 @@ export default function DashboardPage() {
 
       <div className="fixed left-1/2 top-[3.25rem] z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:top-5">
       {(() => {
-        const hasReadyClips = playableSequenceClips.length > 0
+        const hasReadyClips = playableSequenceClips.length > 0 && !isAutoFilming
         return (
           <button
             type="button"
+            disabled={isAutoFilming}
             onClick={() => {
               if (playableSequenceClips.length === 0) {
                 setVideoColumnMessage('No ready clips to live-preview yet.')
@@ -10251,9 +10379,12 @@ export default function DashboardPage() {
               }
               setVideoColumnMessage(null)
               setPreviewVideoId(null)
+              // Manual Preview always reflects the current workspace. Keep the
+              // consumed guard so the previous automatic batch stays one-shot.
+              dispatchAutoFilmPreview({ type: 'clear-active' })
               setPreviewDismissed(false)
             }}
-            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-cyan-400/20 ${
+            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50 ${
               hasReadyClips
                 ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-200 hover:border-cyan-300/65 hover:bg-cyan-400/15 hover:text-cyan-100'
                 : 'border-cyan-400/20 bg-cyan-400/[0.04] text-cyan-200/60 hover:border-cyan-400/30 hover:bg-cyan-400/[0.07] hover:text-cyan-100/75'
@@ -10571,6 +10702,7 @@ export default function DashboardPage() {
         mergedDurationSec={mergedDurationSec}
         waveformRef={voiceoverWaveformRef}
         onClearVoiceover={handleClearVoiceover}
+        resetKey={voiceoverResetKey}
       />
 
 
@@ -10987,7 +11119,7 @@ export default function DashboardPage() {
       <main
         className="grid place-items-center px-4"
         aria-live="polite"
-        style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
+        style={{ minHeight: `${previewMaxHeightPx + 76}px`, paddingTop: '76px' }}
       >
         {previewItem ? (
           previewItem.kind === 'sequence' ? (
@@ -11016,6 +11148,7 @@ export default function DashboardPage() {
               ratioToHeight={ratioToHeight}
               ratioToWidth={ratioToWidth}
               maxHeightPx={previewMaxHeightPx}
+              autoPlayAttemptId={previewItem.autoPlayAttemptId}
               onClose={closePreview}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
               musicUrl={musicUrl}
@@ -11585,7 +11718,7 @@ export default function DashboardPage() {
                 if (clip.kind === 'image') {
                   const img = clip.image
                   const isPreviewSelected = previewVideoId === clip.id
-                  const transitionId: TransitionId = transitions[clip.id] ?? 'cut'
+                  const transitionId: TransitionId = transitions[clip.id]?.id ?? 'cut'
                   return (
                     <Fragment key={`img-${img.id}`}>
                       <article
@@ -11690,35 +11823,29 @@ export default function DashboardPage() {
                           onClick={(event) => event.stopPropagation()}
                         >
                           <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
-                                title="Transition between these clips"
-                                aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
-                              >
-                                <TransitionPreview id={transitionId} size={22} />
-                                <span>{TRANSITION_LABEL[transitionId]}</span>
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="center" className="min-w-[12rem]">
-                              <DropdownMenuLabel>Transition</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              {TRANSITION_OPTIONS.map((opt) => (
-                                <DropdownMenuItem
-                                  key={opt.id}
-                                  onSelect={() => {
-                                    setTransitions((current) => ({ ...current, [clip.id]: opt.id }))
-                                  }}
-                                  className={`flex items-center gap-2 ${transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}`}
-                                >
-                                  <TransitionPreview id={opt.id} size={32} />
-                                  <span>{opt.label}</span>
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <TransitionPicker
+                            value={transitionId}
+                            durationMs={transitions[clip.id]?.durationMs ?? DEFAULT_TRANSITION_DURATION[transitionId] ?? 0}
+                            gapCount={displayedClips.length - 1}
+                            onSelect={(spec) =>
+                              setTransitions((current) => ({ ...current, [clip.id]: spec }))
+                            }
+                            onApplyToAll={(spec) =>
+                              setTransitions((current) =>
+                                applyTransitionToAll(
+                                  current,
+                                  displayedClips.slice(0, -1).map((c) => c.id),
+                                  spec,
+                                ),
+                              )
+                            }
+                            onReset={() =>
+                              setTransitions((current) => ({
+                                ...current,
+                                [clip.id]: { id: 'cut', durationMs: 0 },
+                              }))
+                            }
+                          />
                           <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
                         </div>
                       ) : null}
@@ -11729,7 +11856,7 @@ export default function DashboardPage() {
                 const video = clip.job
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
-                const transitionId: TransitionId = transitions[video.id] ?? 'cut'
+                const transitionId: TransitionId = transitions[video.id]?.id ?? 'cut'
 
                 return (
                   <Fragment key={video.id}>
@@ -12034,35 +12161,29 @@ export default function DashboardPage() {
                       onClick={(event) => event.stopPropagation()}
                     >
                       <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
-                            title="Transition between these clips"
-                            aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
-                          >
-                            <TransitionPreview id={transitionId} size={22} />
-                            <span>{TRANSITION_LABEL[transitionId]}</span>
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="center" className="min-w-[12rem]">
-                          <DropdownMenuLabel>Transition</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          {TRANSITION_OPTIONS.map((opt) => (
-                            <DropdownMenuItem
-                              key={opt.id}
-                              onSelect={() => {
-                                setTransitions((current) => ({ ...current, [video.id]: opt.id }))
-                              }}
-                              className={`flex items-center gap-2 ${transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}`}
-                            >
-                              <TransitionPreview id={opt.id} size={32} />
-                              <span>{opt.label}</span>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <TransitionPicker
+                        value={transitionId}
+                        durationMs={transitions[video.id]?.durationMs ?? DEFAULT_TRANSITION_DURATION[transitionId] ?? 0}
+                        gapCount={displayedClips.length - 1}
+                        onSelect={(spec) =>
+                          setTransitions((current) => ({ ...current, [video.id]: spec }))
+                        }
+                        onApplyToAll={(spec) =>
+                          setTransitions((current) =>
+                            applyTransitionToAll(
+                              current,
+                              displayedClips.slice(0, -1).map((c) => c.id),
+                              spec,
+                            ),
+                          )
+                        }
+                        onReset={() =>
+                          setTransitions((current) => ({
+                            ...current,
+                            [video.id]: { id: 'cut', durationMs: 0 },
+                          }))
+                        }
+                      />
                       <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
                     </div>
                   ) : null}
@@ -12138,13 +12259,26 @@ export default function DashboardPage() {
                   : video.video
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
+              // Status-only theming: Draft = soft yellow, Final Film = soft green.
+              // Kept subtle to stay coherent with the dark theme; the existing
+              // DRAFT / Saved text badges remain the accessible, non-color cue.
+              const variantTheme =
+                variant === 'draft'
+                  ? {
+                      base: 'border-amber-300/25 bg-amber-300/[0.05]',
+                      hover: 'hover:border-amber-300/40 hover:bg-amber-300/[0.09]',
+                    }
+                  : {
+                      base: 'border-emerald-300/25 bg-emerald-300/[0.05]',
+                      hover: 'hover:border-emerald-300/40 hover:bg-emerald-300/[0.09]',
+                    }
               return (
                 <article
                   key={video.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition ${variantTheme.hover} ${
                     selectMode && isChecked
                       ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : variantTheme.base
                   }`}
                   role="button"
                   tabIndex={0}
@@ -12204,7 +12338,7 @@ export default function DashboardPage() {
                       <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
                         {video.input_prompt}
                       </p>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         {variant === 'final' && video.video?.storage_path ? (
                           <>
                           <DropdownMenu>
@@ -12215,16 +12349,16 @@ export default function DashboardPage() {
                                  onClick={(event) => event.stopPropagation()}
                                  aria-label="Download video"
                                  title="Download"
-                                 className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                 className="grid h-8 min-w-8 shrink-0 place-items-center rounded-full border border-emerald-300/20 px-1.5 text-emerald-300/70 transition hover:border-emerald-300/50 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                >
                                  {downloadingId === video.id ? (
                                    downloadProgress !== null ? (
                                      <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
                                    ) : (
-                                     <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                                    )
                                  ) : (
-                                   <Download className="h-3 w-3" aria-hidden="true" />
+                                   <Download className="h-4 w-4" aria-hidden="true" />
                                  )}
                                </button>
                              </DropdownMenuTrigger>
@@ -12262,13 +12396,13 @@ export default function DashboardPage() {
                                   onClick={(event) => event.stopPropagation()}
                                   aria-label="Project audio"
                                   title="Music & voiceover"
-                                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${
+                                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                                     hasAny
-                                      ? 'border-white/10 text-zinc-400 hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200'
+                                      ? 'border-sky-300/20 text-sky-300/70 hover:border-sky-300/50 hover:bg-sky-300/10 hover:text-sky-200'
                                       : 'border-white/10 text-zinc-600 hover:border-white/20 hover:text-zinc-400'
                                   }`}
                                 >
-                                  <Music2 className="h-3 w-3" aria-hidden="true" />
+                                  <Music2 className="h-4 w-4" aria-hidden="true" />
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent
@@ -12325,7 +12459,7 @@ export default function DashboardPage() {
                               ? { border: 'border-rose-300/40 bg-rose-300/10 text-rose-300', Icon: ShieldX, label: 'Content check: Rejected' }
                               : verdict === 'caution'
                                 ? { border: 'border-amber-300/40 bg-amber-300/10 text-amber-300', Icon: ShieldAlert, label: 'Content check: Needs review' }
-                                : { border: 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
+                                : { border: 'border-violet-300/20 text-violet-300/70 hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
                           const Icon = tone.Icon
                           return (
                             <button
@@ -12344,12 +12478,12 @@ export default function DashboardPage() {
                               }}
                               aria-label={tone.label}
                               title={tone.label}
-                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
+                              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
                             >
                               {checking ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                               ) : (
-                                <Icon className="h-3 w-3" aria-hidden="true" />
+                                <Icon className="h-4 w-4" aria-hidden="true" />
                               )}
                             </button>
                           )
@@ -12364,9 +12498,9 @@ export default function DashboardPage() {
                             }}
                             aria-label="Reopen for editing"
                             title="Reopen for editing"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/20 text-amber-300/70 transition hover:border-amber-300/50 hover:bg-amber-300/10 hover:text-amber-200"
                           >
-                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                            <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         {variant === 'final' ? (
@@ -12377,13 +12511,14 @@ export default function DashboardPage() {
                               setNarrationReview({
                                 cardId: video.id,
                                 storagePath: video.video?.storage_path ?? '',
+                                narrationText: (video as { narration_text?: string | null }).narration_text ?? null,
                               })
                             }}
                             aria-label="Transcribe film audio"
                             title="Transcribe speech from this film"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-violet-300/20 text-violet-300/70 transition hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200"
                           >
-                            <ScanText className="h-3 w-3" aria-hidden="true" />
+                            <ScanText className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         <button
@@ -12394,9 +12529,9 @@ export default function DashboardPage() {
                           }}
                           aria-label="Delete card"
                           title="Delete card"
-                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-rose-300/20 text-rose-300/70 transition hover:border-rose-300/50 hover:bg-rose-300/10 hover:text-rose-200"
                         >
-                          <Trash2 className="h-3 w-3" aria-hidden="true" />
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
@@ -12422,6 +12557,7 @@ export default function DashboardPage() {
                       open={narrationReview?.cardId === video.id}
                       onClose={() => setNarrationReview(null)}
                       videoStoragePath={narrationReview?.cardId === video.id ? (narrationReview.storagePath || null) : null}
+                      expectedNarration={narrationReview?.cardId === video.id ? (narrationReview.narrationText || null) : null}
                     />
                   ) : null}
                 </article>

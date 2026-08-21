@@ -91,6 +91,9 @@ interface VoiceoverDialogProps {
   mergedDurationSec?: number
   waveformRef?: MutableRefObject<SoundtrackWaveformHandle | null>
   onClearVoiceover?: () => void
+  /** Incremented by the parent on Start Over / workspace reset to clear
+   *  transient voiceover state (text, generated audio, translation, etc.). */
+  resetKey?: number
 }
 
 function base64ToBlob(b64: string, mime: string): Blob {
@@ -232,6 +235,7 @@ export function VoiceoverDialog({
   mergedDurationSec = 0,
   waveformRef,
   onClearVoiceover,
+  resetKey = 0,
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
@@ -421,6 +425,41 @@ export function VoiceoverDialog({
       setPlayingSampleId(null)
     }
   }, [open])
+
+  // Start Over / workspace reset: clear transient voiceover state so a new
+  // project opens with a clean TEXT field. Durable data (Draft/Final Film,
+  // projectAudio, Library) lives in the parent and is untouched here.
+  useEffect(() => {
+    if (resetKey === 0) return
+    // Revoke any local blob URL we still own (not the one handed to parent).
+    if (lastUrlRef.current) {
+      try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
+      lastUrlRef.current = null
+    }
+    setText('')
+    setGeneratedText('')
+    setAudioUrl(null)
+    setTranslation(null)
+    setTranslationLang(null)
+    setLastNarration(null)
+    setCheckResult(null)
+    setCheckOpen(false)
+    setChecking(false)
+    setIsGenerating(false)
+    setPlayingSampleId(null)
+    setIsProductPopoverOpen(false)
+    setSelectedProductId(null)
+    setIsWritingNarration(false)
+    setIsTranslateOpen(false)
+    setIsTranslating(false)
+    // Voice/Tone/Gender are project-specific here; reset to defaults so a new
+    // project starts clean without touching any persisted user preference.
+    setGender('female')
+    setVoiceId(defaultVoiceForGender('female').id)
+    setTone('advertising')
+    setIsAutoDuration(true)
+    setCustomDuration('')
+  }, [resetKey])
 
   async function persistVoiceover(blob: Blob) {
     try {
