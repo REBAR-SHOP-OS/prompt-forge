@@ -506,7 +506,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       const resolvedProductName = currentProductName()
       let characterDescriptionText = ''
       if (selectedCharacter) {
-        characterDescriptionText = characterDesc || await resolveCharacterDescription(selectedCharacter)
+        const { data: descData, error: descError } = await supabase.functions.invoke('describe-character', {
+          body: { imageUrl: selectedCharacter.url },
+        })
+        if (descError) {
+          throw new Error('Could not describe the selected character. Your original text was kept.')
+        }
+        characterDescriptionText = (descData as { description?: string } | null)?.description?.trim() ?? ''
       }
 
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
