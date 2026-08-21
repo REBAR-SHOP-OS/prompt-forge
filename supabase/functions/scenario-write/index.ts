@@ -584,7 +584,15 @@ Deno.serve(async (req) => {
     const scenes = quality.scenes;
 
     if (scenes.length === 0) {
-      return new Response(JSON.stringify({ error: "Empty AI response" }), {
+      // For plan mode, an empty result means the model did not produce the
+      // required planCount sections even after the corrective retry. Surface a
+      // precise, actionable message (the retry already happened inside the
+      // quality pass) rather than a generic "Empty AI response".
+      const error =
+        unit === "plan"
+          ? `The AI did not return the ${getPlanDurationPolicy(duration).planCount} required 5-second plans. Please try again.`
+          : "Empty AI response";
+      return new Response(JSON.stringify({ error }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

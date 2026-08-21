@@ -713,4 +713,78 @@ describe('MakeFilmWizardDialog prompt optimization', () => {
     resolveInvoke!({ data: { enhancedPrompt: 'Enhanced.' }, error: null })
     await waitFor(() => expect(textarea).toHaveValue('Enhanced.'))
   })
+
+  it('optimizes without a character and does not call describe-character', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { enhancedPrompt: 'A polished cinematic film about a product.' },
+      error: null,
+    })
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /optimize prompt/i }))
+
+    await waitFor(() => expect(textarea).toHaveValue('A polished cinematic film about a product.'))
+    // describe-character must never be invoked when no character is selected.
+    expect(mockInvoke).not.toHaveBeenCalledWith('describe-character', expect.anything())
+    expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', expect.objectContaining({
+      body: expect.objectContaining({ prompt: 'a product film' }),
+    }))
+  })
+
+  it('resolves the character description and passes it to enhance-prompt', async () => {
+    mockCharacterRows([{ id: 'char-1', title: 'Sarah', image_type: 'character' }])
+    mockInvoke.mockImplementation(async (fn: string) => {
+      if (fn === 'describe-character') {
+        return { data: { description: 'A young woman with long dark hair.' }, error: null }
+      }
+      return { data: { enhancedPrompt: 'A polished cinematic film.' }, error: null }
+    })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Sarah'))
+
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+    fireEvent.click(screen.getByRole('button', { name: /optimize prompt/i }))
+
+    await waitFor(() => expect(textarea).toHaveValue('A polished cinematic film.'))
+    expect(mockInvoke).toHaveBeenCalledWith('describe-character', {
+      body: { imageUrl: expect.stringContaining('char-1') },
+    })
+    expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', expect.objectContaining({
+      body: expect.objectContaining({
+        prompt: 'a product film',
+        characterDescription: 'A young woman with long dark hair.',
+      }),
+    }))
+  })
+
+  it('keeps the original prompt and shows a clear error when describe-character fails', async () => {
+    mockCharacterRows([{ id: 'char-1', title: 'Sarah', image_type: 'character' }])
+    mockInvoke.mockImplementation(async (fn: string) => {
+      if (fn === 'describe-character') {
+        return { data: null, error: new Error('AI gateway error') }
+      }
+      return { data: { enhancedPrompt: 'A polished cinematic film.' }, error: null }
+    })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Sarah'))
+
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+    fireEvent.click(screen.getByRole('button', { name: /optimize prompt/i }))
+
+    await waitFor(() => expect(screen.getByText(/Could not describe the selected character/i)).toBeInTheDocument())
+    // Original prompt preserved; enhance-prompt never reached.
+    expect(textarea).toHaveValue('a product film')
+    expect(mockInvoke).not.toHaveBeenCalledWith('enhance-prompt', expect.anything())
+    expect(screen.queryByText('Undo optimization')).not.toBeInTheDocument()
+  })
 })
