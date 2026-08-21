@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Clapperboard,
   LoaderCircle,
@@ -17,6 +17,8 @@ import {
   ZoomIn,
   X,
   MonitorPlay,
+  Sparkles,
+  Eye,
 } from 'lucide-react'
 import {
   Dialog,
@@ -26,13 +28,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+
+import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
+import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 
@@ -80,6 +85,34 @@ async function signStorageUrl(storagePath: string | null | undefined, bucket: st
 
 type ProductPhoto = { id: string; title: string | null; url: string; imageType?: string | null }
 
+type ProductPhotoSource = { id: string; title: string | null; storagePath: string; imageType?: string | null }
+
+export const inFlightSigns = new Map<string, Promise<string>>()
+
+async function signStorageUrlDeduped(storagePath: string, bucket: string, userId?: string | null): Promise<string> {
+  const cacheKey = `${userId ?? 'anon'}:${bucket}:${storagePath}`
+  const existing = inFlightSigns.get(cacheKey)
+  if (existing) return existing
+  const promise = (async () => {
+    try {
+      const raw = storagePath ?? ''
+      if (/^blob:|^data:/.test(raw)) return raw
+      if (/\/object\/sign\//.test(raw)) return raw
+      const key = storageObjectKey(raw, bucket)
+      if (!key) return raw
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(key, 60 * 60 * 24 * 7)
+      if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Failed to create signed URL')
+      return data.signedUrl
+    } finally {
+      inFlightSigns.delete(cacheKey)
+    }
+  })()
+  inFlightSigns.set(cacheKey, promise)
+  return promise
+}
+
 type WizardStep = 'prompt' | 'scenario' | 'images'
 
 export interface FilmIdentity {
@@ -117,7 +150,7 @@ export interface MakeFilmWizardDialogProps {
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string }) => Promise<string[]>
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
   generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
 }
@@ -135,7 +168,7 @@ export function MakeFilmWizardDialog({
 }: MakeFilmWizardDialogProps) {
   const [step, setStep] = useState<WizardStep>('prompt')
   const [prompt, setPrompt] = useState('')
-  const [scenes, setScenes] = useState<string[]>([])
+  const [plans, setPlans] = useState<FilmPlan[]>([])
   const [images, setImages] = useState<(string | undefined)[]>([])
   const [imageErrors, setImageErrors] = useState<(string | undefined)[]>([])
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
@@ -151,18 +184,23 @@ export function MakeFilmWizardDialog({
   const [noTextOnImages, setNoTextOnImages] = useState(true)
   const [selectedCameraAngle, setSelectedCameraAngle] = useState('auto')
   const [selectedTheme, setSelectedTheme] = useState('auto')
-  const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
+  const [productPhotos, setProductPhotos] = useState<ProductPhotoSource[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
+  const productPickerControllerRef = useRef<AbortController | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
   const [selectedCharacter, setSelectedCharacter] = useState<ProductPhoto | null>(null)
+  const [productName, setProductName] = useState<string>('')
   const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
+  const [characterSheetSource, setCharacterSheetSource] = useState<CharacterSheetSource | null>(null)
   const [loadingProducts, setLoadingProducts] = useState(false)
+  const [productLoadError, setProductLoadError] = useState<string | null>(null)
   const [loadingCharacters, setLoadingCharacters] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
+  const [scenarioReviewOpen, setScenarioReviewOpen] = useState(false)
   const hasInitialized = useRef(false)
 
   // Style picker dialogs
@@ -174,7 +212,7 @@ export function MakeFilmWizardDialog({
       hasInitialized.current = true
       setStep('prompt')
       setPrompt(initialPrompt ?? '')
-      setScenes([])
+      setPlans([])
       setImages([])
       setImageErrors([])
       setBusy('idle')
@@ -192,9 +230,13 @@ export function MakeFilmWizardDialog({
       setSelectedTheme('auto')
       setSelectedProduct(null)
       setSelectedCharacter(null)
+      setProductName('')
+      setCharacterDesc('')
       setIdentitySnapshot(null)
       setProductPickerOpen(false)
+      setProductLoadError(null)
       setCharacterPickerOpen(false)
+      setCharacterSheetSource(null)
       setLightboxOpen(false)
     }
     if (!open) {
@@ -203,6 +245,7 @@ export function MakeFilmWizardDialog({
   }, [open, initialPrompt, defaultDuration, defaultAspect])
 
   const working = busy !== 'idle' || regenIndex !== null
+  const canWriteScenario = prompt.trim().length > 0 && selectedProduct !== null && !working
 
   async function loadProductPhotos() {
     if (!userId) {
@@ -211,6 +254,7 @@ export function MakeFilmWizardDialog({
     }
     setLoadingProducts(true)
     setError(null)
+    setProductLoadError(null)
     try {
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
@@ -221,16 +265,16 @@ export function MakeFilmWizardDialog({
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
       const rows = (data ?? []).filter((r) => !r.title?.toLowerCase().includes('character'))
-      const photos: ProductPhoto[] = await Promise.all(
+      const photos: ProductPhotoSource[] = await Promise.all(
         rows.map(async (r) => ({
           id: r.id,
           title: r.title ?? null,
-          url: await signStorageUrl(r.storage_path, PRODUCTS_BUCKET),
+          storagePath: r.storage_path,
         })),
       )
       setProductPhotos(photos)
     } catch (e) {
-      setError((e as Error).message ?? 'Failed to load products')
+      setProductLoadError((e as Error).message ?? 'Failed to load products')
     } finally {
       setLoadingProducts(false)
     }
@@ -272,12 +316,73 @@ export function MakeFilmWizardDialog({
 
   function pickProduct(photo: ProductPhoto) {
     setSelectedProduct(photo)
+    setProductName(sanitizeProductName(photo.title))
     setProductPickerOpen(false)
   }
 
+  function currentProductName(): string | null {
+    const manualName = productName.trim()
+    if (manualName) return manualName
+    return selectedProduct ? sanitizeProductName(selectedProduct.title) : null
+  }
+
+  const [characterDesc, setCharacterDesc] = useState<string>('')
+  const characterDescLoadingRef = useRef(false)
+
+  // UUID-like title detector — filenames from uploaded images often look like UUIDs.
+  function isUuidLike(value: string | null | undefined): boolean {
+    if (!value) return false
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+  }
+
+  // Sanitise a character or product title: if it looks like a UUID, drop it.
+  function safeTitle(value: string | null | undefined): string | null {
+    const trimmed = value?.trim() ?? ''
+    if (!trimmed || isUuidLike(trimmed)) return null
+    return trimmed
+  }
+
+  // Build a short description of the selected character via the describe-character
+  // edge function.  Cached in component state so it survives re-renders.
+  async function resolveCharacterDescription(char: ProductPhoto): Promise<string> {
+    if (characterDescLoadingRef.current) return characterDesc
+    characterDescLoadingRef.current = true
+    try {
+      const { data, error } = await supabase.functions.invoke('describe-character', {
+        body: { imageUrl: char.url },
+      })
+      if (error) throw error
+      const desc = (data as { description?: string } | null)?.description?.trim() ?? ''
+      if (desc) {
+        setCharacterDesc(desc)
+        return desc
+      }
+    } catch (e) {
+      console.error('describe-character failed:', e)
+    } finally {
+      characterDescLoadingRef.current = false
+    }
+    return characterDesc
+  }
+
+  // When a character is picked (or changed), clear any stale description.
   function pickCharacter(photo: ProductPhoto) {
     setSelectedCharacter(photo)
+    setCharacterDesc('')
     setCharacterPickerOpen(false)
+  }
+
+  function openCharacterSheetFlow(photo: ProductPhoto) {
+    setCharacterSheetSource({
+      id: photo.id,
+      url: photo.url,
+      title: photo.title,
+    })
+  }
+
+  function handleCharacterSheetCreated() {
+    setCharacterSheetSource(null)
+    void loadCharacterPhotos()
   }
 
   function isCharacterSheetRef(photo: ProductPhoto | null): boolean {
@@ -291,22 +396,25 @@ export function MakeFilmWizardDialog({
       role,
       imageType: photo.imageType ?? null,
       characterSheet: role === 'character' && isCharacterSheetRef(photo),
-      name: role === 'product' ? sanitizeProductName(photo.title) : photo.title ?? null,
+      name: role === 'product' ? currentProductName() : photo.title ?? null,
     }
   }
 
-  function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
-    const sceneCount = Math.ceil(durationSeconds / 15)
-    const sceneDuration = Math.floor(durationSeconds / sceneCount)
+    function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
+    const planCount = expectedPlanCount(durationSeconds)
     
     return `${basePrompt}
 
-IMPORTANT: Create exactly ${sceneCount} scenes, each approximately ${sceneDuration} seconds long. Total film duration must be ${durationSeconds} seconds.
-Each scene should flow logically into the next, building toward a single cohesive narrative. All scenes must serve the same overall story goal.`
+IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, split into ${planCount} sequential 5-second plans (shots). Total film duration must be ${durationSeconds} seconds.
+Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
   }
 
-  async function handleWriteScenario() {
+    async function handleWriteScenario() {
     const idea = prompt.trim()
+    if (!selectedProduct) {
+      setError('Choose a product before writing the scenario.')
+      return
+    }
     if (!idea) {
       setError('Type a prompt first so I can write the film.')
       return
@@ -316,13 +424,23 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setProgress('Writing your film scenario…')
     try {
       let enrichedPrompt = generateDurationPrompt(idea, duration)
-      const productName = selectedProduct ? sanitizeProductName(selectedProduct.title) : null
+      const resolvedProductName = currentProductName()
+      const resolvedCharacterName = safeTitle(selectedCharacter?.title)
+      // Build (or reuse) a character-description when a character is selected.
+      let characterDescription = ''
+      if (selectedCharacter) {
+        characterDescription = characterDesc || await resolveCharacterDescription(selectedCharacter)
+      }
       if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${productName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
+        const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
+        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''} (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
       } else if (selectedProduct) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${productName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
+      } else if (resolvedProductName) {
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
       } else if (selectedCharacter) {
-        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
+        const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
+        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
       }
       
       const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
@@ -338,20 +456,47 @@ Each scene should flow logically into the next, building toward a single cohesiv
         duration,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
-        productName,
-        characterName: selectedCharacter?.title ?? null,
+        productName: resolvedProductName,
+        characterName: resolvedCharacterName,
         withNarration,
         aspect,
         cameraStyle: cameraAngle?.prompt,
         theme: theme?.prompt,
+        unit: 'plan',
       })
-      const cleaned = written.map((s) => s.trim()).filter((s) => s.length > 0)
-      if (cleaned.length === 0) {
+      const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
+      if (rawScenes.length === 0) {
         setError('The scenario came back empty — try rephrasing your prompt.')
         return
       }
-      setScenes(cleaned)
-      setImages(new Array(cleaned.length).fill(undefined))
+      // The model must return exactly the expected number of plans. If it
+      // doesn't match, retry once before giving up.
+      let builtPlans: FilmPlan[]
+      try {
+        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
+      } catch (firstErr) {
+        setProgress('Retrying scenario…')
+        const retryWritten = await writeScenario(enrichedPrompt, {
+          duration,
+          productUrl: selectedProduct?.url,
+          characterUrl: selectedCharacter?.url,
+          productName: resolvedProductName,
+          characterName: resolvedCharacterName,
+          withNarration,
+          aspect,
+          cameraStyle: cameraAngle?.prompt,
+          theme: theme?.prompt,
+          unit: 'plan',
+        })
+        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
+        if (retryScenes.length === 0) {
+          setError('The scenario came back empty — try rephrasing your prompt.')
+          return
+        }
+        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
+      }
+      setPlans(builtPlans)
+      setImages(new Array(builtPlans.length).fill(undefined))
       setStep('scenario')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write the scenario.')
@@ -409,7 +554,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
   }
 
   async function handleGenerateImages() {
-    if (scenes.length === 0) return
+    if (plans.length === 0) return
     setBusy('images')
     setError(null)
     const snapshot: IdentitySnapshot = {
@@ -418,13 +563,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
     }
     setIdentitySnapshot(snapshot)
     const characterSheet = snapshot.character?.characterSheet ?? false
-    const next: (string | undefined)[] = new Array(scenes.length).fill(undefined)
-    const nextErrors: (string | undefined)[] = new Array(scenes.length).fill(undefined)
+    const next: (string | undefined)[] = new Array(plans.length).fill(undefined)
+    const nextErrors: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const creative = currentCreative()
-    for (let i = 0; i < scenes.length; i++) {
-      setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
+    for (let i = 0; i < plans.length; i++) {
+      setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -444,12 +589,10 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setRegenIndex(index)
     setError(null)
     try {
-      const snapshot = identitySnapshot ?? {
-        product: toIdentityRef(selectedProduct, 'product'),
-        character: toIdentityRef(selectedCharacter, 'character'),
-      }
+      const snapshot = identitySnapshot
+      if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const characterSheet = snapshot.character?.characterSheet ?? false
-      const url = await generateSceneImage(scenes[index], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const url = await generateSceneImage(plans[index].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -481,13 +624,14 @@ Each scene should flow logically into the next, building toward a single cohesiv
 
   function handleApprove() {
     try {
-      onApprove(scenes, images, {
+      onApprove(plans.map((p) => p.scenarioText), images, {
         duration,
         aspect,
         withNarration,
+        isPlanBased: true,
         identity: {
           productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
-          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? null,
+          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? currentProductName(),
           characterUrl: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.url,
           characterName: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.name ?? null,
         },
@@ -514,10 +658,24 @@ Each scene should flow logically into the next, building toward a single cohesiv
       <Dialog open={open} onOpenChange={(v) => (working ? undefined : onOpenChange(v))}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
-              <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
-              Make Full Film
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-2 pr-10">
+              <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
+                <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
+                Make Full Film
+              </DialogTitle>
+              {step === 'scenario' && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Review full scenario"
+                  onClick={() => setScenarioReviewOpen(true)}
+                  className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100"
+                >
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              )}
+            </div>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-sm font-semibold tracking-wide text-fuchsia-300">
                 Step {stepIndex} of 3
@@ -557,7 +715,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     ))}
                   </div>
                   <p className="text-[11px] text-zinc-500">
-                    {Math.ceil(duration / 15)} scenes × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
+                    {expectedPlanCount(duration)} shots × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
                   </p>
                 </div>
 
@@ -598,10 +756,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     {selectedProduct ? (
                       <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5">
                         <img src={selectedProduct.url} alt="Product" className="h-8 w-8 rounded object-cover" />
-                        <span className="text-xs text-zinc-300">{selectedProduct ? sanitizeProductName(selectedProduct.title) : 'Product'}</span>
+                        <span className="text-xs text-zinc-300">{currentProductName() || 'Product'}</span>
                         <button
                           type="button"
-                          onClick={() => setSelectedProduct(null)}
+                          onClick={() => { setSelectedProduct(null); setProductName('') }}
+                          aria-label="Remove product"
                           className="ml-1 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
                         >
                           <X className="h-3 w-3" />
@@ -620,6 +779,15 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       </Button>
                     )}
                   </div>
+                  <Input
+                    value={productName}
+                    onChange={(event) => setProductName(event.target.value)}
+                    maxLength={100}
+                    aria-label="Product name"
+                    placeholder="Product name (type manually or choose a saved product)"
+                    disabled={working}
+                    className="h-8 border-white/10 bg-white/[0.03] text-xs text-zinc-100 placeholder:text-zinc-500"
+                  />
                 </div>
 
                 {/* Character selector */}
@@ -835,25 +1003,29 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 <p className="text-sm text-zinc-300">
                   Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
                 </p>
-                {scenes.map((scene, i) => (
-                  <div key={i} className="space-y-1.5 rounded-md border border-white/10 bg-white/[0.02] p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                      Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
-                    </div>
-                    <Textarea
-                      value={scene}
-                      onChange={(e) =>
-                        setScenes((cur) => {
-                          const copy = [...cur]
-                          copy[i] = e.target.value
-                          return copy
-                        })
-                      }
-                      rows={3}
-                      className="resize-none border-white/10 bg-white/[0.03] text-sm text-zinc-100"
-                    />
+                <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-3 scroll-smooth [scrollbar-color:rgb(82_82_91)_transparent] [scrollbar-width:thin]">
+                  <div className="flex w-max snap-x snap-proximity gap-3">
+                    {plans.map((plan, i) => (
+                      <div key={i} className="w-[calc(100vw-4rem)] max-w-[34rem] shrink-0 snap-start space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4 sm:w-[30rem] lg:w-[34rem]">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
+                          Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
+                        </div>
+                        <Textarea
+                          value={plan.scenarioText}
+                          onChange={(e) =>
+                            setPlans((cur) => {
+                              const copy = [...cur]
+                              copy[i] = { ...copy[i], scenarioText: e.target.value }
+                              return copy
+                            })
+                          }
+                          rows={3}
+                          className="min-h-44 w-full resize-none overflow-y-auto border-white/10 bg-white/[0.03] text-sm leading-6 text-zinc-100 [overflow-wrap:anywhere]"
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
             )}
 
@@ -864,7 +1036,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {scenes.map((scene, i) => {
+                  {plans.map((plan, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
                     const sceneError = imageErrors[i]
@@ -872,7 +1044,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                            Scene {i + 1}
+                            Shot {i + 1}
                           </div>
                           <div className="flex items-center gap-1">
                             {url && (
@@ -880,7 +1052,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                                 type="button"
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => openLightbox(url, scene)}
+                                onClick={() => openLightbox(url, plan.scenarioText)}
                                 className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:text-fuchsia-100"
                               >
                                 <ZoomIn className="h-3.5 w-3.5" />
@@ -907,7 +1079,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                         <div 
                           className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer max-h-[240px]"
                           style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
-                          onClick={() => url && openLightbox(url, scene)}
+                          onClick={() => url && openLightbox(url, plan.scenarioText)}
                         >
                           {isRegen ? (
                             <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
@@ -925,7 +1097,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                             {sceneError}
                           </div>
                         )}
-                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{scene}</p>
+                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{plan.scenarioText}</p>
                       </div>
                     )
                   })}
@@ -979,7 +1151,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
               {step === 'prompt' && (
                 <Button
                   type="button"
-                  disabled={busy === 'scenario' || prompt.trim().length === 0}
+                  disabled={!canWriteScenario}
                   onClick={handleWriteScenario}
                   className="gap-1.5 bg-fuchsia-500/90 text-white hover:bg-fuchsia-500"
                 >
@@ -1023,6 +1195,47 @@ Each scene should flow logically into the next, building toward a single cohesiv
         </DialogContent>
       </Dialog>
 
+      {/* Scenario Review Dialog */}
+      <Dialog open={scenarioReviewOpen} onOpenChange={setScenarioReviewOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="text-base text-zinc-100">Scenario Review</DialogTitle>
+            <DialogDescription className="text-sm text-zinc-400">
+              Full film scenario with settings and every scene in order.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
+            <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 space-y-1 text-sm text-zinc-300">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Duration:</strong> {duration}s</span>
+                <span><strong className="text-zinc-200">Aspect:</strong> {aspect}</span>
+                <span><strong className="text-zinc-200">Narration:</strong> {withNarration ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Product:</strong> {currentProductName() || '—'}</span>
+                <span><strong className="text-zinc-200">Character:</strong> {selectedCharacter?.title || '—'}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Camera:</strong> {selectedCameraLabel}</span>
+                <span><strong className="text-zinc-200">Theme:</strong> {selectedThemeLabel}</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {plans.map((plan, i) => (
+                <div key={i} className="rounded-md border border-white/10 bg-white/[0.02] p-3 space-y-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
+                    Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
+                  </div>
+                  <p className="text-sm leading-6 text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                    {plan.scenarioText}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Camera Angle Picker Dialog */}
       <StylePickerDialog
         open={cameraPickerOpen}
@@ -1048,29 +1261,47 @@ Each scene should flow logically into the next, building toward a single cohesiv
       />
 
       {/* Product Picker Dialog */}
-      <Dialog open={productPickerOpen} onOpenChange={setProductPickerOpen}>
+      <Dialog open={productPickerOpen} onOpenChange={(open) => {
+        setProductPickerOpen(open)
+        if (open) {
+          productPickerControllerRef.current = new AbortController()
+          void loadProductPhotos()
+        } else {
+          productPickerControllerRef.current?.abort()
+          productPickerControllerRef.current = new AbortController()
+        }
+      }}>
         <DialogContent className="max-w-lg border-white/10 bg-zinc-950/95 text-zinc-100">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a product</DialogTitle>
+            <DialogDescription>
+              Select a saved product image to keep the product consistent throughout the film.
+            </DialogDescription>
           </DialogHeader>
           {loadingProducts ? (
             <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading products…
+            </div>
+          ) : productLoadError ? (
+            <div className="space-y-3 py-10 text-center text-sm text-rose-300">
+              <p>Could not load your saved products: {productLoadError}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => { void loadProductPhotos() }}>
+                Try again
+              </Button>
             </div>
           ) : productPhotos.length === 0 ? (
             <div className="py-10 text-center text-sm text-zinc-500">No saved product photos yet.</div>
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
               {productPhotos.map((photo) => (
-                <button
+                <ProductPickerCard
                   key={photo.id}
-                  type="button"
-                  onClick={() => pickProduct(photo)}
-                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-fuchsia-300/40"
-                >
-                  <img src={photo.url} alt={photo.title ?? 'Product'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
-                  <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
-                </button>
+                  photo={photo}
+                  bucket={PRODUCTS_BUCKET}
+                  userId={userId}
+                  controllerRef={productPickerControllerRef}
+                  onSelect={pickProduct}
+                />
               ))}
             </div>
           )}
@@ -1082,6 +1313,9 @@ Each scene should flow logically into the next, building toward a single cohesiv
         <DialogContent className="max-w-lg border-white/10 bg-zinc-950/95 text-zinc-100">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a character</DialogTitle>
+            <DialogDescription>
+              Select a saved character or character sheet to feature throughout the film.
+            </DialogDescription>
           </DialogHeader>
           {loadingCharacters ? (
             <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
@@ -1092,26 +1326,65 @@ Each scene should flow logically into the next, building toward a single cohesiv
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
               {characterPhotos.map((photo) => (
-                <button
+                <div
                   key={photo.id}
-                  type="button"
-                  onClick={() => pickCharacter(photo)}
-                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 transition hover:border-amber-300/40"
                 >
-                  <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
-                  <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => pickCharacter(photo)}
+                    className="block w-full text-left"
+                  >
+                    <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
+                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
+                  </button>
+                  {!isCharacterSheetRef(photo) ? (
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`Create character sheet for ${photo.title || 'Untitled'}`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openCharacterSheetFlow(photo)
+                            }}
+                            className="absolute right-1.5 top-1.5 grid h-10 w-10 touch-manipulation place-items-center rounded-full border border-white/15 bg-black/75 text-fuchsia-200 shadow-sm transition hover:border-fuchsia-300/50 hover:bg-fuchsia-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                          >
+                            <Sparkles className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Create character sheet
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : null}
+                </div>
               ))}
             </div>
           )}
         </DialogContent>
       </Dialog>
 
+      <CharacterSheetDialog
+        open={characterSheetSource !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setCharacterSheetSource(null)
+        }}
+        userId={userId}
+        initialCharacter={characterSheetSource}
+        onSheetCreated={handleCharacterSheetCreated}
+      />
+
       {/* Lightbox for zoom */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
         <DialogContent className="max-w-4xl border-white/10 bg-zinc-950/95 text-zinc-100">
           <DialogHeader>
             <DialogTitle className="text-base">Preview</DialogTitle>
+            <DialogDescription>
+              Review the selected scene image at full size before approving the film.
+            </DialogDescription>
           </DialogHeader>
           {lightboxImage && (
             <div className="flex flex-col items-center gap-3">
@@ -1126,3 +1399,171 @@ Each scene should flow logically into the next, building toward a single cohesiv
 }
 
 export default MakeFilmWizardDialog
+
+/**
+ * Per-card retry state.
+ *  'loading'   – signing in progress; spinner shown; disabled.
+ *  'ready'     – signed URL obtained; <img> rendered; onLoad will → 'idle'.
+ *  'idle'      – image loaded; selectable.
+ *  'retrying'  – re-sign after error; spinner shown; disabled.
+ *  'failed'    – exhausted retries; fallback shown; disabled.
+ */
+type CardRetryState = 'loading' | 'ready' | 'idle' | 'retrying' | 'failed'
+
+let globalCardEpoch = 0
+
+/**
+ * Re-sign a single product photo URL.  Stale responses (after dialog
+ * close, unmount, or user change) are dropped via an epoch nonce.
+ */
+function useResilientPhotoCard(
+  photo: ProductPhotoSource,
+  bucket: string,
+  userId: string | null,
+  controllerRef: React.MutableRefObject<AbortController | null>,
+) {
+  const [signedUrl, setSignedUrl] = useState<string>('')
+  const [retryState, setRetryState] = useState<CardRetryState>('loading')
+  const epochRef = useRef(0)
+  const retryCountRef = useRef(0)
+
+  // On mount or identity change, start signing.  Any previous epoch
+  // is implicitly abandoned by the component unmounting.
+  useEffect(() => {
+    let cancelled = false
+    setRetryState('loading')
+    setSignedUrl('')
+    retryCountRef.current = 0
+    const nonce = ++globalCardEpoch
+    epochRef.current = nonce
+
+    async function sign() {
+      try {
+        const fresh = await signStorageUrlDeduped(photo.storagePath, bucket, userId)
+        if (cancelled) return
+        if (epochRef.current !== nonce) return
+        setSignedUrl(fresh)
+        setRetryState('ready')
+      } catch {
+        if (cancelled) return
+        if (epochRef.current !== nonce) return
+        setRetryState('failed')
+      }
+    }
+
+    void sign()
+
+    return () => { cancelled = true }
+  }, [photo.id, photo.storagePath, bucket, userId])
+
+  const handleLoad = useCallback(() => {
+    setRetryState('idle')
+  }, [])
+
+  const handleRetry = useCallback(async () => {
+    const nonce = ++globalCardEpoch
+    epochRef.current = nonce
+    setRetryState('retrying')
+    try {
+      const fresh = await signStorageUrlDeduped(photo.storagePath, bucket, userId)
+      if (epochRef.current !== nonce) return
+      setSignedUrl(fresh)
+      setRetryState('ready')
+    } catch {
+      if (epochRef.current !== nonce) return
+      setRetryState('failed')
+    }
+  }, [photo.storagePath, bucket, userId])
+
+  const handleImageError = useCallback(() => {
+    if (retryCountRef.current === 0) {
+      retryCountRef.current = 1
+      void handleRetry()
+    } else {
+      setRetryState('failed')
+    }
+  }, [handleRetry])
+
+  return { signedUrl, retryState, handleLoad, handleImageError, handleRetry }
+}
+
+/**
+ * A single product card.  The image is never rendered with a raw
+ * storage path — a fresh signed URL is obtained first.  The card is
+ * disabled until the image successfully loads (onLoad).  onError
+ * triggers one automatic re-sign; a second failure shows a "Try again"
+ * button that executes a fresh signing attempt immediately.
+ */
+function ProductPickerCard({
+  photo,
+  bucket,
+  userId,
+  controllerRef,
+  onSelect,
+}: {
+  photo: ProductPhotoSource
+  bucket: string
+  userId: string | null
+  controllerRef: React.MutableRefObject<AbortController | null>
+  onSelect: (photo: ProductPhoto) => void
+}) {
+  const { signedUrl, retryState, handleLoad, handleImageError, handleRetry } = useResilientPhotoCard(
+    photo,
+    bucket,
+    userId,
+    controllerRef,
+  )
+  const selectable = retryState === 'idle' || retryState === 'ready'
+
+  if (retryState === 'failed') {
+    return (
+      <div className="relative overflow-hidden rounded-md border border-white/10 bg-zinc-900/60 p-2 text-center">
+        <div className="flex aspect-square w-full items-center justify-center bg-zinc-800/50">
+          <ImageIcon className="h-6 w-6 text-zinc-500" aria-hidden="true" />
+        </div>
+        <div className="mt-2 truncate text-[11px] text-zinc-400">{photo.title || 'Untitled'}</div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => { void handleRetry() }}
+          className="mt-1 h-6 text-[10px] text-rose-300 hover:text-rose-200"
+        >
+          <RefreshCw className="mr-1 h-3 w-3" aria-hidden="true" />
+          Try again
+        </Button>
+      </div>
+    )
+  }
+
+  const showSpinner = retryState === 'loading' || retryState === 'retrying'
+  const showImage = retryState === 'ready' || retryState === 'idle'
+
+  return (
+    <button
+      type="button"
+      disabled={!selectable}
+      onClick={() => onSelect({ id: photo.id, title: photo.title, url: signedUrl })}
+      className={`group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-fuchsia-300/40 ${
+        selectable ? '' : 'cursor-not-allowed opacity-60'
+      }`}
+    >
+      {showSpinner && (
+        <div className="flex aspect-square w-full items-center justify-center bg-black/40">
+          <LoaderCircle className="h-5 w-5 animate-spin text-zinc-300" aria-hidden="true" />
+        </div>
+      )}
+      {showImage && (
+        <img
+          src={signedUrl}
+          alt={photo.title ?? 'Product'}
+          loading="lazy"
+          className="aspect-square w-full bg-black/40 object-cover"
+          onLoad={handleLoad}
+          onError={handleImageError}
+        />
+      )}
+      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
+    </button>
+  )
+}

@@ -43,6 +43,44 @@ import scSteampunkWorkshop from '@/assets/style-previews/scene-steampunk-worksho
 import scJazzClub from '@/assets/style-previews/scene-jazz-club.mp4.asset.json'
 import scDarkAcademiaLibrary from '@/assets/style-previews/scene-dark-academia-library.mp4.asset.json'
 import scRetroDiner from '@/assets/style-previews/scene-retro-diner.mp4.asset.json'
+import scHighRiseTower from '@/assets/style-previews/scene-high-rise-tower.mp4.asset.json'
+import scSteelFramework from '@/assets/style-previews/scene-steel-framework.mp4.asset.json'
+import scConcretePour from '@/assets/style-previews/scene-concrete-pour.mp4.asset.json'
+import scRebarSite from '@/assets/style-previews/scene-rebar-site.mp4.asset.json'
+import scTowerCrane from '@/assets/style-previews/scene-tower-crane.mp4.asset.json'
+import scBridgeConstruction from '@/assets/style-previews/scene-bridge-construction.mp4.asset.json'
+import scRoadPaving from '@/assets/style-previews/scene-road-paving.mp4.asset.json'
+import scTunnelBoring from '@/assets/style-previews/scene-tunnel-boring.mp4.asset.json'
+import scFoundationEarthworks from '@/assets/style-previews/scene-foundation-earthworks.mp4.asset.json'
+import scScaffoldingFacade from '@/assets/style-previews/scene-scaffolding-facade.mp4.asset.json'
+import scResidentialBuild from '@/assets/style-previews/scene-residential-build.mp4.asset.json'
+import scPrefabModular from '@/assets/style-previews/scene-prefab-modular.mp4.asset.json'
+import scDemolitionSite from '@/assets/style-previews/scene-demolition-site.mp4.asset.json'
+import scDamHydro from '@/assets/style-previews/scene-dam-hydro.mp4.asset.json'
+import scRefineryBuild from '@/assets/style-previews/scene-refinery-build.mp4.asset.json'
+import scRenewableFarm from '@/assets/style-previews/scene-renewable-farm.mp4.asset.json'
+import scSiteSurvey from '@/assets/style-previews/scene-site-survey.mp4.asset.json'
+import scDeepPiling from '@/assets/style-previews/scene-deep-piling.mp4.asset.json'
+import scFormworkShuttering from '@/assets/style-previews/scene-formwork-shuttering.mp4.asset.json'
+import scPrecastYard from '@/assets/style-previews/scene-precast-yard.mp4.asset.json'
+import scMasonryBrick from '@/assets/style-previews/scene-masonry-brick.mp4.asset.json'
+import scStructuralWelding from '@/assets/style-previews/scene-structural-welding.mp4.asset.json'
+import scCurtainWall from '@/assets/style-previews/scene-curtain-wall.mp4.asset.json'
+import scRoofingWaterproofing from '@/assets/style-previews/scene-roofing-waterproofing.mp4.asset.json'
+import scMepInstall from '@/assets/style-previews/scene-mep-install.mp4.asset.json'
+import scElectricalWiring from '@/assets/style-previews/scene-electrical-wiring.mp4.asset.json'
+import scInteriorFitout from '@/assets/style-previews/scene-interior-fitout.mp4.asset.json'
+import scPlasteringFinishing from '@/assets/style-previews/scene-plastering-finishing.mp4.asset.json'
+import scElevatorShaft from '@/assets/style-previews/scene-elevator-shaft.mp4.asset.json'
+import scMetroRailway from '@/assets/style-previews/scene-metro-railway.mp4.asset.json'
+import scAirportRunway from '@/assets/style-previews/scene-airport-runway.mp4.asset.json'
+import scPortMarine from '@/assets/style-previews/scene-port-marine.mp4.asset.json'
+import scCanalWater from '@/assets/style-previews/scene-canal-water.mp4.asset.json'
+import scPipelineLaying from '@/assets/style-previews/scene-pipeline-laying.mp4.asset.json'
+import scPowerPlant from '@/assets/style-previews/scene-power-plant.mp4.asset.json'
+import scWarehouseLogistics from '@/assets/style-previews/scene-warehouse-logistics.mp4.asset.json'
+import scStadiumArena from '@/assets/style-previews/scene-stadium-arena.mp4.asset.json'
+import scNightConstruction from '@/assets/style-previews/scene-night-construction.mp4.asset.json'
 import vtFootballTeam from '@/assets/style-previews/vid-football-team.mp4.asset.json'
 import vtSportsHighlights from '@/assets/style-previews/vid-sports-highlights.mp4.asset.json'
 import vtFitness from '@/assets/style-previews/vid-fitness.mp4.asset.json'
@@ -89,6 +127,8 @@ export type StyleItem = {
   group?: string
   /** Optional looping preview clip URL shown on hover/tap in the Styles picker. */
   preview?: string
+  /** Optional static poster used by pickers before a preview is explicitly played. */
+  poster?: string
 }
 
 export type StyleSelection = {
@@ -267,32 +307,46 @@ export function countSelectedStyles(sel: StyleSelection): number {
 /**
  * A single selectable option for the Make Full Film wizard's Camera angle /
  * Visual theme dropdowns. Mirrors the shape the wizard's Select already uses
- * (value, label, prompt, imageUrl) plus an optional group label for the theme
- * subgroups (Genre / Scene / Video template).
+ * (value, label, prompt) plus separate static poster / opt-in video URLs and
+ * an optional group label for the theme subgroups (Genre / Scene / Video template).
  */
 export type WizardStyleOption = {
   value: string
   label: string
   prompt: string
-  imageUrl: string
+  posterUrl?: string
+  videoUrl?: string
   group?: string
+}
+
+const STYLE_POSTER_MODULES = import.meta.glob('../../../assets/style-posters/*.jpg', {
+  eager: true,
+  import: 'default',
+  query: '?url',
+}) as Record<string, string>
+
+function posterForVideo(videoUrl?: string): string | undefined {
+  const videoFilename = videoUrl?.split('/').pop()
+  if (!videoFilename) return undefined
+  const posterFilename = videoFilename.replace(/\.mp4(?:\?.*)?$/i, '.jpg')
+  return STYLE_POSTER_MODULES[`../../../assets/style-posters/${posterFilename}`]
 }
 
 /**
  * Build the Camera angle options for the Make Full Film wizard from the shared
  * dataset: an "auto" option plus every CAMERA_STYLES entry. The value is the
- * style id, the label/icon/prompt come from the shared item, and the preview
- * clip is used as the imageUrl so the wizard shows the same previews as the
- * composer's Styles picker.
+ * style id and label/prompt come from the shared item. A local static poster is
+ * shown in the grid while the existing preview clip remains opt-in.
  */
 export function buildWizardCameraOptions(): WizardStyleOption[] {
   return [
-    { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+    { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
     ...CAMERA_STYLES.map((s) => ({
       value: s.id,
       label: s.label,
       prompt: s.prompt,
-      imageUrl: s.preview ?? '/placeholder.svg',
+      posterUrl: s.poster ?? posterForVideo(s.preview),
+      videoUrl: s.preview,
     })),
   ]
 }
@@ -320,7 +374,8 @@ export function buildWizardThemeOptions(): WizardStyleOption[] {
       value: s.id,
       label: s.label,
       prompt: s.prompt,
-      imageUrl: s.preview ?? '/placeholder.svg',
+      posterUrl: s.poster ?? posterForVideo(s.preview),
+      videoUrl: s.preview,
       group: `Scene · ${group}`,
     })),
   ).flat()
@@ -329,17 +384,19 @@ export function buildWizardThemeOptions(): WizardStyleOption[] {
       value: t.id,
       label: t.label,
       prompt: t.prompt,
-      imageUrl: t.preview ?? '/placeholder.svg',
+      posterUrl: t.poster ?? posterForVideo(t.preview),
+      videoUrl: t.preview,
       group: `Template · ${group}`,
     })),
   ).flat()
   return [
-    { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+    { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
     ...GENRE_STYLES.map((g) => ({
       value: g.id,
       label: g.label,
       prompt: g.prompt,
-      imageUrl: g.preview ?? '/placeholder.svg',
+      posterUrl: g.poster ?? posterForVideo(g.preview),
+      videoUrl: g.preview,
       group: 'Genre & atmosphere',
     })),
     ...sceneGroups,
@@ -412,6 +469,44 @@ const STYLE_PREVIEWS: Record<string, string> = {
   'jazz-club': scJazzClub.url,
   'dark-academia-library': scDarkAcademiaLibrary.url,
   'retro-diner': scRetroDiner.url,
+  'high-rise-tower': scHighRiseTower.url,
+  'steel-framework': scSteelFramework.url,
+  'concrete-pour': scConcretePour.url,
+  'rebar-site': scRebarSite.url,
+  'tower-crane': scTowerCrane.url,
+  'bridge-construction': scBridgeConstruction.url,
+  'road-paving': scRoadPaving.url,
+  'tunnel-boring': scTunnelBoring.url,
+  'foundation-earthworks': scFoundationEarthworks.url,
+  'scaffolding-facade': scScaffoldingFacade.url,
+  'residential-build': scResidentialBuild.url,
+  'prefab-modular': scPrefabModular.url,
+  'demolition-site': scDemolitionSite.url,
+  'dam-hydro': scDamHydro.url,
+  'refinery-build': scRefineryBuild.url,
+  'renewable-farm': scRenewableFarm.url,
+  'site-survey': scSiteSurvey.url,
+  'deep-piling': scDeepPiling.url,
+  'formwork-shuttering': scFormworkShuttering.url,
+  'precast-yard': scPrecastYard.url,
+  'masonry-brick': scMasonryBrick.url,
+  'structural-welding': scStructuralWelding.url,
+  'curtain-wall': scCurtainWall.url,
+  'roofing-waterproofing': scRoofingWaterproofing.url,
+  'mep-install': scMepInstall.url,
+  'electrical-wiring': scElectricalWiring.url,
+  'interior-fitout': scInteriorFitout.url,
+  'plastering-finishing': scPlasteringFinishing.url,
+  'elevator-shaft': scElevatorShaft.url,
+  'metro-railway': scMetroRailway.url,
+  'airport-runway': scAirportRunway.url,
+  'port-marine': scPortMarine.url,
+  'canal-water': scCanalWater.url,
+  'pipeline-laying': scPipelineLaying.url,
+  'power-plant': scPowerPlant.url,
+  'warehouse-logistics': scWarehouseLogistics.url,
+  'stadium-arena': scStadiumArena.url,
+  'night-construction': scNightConstruction.url,
   // Template
   'football-team': vtFootballTeam.url,
   'sports-highlights': vtSportsHighlights.url,

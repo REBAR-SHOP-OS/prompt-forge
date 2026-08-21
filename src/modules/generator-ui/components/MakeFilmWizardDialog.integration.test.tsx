@@ -34,7 +34,10 @@ vi.mock('@/integrations/supabase/client', () => ({
 // wizard passes (urls + characterSheet flag) for both initial and Regenerate.
 const generateSceneImage = vi.fn(async () => 'data:image/png;base64,SCENE')
 
-const writeScenario = vi.fn(async () => ['Scene one', 'Scene two'])
+// For a 30s film, expectedPlanCount returns 6 plans.
+const writeScenario = vi.fn(async () => [
+  'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
+])
 
 const onApprove = vi.fn()
 
@@ -55,27 +58,42 @@ function renderWizard(overrides: Partial<Parameters<typeof MakeFilmWizardDialog>
   )
 }
 
-// Mock the character/product photo query to return controlled rows.
-function mockCharacterRows(rows: Array<{ id: string; title: string | null; image_type: string | null }>) {
+type MockPhotoRow = { id: string; title: string | null; image_type: string | null }
+
+const defaultProduct: MockPhotoRow = {
+  id: 'product-1',
+  title: 'Test product',
+  image_type: null,
+}
+
+// Mock both product and character queries while preserving their different
+// Supabase builder chains.
+function mockImageRows(
+  products: MockPhotoRow[] = [defaultProduct],
+  characters: MockPhotoRow[] = [],
+) {
   mockFrom.mockImplementation((table: string) => {
     if (table === 'generator_user_images') {
-      return {
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            is: vi.fn(() => ({
-              order: vi.fn(async () => ({
-                data: rows.map((r) => ({
-                  id: r.id,
-                  storage_path: `https://x/user/${r.id}.png`,
-                  title: r.title,
-                  category: 'character',
-                  image_type: r.image_type,
-                })),
-                error: null,
-              })),
-            })),
+      let category: string | undefined
+      const builder = {
+        eq: vi.fn((column: string, value: string) => {
+          if (column === 'category') category = value
+          return builder
+        }),
+        is: vi.fn(() => builder),
+        order: vi.fn(async () => ({
+          data: (category === 'product' ? products : characters).map((r) => ({
+            id: r.id,
+            storage_path: `https://x/user/${r.id}.png`,
+            title: r.title,
+            category: category ?? 'character',
+            image_type: r.image_type,
           })),
+          error: null,
         })),
+      }
+      return {
+        select: vi.fn(() => builder),
       }
     }
     return {
@@ -90,15 +108,189 @@ function mockCharacterRows(rows: Array<{ id: string; title: string | null; image
   })
 }
 
+function mockCharacterRows(rows: MockPhotoRow[]) {
+  mockImageRows([defaultProduct], rows)
+}
+
+async function chooseProduct(title = 'Test product') {
+  fireEvent.click(screen.getByText('Choose product'))
+  await waitFor(() => expect(screen.getByText(title)).toBeInTheDocument())
+  fireEvent.click(screen.getByText(title))
+}
+function mockRefreshableCharacterRows(
+  initialRows: Array<{ id: string; title: string | null; image_type: string | null }>,
+) {
+  let rows = [...initialRows]
+  const order = vi.fn(async () => ({
+    data: rows.map((r) => ({
+      id: r.id,
+      storage_path: `https://x.supabase.co/user-1/${r.id}.png`,
+      created_at: '2026-08-18T12:00:00Z',
+      title: r.title,
+      category: 'character',
+      image_type: r.image_type,
+    })),
+    error: null,
+  }))
+  const query: Record<string, ReturnType<typeof vi.fn>> = {}
+  query.select = vi.fn(() => query)
+  query.eq = vi.fn(() => query)
+  query.is = vi.fn(() => query)
+  query.order = order
+  mockFrom.mockImplementation((table: string) => {
+    if (table !== 'generator_user_images') throw new Error(`Unexpected table: ${table}`)
+    return query
+  })
+  return {
+    addRow(row: { id: string; title: string | null; image_type: string | null }) {
+      rows = [row, ...rows]
+    },
+    order,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   generateSceneImage.mockResolvedValue('data:image/png;base64,SCENE')
-  writeScenario.mockResolvedValue(['Scene one', 'Scene two'])
+  writeScenario.mockResolvedValue([
+    'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
+  ])
   onApprove.mockClear()
   mockInvoke.mockReset()
+  mockImageRows()
+})
+
+describe('MakeFilmWizardDialog scenario product requirement (integration)', () => {
+  it('requires a product, enables after selection, and disables immediately after removal', async () => {
+    renderWizard()
+    const writeButton = screen.getByRole('button', { name: 'Write scenario' })
+
+    expect(writeButton).toBeDisabled()
+    await chooseProduct()
+    expect(writeButton).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove product' }))
+    expect(writeButton).toBeDisabled()
+  }, 10_000)
+
+  it('guards the handler so writeScenario cannot run without a product', () => {
+    renderWizard()
+    const writeButton = screen.getByRole('button', { name: 'Write scenario' })
+
+    fireEvent.click(writeButton)
+
+    expect(writeScenario).not.toHaveBeenCalled()
+  })
 })
 
 describe('MakeFilmWizardDialog identity data path (integration)', () => {
+  it('gives every picker dialog an accessible description', async () => {
+    mockCharacterRows([])
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    expect(screen.getByRole('dialog', { name: 'Choose a product' })).toHaveAccessibleDescription(
+      'Select a saved product image to keep the product consistent throughout the film.',
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByText('Choose character'))
+    expect(screen.getByRole('dialog', { name: 'Choose a character' })).toHaveAccessibleDescription(
+      'Select a saved character or character sheet to feature throughout the film.',
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByLabelText(/^Camera angle:/))
+    expect(screen.getByRole('dialog', { name: 'Select Camera Angle' })).toHaveAccessibleDescription(
+      'Search the available styles, choose one option, and apply it to the film.',
+    )
+  })
+
+  it('opens the existing sheet flow from a plain character without selecting the card, then refreshes the picker', async () => {
+    const rows = mockRefreshableCharacterRows([
+      { id: 'sheet-1', title: 'Existing sheet', image_type: 'character_sheet' },
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    mockInvoke.mockImplementation(async (functionName: string) => {
+      expect(functionName).toBe('generate-character-sheet')
+      rows.addRow({ id: 'sheet-2', title: 'Sarah — sheet', image_type: 'character_sheet' })
+      return {
+        data: {
+          id: 'sheet-2',
+          storage_path: 'https://x.supabase.co/storage/v1/object/public/user-images/user-1/character-sheet-2.png',
+          title: 'Sarah — sheet',
+        },
+        error: null,
+      }
+    })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+
+    expect(screen.queryByRole('button', { name: 'Create character sheet for Existing sheet' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create character sheet for Sarah' }))
+
+    expect(screen.getByText('Source character')).toBeInTheDocument()
+    expect(screen.getAllByText('Sarah').length).toBeGreaterThan(0)
+    expect(screen.getByText('Choose character')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create character sheet' }))
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('generate-character-sheet', {
+      body: {
+        imageUrl: expect.stringContaining('plain-1'),
+        model: 'fast',
+        title: 'Sarah',
+      },
+    }))
+    await waitFor(() => expect(screen.getByText('Sarah — sheet')).toBeInTheDocument())
+    expect(rows.order.mock.calls.length).toBeGreaterThanOrEqual(3)
+
+    fireEvent.click(screen.getByText('Sarah — sheet'))
+    await waitFor(() => expect(screen.queryByText('Choose a character')).not.toBeInTheDocument())
+    expect(screen.getByText('Sarah — sheet')).toBeInTheDocument()
+  }, 10_000)
+
+  it('shows a readable sheet error and allows retry without duplicate in-flight clicks', async () => {
+    const rows = mockRefreshableCharacterRows([
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    let resolveFirst: ((value: { data: null; error: Error }) => void) | undefined
+    mockInvoke
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve
+      }))
+      .mockImplementationOnce(async () => {
+        rows.addRow({ id: 'sheet-2', title: 'Sarah — sheet', image_type: 'character_sheet' })
+        return {
+          data: {
+            id: 'sheet-2',
+            storage_path: 'https://x.supabase.co/storage/v1/object/public/user-images/user-1/character-sheet-2.png',
+            title: 'Sarah — sheet',
+          },
+          error: null,
+        }
+      })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Create character sheet for Sarah' }))
+
+    const createButton = screen.getByRole('button', { name: 'Create character sheet' })
+    fireEvent.click(createButton)
+    expect(createButton).toBeDisabled()
+    fireEvent.click(createButton)
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+
+    resolveFirst?.({ data: null, error: new Error('Rate limit reached. Try again in a moment.') })
+    await waitFor(() => expect(screen.getByText(/Could not create the character sheet: Rate limit reached/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByText('Sarah — sheet')).toBeInTheDocument())
+  })
+
   it('freezes the selection into a snapshot and passes url + characterSheet to initial generation', async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
@@ -112,19 +304,24 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     fireEvent.click(screen.getByText('My custom sheet'))
 
     // Write the scenario.
+    await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+
+    // Verify writeScenario was called with duration 30 (which produces 6 plans).
+    expect(writeScenario.mock.calls[0][1].duration).toBe(30)
 
     // Generate preview images.
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
-    // The initial generation must receive the sheet URL and characterSheet=true.
+    // The initial generation must receive the required product plus the sheet
+    // URL and characterSheet=true.
     const calls = generateSceneImage.mock.calls
     expect(calls.length).toBeGreaterThan(0)
     for (const c of calls) {
-      expect(c[2]).toBeUndefined() // no product
+      expect(c[2]).toContain('product-1')
       expect(c[3]).toContain('sheet-1') // character url from snapshot
       expect(c[6]).toBe(true) // characterSheet flag from snapshot
     }
@@ -141,11 +338,12 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     fireEvent.click(screen.getByText('Choose character'))
     await waitFor(() => expect(screen.getByText('My custom sheet')).toBeInTheDocument())
     fireEvent.click(screen.getByText('My custom sheet'))
+    await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
     generateSceneImage.mockClear()
 
     // Regenerate scene 0 directly from the images step. Regenerate must use the
@@ -160,6 +358,33 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     expect(c[6]).toBe(true)
   })
 
+  it('keeps the previous image when Regenerate fails identity validation', async () => {
+    mockCharacterRows([
+      { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
+    ])
+    generateSceneImage
+      .mockResolvedValueOnce('data:image/png;base64,FIRST')
+      .mockResolvedValueOnce('data:image/png;base64,SECOND')
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('My custom sheet')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('My custom sheet'))
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST'))
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SECOND'))
+
+    generateSceneImage.mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
+    fireEvent.click(screen.getAllByText('Regenerate')[0])
+
+    await waitFor(() => expect(screen.getAllByText(/Could not preserve every selected identity/i)).toHaveLength(2))
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST')
+  })
+
   it('Approve passes the frozen snapshot identity (url + name) from the generation run', async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
@@ -170,11 +395,12 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     fireEvent.click(screen.getByText('Choose character'))
     await waitFor(() => expect(screen.getByText('My custom sheet')).toBeInTheDocument())
     fireEvent.click(screen.getByText('My custom sheet'))
+    await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
     // Approve directly from the images step. The approved identity must be the
     // frozen snapshot (the sheet), matching what was previewed.
@@ -195,11 +421,12 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     fireEvent.click(screen.getByText('Choose character'))
     await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Sarah'))
+    await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
     for (const c of generateSceneImage.mock.calls) {
       expect(c[6]).toBe(false) // plain character -> not a sheet
@@ -252,6 +479,7 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     applyPicker()
 
     // Write the scenario.
+    await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
     await waitFor(() => expect(writeScenario).toHaveBeenCalled())
@@ -286,11 +514,12 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     fireEvent.click(screen.getByText('Heavy Industry Factory'))
     applyPicker()
 
+    await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
     generateSceneImage.mockClear()
 
     // Regenerate scene 0 — the creative must be preserved.
@@ -359,6 +588,54 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     expect(options.productName).toBe('stirup')
     // The raw title is never sent; the sanitized name is used in the prompt too.
     expect(options.productName).not.toContain('001')
+  })
+
+  it('uses a saved user product to prefill Product Name and preserves a manual override through prompt and film identity', async () => {
+    const productEq = vi.fn()
+    const productQuery = {
+      is: vi.fn(() => ({
+        order: vi.fn(async () => ({
+          data: [
+            { id: 'prod-2', storage_path: 'https://x/user/prod-2.png', title: 'Saved Widget', category: 'product' },
+          ],
+          error: null,
+        })),
+      })),
+    }
+    productEq.mockImplementation((column: string, value: string) => {
+      if (column === 'category' && value === 'product') return { eq: productEq }
+      if (column === 'user_id' && value === 'user-1') return productQuery
+      throw new Error(`Unexpected product filter: ${column}=${value}`)
+    })
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'generator_user_images') {
+        return { select: vi.fn(() => ({ eq: productEq })) }
+      }
+      throw new Error(`Unexpected table: ${table}`)
+    })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('Saved Widget')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Saved Widget'))
+
+    const productNameInput = screen.getByRole('textbox', { name: 'Product name' })
+    expect(productNameInput).toHaveValue('Saved Widget')
+    fireEvent.change(productNameInput, { target: { value: 'Manual Launch Name' } })
+
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    expect(productEq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(writeScenario.mock.calls[0][0]).toContain('PRODUCT TO FEATURE: Manual Launch Name')
+    expect(writeScenario.mock.calls[0][1].productName).toBe('Manual Launch Name')
+
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+    expect(onApprove.mock.calls[0][2].identity.productName).toBe('Manual Launch Name')
   })
 })
 

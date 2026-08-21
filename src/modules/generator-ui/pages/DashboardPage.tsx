@@ -125,6 +125,7 @@ import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { externalApiAdapterGateway, type LocalVideoStatusResult } from '@/modules/external-api-adapter/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { mergeVideoUrlsWebCodecs, canEncodeWithWebCodecs, WebCodecsUnsupportedError } from '@/modules/generator-ui/lib/mergeVideosWebCodecs'
+import { awaitUploadWithLateCleanup, createFinalFilmPipeline } from '@/modules/generator-ui/lib/finalFilmPipeline'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
   loadContinuity,
@@ -153,6 +154,12 @@ import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
+import {
+  GlobalSceneBatchError,
+  queueSceneBatch,
+  waitForSceneBatch,
+  type SceneBatchResult,
+} from '@/modules/generator-ui/lib/sceneBatch'
 import {
   type ModelMeta,
   getAvailableModels,
@@ -1074,7 +1081,7 @@ export default function DashboardPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
-  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string; narrationText: string | null; prompt: string | null } | null>(null)
+  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -3206,11 +3213,6 @@ export default function DashboardPage() {
   // preview images (each regenerable) → explicit approval → render. Nothing
   // renders until the user approves in this flow.
   const [isMakeFilmWizardOpen, setIsMakeFilmWizardOpen] = useState(false)
-  // Always-fresh pointer to handleMergeAllVideos so the long-lived auto-film
-  // orchestrator (which starts minutes before the batch completes) invokes the
-  // LATEST closure — reading current generatedVideos/activeJobIds state — instead
-  // of a stale merge function captured when the orchestrator was first called.
-  const handleMergeAllVideosRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
@@ -7183,6 +7185,8 @@ export default function DashboardPage() {
       theme?: string
       /** When false, no narration/voiceover is produced for any clip. */
       withNarration?: boolean
+      /** Explicit flag: true when the wizard produced plan-based 5s shots. */
+      isPlanBased?: boolean
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7209,7 +7213,14 @@ export default function DashboardPage() {
     // supports (5 | 10 | 15). The sum always equals the chosen total.
     const totalDuration = opts?.durationSeconds ?? durationSeconds
     const clipDurations = computeClipDurations(totalDuration)
-    const perClipDuration: 5 | 10 | 15 = clipDurations[0] ?? 15
+    // For plan-based films (Make Full Film wizard), every plan is a 5-second clip.
+    // Use the explicit isPlanBased flag when provided; otherwise fall back to the
+    // legacy heuristic for backward compatibility.
+    const isPlanBased = opts?.isPlanBased ?? (
+      opts?.perSceneImageUrls && opts.perSceneImageUrls.length > 0 &&
+      (opts.durationSeconds ?? durationSeconds) / (opts.perSceneImageUrls.length || 1) === 5
+    )
+    const perClipDuration: 5 | 10 | 15 = isPlanBased ? 5 : (clipDurations[0] ?? 15)
 
     // The wizard's product/character selections win when supplied; otherwise
     // fall back to the composer's pinned product/character.
@@ -7253,19 +7264,20 @@ export default function DashboardPage() {
     const hasPerSceneImages = Boolean(
       opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
     )
+    // The review wizard supplies one approved image slot per scene. That makes
+    // every scene an independent job: no scene waits for a previous render or
+    // consumes its last frame. Other callers retain the legacy chained flow.
+    const isIndependentSceneBatch = Array.isArray(opts?.perSceneImageUrls)
     const scenarioModel =
       continuityCharacterRef || activeProduct || hasPerSceneImages
         ? toImageToVideoModel(selectedModel)
         : selectedModel
     if (continuityCharacterRef || activeProduct || hasPerSceneImages) setGenerationMode('image-to-video')
-    // Job ids created in this batch, returned so an orchestrator can await the
-    // batch's completion (e.g. to auto-assemble the Final Film).
+    // Job ids created in this batch, returned so the caller can report each
+    // clip's terminal state. Final Film assembly remains a manual action.
     const createdJobIds: string[] = []
-    try {
-      for (let i = 0; i < scenes.length; i++) {
-        const sourcePrompt = scenes[i].trim()
-        if (!sourcePrompt) continue
-        const sceneLabel = `Scene ${i + 1}`
+    const queueScene = async (sourcePrompt: string, i: number): Promise<string> => {
+      const sceneLabel = `Scene ${i + 1}`
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited. When the
         // wizard chose "Without narration", suppress narration entirely.
@@ -7299,9 +7311,10 @@ export default function DashboardPage() {
         const perSceneImageUrl = opts?.perSceneImageUrls?.[i]
         if (perSceneImageUrl) {
           startFrameUrl = perSceneImageUrl
-          // Keep continuity: capture the previous clip's last frame as the end
-          // frame for this scene so the sequence still flows from scene to scene.
-          if (i > 0 && previousJobId) {
+          // Legacy chained callers may still interpolate from the previous
+          // clip. Wizard batches never wait here: each approved image starts an
+          // independent job and one failed scene cannot block the next queue.
+          if (!isIndependentSceneBatch && i > 0 && previousJobId) {
             try {
               endFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
             } catch (err) {
@@ -7313,8 +7326,12 @@ export default function DashboardPage() {
               endFrameUrl = undefined
             }
           }
-        } else if (i === 0) {
-          startFrameUrl = firstSceneImageUrl
+        } else if (i === 0 || isIndependentSceneBatch) {
+          // A missing wizard image never falls back to another scene's image.
+          // Scene 1 may still use the caller's explicit first-frame fallback;
+          // later scenes remain independent and unseeded unless identity prep
+          // below creates their own frame.
+          startFrameUrl = i === 0 ? firstSceneImageUrl : undefined
           // No uploaded start frame but a character is anchored: build a clean
           // single-view start frame from the Character Sheet so card 1 locks onto
           // the character instead of drifting in pure text-to-video.
@@ -7388,10 +7405,32 @@ export default function DashboardPage() {
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
-        previousJobId = seededJob.id
-        createdJobIds.push(seededJob.id)
+        if (!isIndependentSceneBatch) previousJobId = seededJob.id
+        return seededJob.id
+    }
+    try {
+      if (isIndependentSceneBatch) {
+        const queueResult = await queueSceneBatch(
+          scenes,
+          queueScene,
+          (failure) => {
+            console.error(`Scene ${failure.sceneIndex + 1}: queue failed`, failure.message)
+          },
+        )
+        createdJobIds.push(...queueResult.jobIds)
+        if (queueResult.failed.length > 0) {
+          setVideoColumnMessage(
+            `${queueResult.jobIds.length} scene${queueResult.jobIds.length === 1 ? '' : 's'} queued; ${queueResult.failed.length} failed to queue.`,
+          )
+        }
+      } else {
+        for (let i = 0; i < scenes.length; i += 1) {
+          const sourcePrompt = scenes[i].trim()
+          if (!sourcePrompt) continue
+          createdJobIds.push(await queueScene(sourcePrompt, i))
+        }
       }
-      setVideoColumnMessage(null)
+      if (!isIndependentSceneBatch) setVideoColumnMessage(null)
       return createdJobIds
     } catch (error) {
       if (error instanceof ApiError && error.code === 'TIMEOUT') {
@@ -7434,33 +7473,15 @@ export default function DashboardPage() {
     return await signFramesUrl(storagePath).catch(() => data.publicUrl)
   }
 
-  // Poll the created jobs directly until every one reaches a terminal state,
-  // merging each finished detail into state so the subsequent Final Film merge
-  // sees the completed clips. Returns true when at least one clip completed with
-  // a playable video. Independent of the component's own poll loop (that loop
-  // also runs; both are idempotent reads).
-  async function waitForAutoFilmBatch(jobIds: string[]): Promise<boolean> {
-    const deadline = Date.now() + 45 * 60_000
-    const pending = new Set(jobIds)
-    let anyPlayable = false
-    while (pending.size > 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5_000))
-      for (const id of Array.from(pending)) {
-        let detail: JobDetail
-        try {
-          detail = await jobOrchestratorGateway.getJob(id)
-        } catch {
-          continue // transient poll failure — retry on the next tick
-        }
-        if (!isTerminalStatus(detail.status)) continue
-        pending.delete(id)
-        setGeneratedVideos((cur) => mergeJob(cur, detail))
-        if (normalizeStatus(detail.status) === 'completed' && detail.video?.storage_path) {
-          anyPlayable = true
-        }
-      }
-    }
-    return anyPlayable && pending.size === 0
+  // Poll every wizard clip independently with a hard deadline. Successful
+  // cards are preserved as they settle; failed and timed-out clips stay
+  // separate in the returned summary.
+  async function waitForApprovedFilmBatch(jobIds: string[]): Promise<SceneBatchResult> {
+    return await waitForSceneBatch(jobIds, jobOrchestratorGateway.getJob, {
+      onSettled: (detail) => {
+        setGeneratedVideos((cur) => mergeJob(cur, detail as JobDetail))
+      },
+    })
   }
 
   // ── Gated "Make Full Film" wizard helpers ────────────────────────────────
@@ -7527,6 +7548,7 @@ export default function DashboardPage() {
           withNarration: options?.withNarration,
           cameraStyle: options?.cameraStyle,
           genre: options?.theme,
+          unit: "plan",
         },
       })
       if (error) throw error
@@ -7607,7 +7629,13 @@ export default function DashboardPage() {
       })
       if (!composePrompt) throw new Error('Could not build the scene composition prompt')
       const { data: cData, error: cErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: composePrompt, imageUrls: [productUrl, characterUrl], aspectRatio: ratio },
+        body: {
+          prompt: composePrompt,
+          imageUrls: [productUrl, characterUrl],
+          referenceRoles: ['product', 'character'],
+          referenceCharacterSheets: [false, !!characterSheet],
+          aspectRatio: ratio,
+        },
       })
       if (cErr) throw cErr
       const composedUrl = (cData as { dataUrl?: unknown } | null)?.dataUrl
@@ -7651,9 +7679,9 @@ export default function DashboardPage() {
     return await stageImageIntoFramesBucket(dataUrl)
   }
 
-  // Step 3 (ONLY after the explicit Approve click) — seed one video job per
-  // scene with the approved preview images, await the whole batch, then
-  // auto-assemble the Final Film via the existing merge path.
+  // Step 3 (ONLY after the explicit Approve click) — seed one independent video
+  // job per approved scene and report the batch. Final Film assembly remains a
+  // separate manual action through the existing Final Film button.
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
@@ -7714,33 +7742,35 @@ export default function DashboardPage() {
         theme: options?.creative?.theme,
         withNarration: options?.withNarration,
       })
+      const requestedSceneCount = scenes.filter((scene) => scene.trim().length > 0).length
+      const queueFailedCount = Math.max(0, requestedSceneCount - createdJobIds.length)
       if (!createdJobIds || createdJobIds.length === 0) {
-        throw new Error('No scenes could be queued for the film.')
+        setComposerError('No scenes could be queued for the film.')
+        setVideoColumnMessage(`No clips finished. ${queueFailedCount} failed to queue; 0 pending.`)
+        return
       }
       // Clear the composer prompt like the existing auto-split path does.
       setPromptText('')
 
-      // Wait for the whole batch.
+      // Wait for queued clips with a bounded poll. Completed cards are kept
+      // even when another clip fails or remains pending at the deadline.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
-      const anyPlayable = await waitForAutoFilmBatch(createdJobIds)
-      if (!anyPlayable) {
+      const batch = await waitForApprovedFilmBatch(createdJobIds)
+      const failedCount = queueFailedCount + batch.failed.length
+      if (batch.completed.length === 0) {
         setComposerError('The scenes did not finish rendering — please try again.')
-        setVideoColumnMessage('No scenes finished rendering. Nothing to assemble.')
+        setVideoColumnMessage(
+          `No clips finished. ${failedCount} failed; ${batch.pending.length} still pending after the wait limit.`,
+        )
         return
       }
-      setVideoColumnMessage('All scenes ready — assembling your Final Film…')
-      // Auto-assemble the Final Film through the existing merge path once every
-      // scene has succeeded, so the user gets a complete film without a manual
-      // step. handleMergeAllVideosRef always points at the current handler.
-      try {
-        await handleMergeAllVideosRef.current()
-      } catch (mergeErr) {
-        const msg = mergeErr instanceof Error ? mergeErr.message : 'Could not assemble the Final Film.'
-        setComposerError(msg)
-        setVideoColumnMessage(msg)
-      }
+      const statusParts = [`${batch.completed.length} clip${batch.completed.length === 1 ? '' : 's'} ready`]
+      if (failedCount > 0) statusParts.push(`${failedCount} failed`)
+      if (batch.pending.length > 0) statusParts.push(`${batch.pending.length} still pending`)
+      setVideoColumnMessage(`${statusParts.join('; ')}. Use Final Film when you are ready to assemble them.`)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Could not generate the film.'
+      const rootError = err instanceof GlobalSceneBatchError ? err.cause : err
+      const msg = generationStartErrorMessage(rootError, 'Could not generate the film.')
       setComposerError(msg)
       setVideoColumnMessage(msg)
     } finally {
@@ -8280,26 +8310,58 @@ export default function DashboardPage() {
       return
     }
 
+    setIsMerging(true)
+    setMergeProgress(0)
+    setMergeStage(null)
+    setVideoColumnMessage(null)
+    const pipeline = createFinalFilmPipeline(10 * 60_000)
+    mergeAbortRef.current = pipeline.controller
+    const stopPipelineUi = () => {
+      pipeline.finish()
+      mergeAbortRef.current = null
+      setIsMerging(false)
+      setMergeProgress(0)
+      setMergeStage(null)
+    }
+
     // Pre-flight: verify each video clip's source file is actually reachable.
     // Stale snapshots in localStorage can reference Veo files that were deleted
     // on the server; those would 404 inside mergeVideoUrls and abort the whole
     // Final Film with an opaque "Failed to load video" error.
     const brokenClips: { id: string; filename: string; jobId: string }[] = []
     {
-      const checks = await Promise.all(
-        eligibleClips.map(async (clip) => {
-          if (clip.kind !== 'video') return { clip, ok: true }
-          const src = clip.job.video?.storage_path as string | undefined
-          if (!src) return { clip, ok: false }
-          try {
-            const probeUrl = await proxiedVideoUrl(src)
-            const res = await fetch(probeUrl, { method: 'HEAD', cache: 'no-store' })
-            return { clip, ok: res.ok }
-          } catch {
-            return { clip, ok: false }
-          }
-        }),
-      )
+      let checks: { clip: UnifiedClip; ok: boolean }[]
+      try {
+        checks = await pipeline.race(Promise.all(
+          eligibleClips.map(async (clip) => {
+            if (clip.kind !== 'video') return { clip, ok: true }
+            const src = clip.job.video?.storage_path as string | undefined
+            if (!src) return { clip, ok: false }
+            try {
+              const probeUrl = await pipeline.race(proxiedVideoUrl(src))
+              const res = await pipeline.race(fetch(probeUrl, {
+                method: 'HEAD',
+                cache: 'no-store',
+                signal: pipeline.signal,
+              }))
+              return { clip, ok: res.ok }
+            } catch {
+              if (pipeline.signal.aborted) throw pipeline.signal.reason
+              return { clip, ok: false }
+            }
+          }),
+        ))
+      } catch (error) {
+        stopPipelineUi()
+        setVideoColumnMessage(
+          error instanceof MergeCancelledError
+            ? 'Rendering cancelled.'
+            : error instanceof Error
+              ? error.message
+              : 'Could not verify source videos.',
+        )
+        return
+      }
       const goodClips: UnifiedClip[] = []
       for (const { clip, ok } of checks) {
         if (ok) {
@@ -8341,14 +8403,11 @@ export default function DashboardPage() {
           ? `Source file(s) missing on server: ${names}. Broken clip(s) removed from workspace — please regenerate.`
           : 'Need at least 1 finished item (video or image) to finalize.',
       )
+      stopPipelineUi()
       return
     }
 
     // Single-clip Final Film is always allowed — edits and audio are optional.
-    setIsMerging(true)
-    setMergeProgress(0)
-    setMergeStage(null)
-    setVideoColumnMessage(null)
     // Final Film now saves the recorder's stable WebM output directly. Do not
     // pre-load ffmpeg.wasm here; that was the root cause of long projects
     // freezing around the old 95% encoding stage.
@@ -8359,10 +8418,11 @@ export default function DashboardPage() {
     // Pre-flight: refresh the auth session so the storage upload at the end
     // of Final Film never fails with a stale token (which would otherwise
     // leave the UI stuck right after the merge finalizes).
-    try { await supabase.auth.refreshSession() } catch { /* ignore */ }
-    // Declared here so the `finally` block can always clear it on success.
-    let pipelineTimer: ReturnType<typeof setTimeout> | null = null
     try {
+      try { await pipeline.race(supabase.auth.refreshSession()) } catch {
+        if (pipeline.signal.aborted) throw pipeline.signal.reason
+        // A refresh failure is non-fatal; the existing session may still work.
+      }
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
       const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
@@ -8372,8 +8432,8 @@ export default function DashboardPage() {
         : undefined
       if (firstVideoSrc) {
         try {
-          const probeUrl = await proxiedVideoUrl(firstVideoSrc)
-          targetSize = await new Promise((resolve) => {
+          const probeUrl = await pipeline.race(proxiedVideoUrl(firstVideoSrc))
+          targetSize = await pipeline.race(new Promise((resolve) => {
             const v = document.createElement('video')
             v.crossOrigin = 'anonymous'
             v.muted = true
@@ -8381,8 +8441,11 @@ export default function DashboardPage() {
             v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
             v.onerror = () => resolve({ width: 1280, height: 720 })
             v.src = probeUrl
-          })
-        } catch { targetSize = { width: 1280, height: 720 } }
+          }))
+        } catch {
+          if (pipeline.signal.aborted) throw pipeline.signal.reason
+          targetSize = { width: 1280, height: 720 }
+        }
       } else {
         const r = aspectRatio
         targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
@@ -8402,11 +8465,11 @@ export default function DashboardPage() {
           const rawSrc =
             editedClips[clip.job.id]?.url ??
             (clip.job.video!.storage_path as string)
-          const src = await proxiedVideoUrl(rawSrc)
+          const src = await pipeline.race(proxiedVideoUrl(rawSrc))
           mergeClips.push({ kind: 'video', url: src })
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          const src = await proxiedVideoUrl(clip.image.storage_path)
+          const src = await pipeline.race(proxiedVideoUrl(clip.image.storage_path))
           mergeClips.push({ kind: 'image', url: src, durationSec: seconds })
         }
       }
@@ -8416,9 +8479,10 @@ export default function DashboardPage() {
       // thumbnail. It is held for the user-configured cover duration.
       if (currentCover?.storage_path) {
         try {
-          const coverSrc = await proxiedVideoUrl(currentCover.storage_path)
+          const coverSrc = await pipeline.race(proxiedVideoUrl(currentCover.storage_path))
           mergeClips.unshift({ kind: 'image', url: coverSrc, durationSec: currentCoverDuration })
         } catch (e) {
+          if (pipeline.signal.aborted) throw pipeline.signal.reason
           console.warn('[merge] could not load cover image, skipping cover:', e)
         }
       }
@@ -8466,18 +8530,6 @@ export default function DashboardPage() {
             clipVolume: mixedClipVolume,
           }
         : undefined
-      // Overall pipeline watchdog: if the entire merge+transcode+upload chain
-      // hasn't finished in 10 min, surface a clear error instead of leaving
-      // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
-      // successful run never leaves a dangling 10-min timeout behind.
-      const PIPELINE_TIMEOUT_MS = 10 * 60_000
-      const pipelineTimeout = new Promise<never>((_, reject) => {
-        pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
-      })
-
-      const abortController = new AbortController()
-      mergeAbortRef.current = abortController
-
       const overlayArg = contactActive
         ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
         : undefined
@@ -8497,10 +8549,9 @@ export default function DashboardPage() {
         }
       }
       type MergeFn = typeof mergeVideoUrls
-      const runMerge = (fn: MergeFn) => Promise.race([
-        fn(mergeClips, mergeProgressCb, audioOpt, transitionsForMerge, abortController.signal, overlayArg),
-        pipelineTimeout,
-      ])
+      const runMerge = (fn: MergeFn) => pipeline.race(
+        fn(mergeClips, mergeProgressCb, audioOpt, transitionsForMerge, pipeline.signal, overlayArg),
+      )
 
       // Prefer the deterministic WebCodecs MP4 encoder — it produces a smooth,
       // lag-free file because encoding is decoupled from wall-clock. Fall back
@@ -8522,23 +8573,25 @@ export default function DashboardPage() {
         mergeRes = await runMerge(mergeVideoUrls)
       }
 
-      if (abortController.signal.aborted) throw new MergeCancelledError()
+      if (pipeline.signal.aborted) throw pipeline.signal.reason
 
       setMergeStage('uploading')
       setMergeProgress(99)
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
-      // Hard timeout on the upload: if Supabase storage hangs (network/CDN
-      // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
-      // a typical Final Film blob (<200MB).
       const uploadPromise = supabase.storage
         .from(MERGED_BUCKET)
         .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
-      const uploadTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
+      const { error: upErr } = await awaitUploadWithLateCleanup(
+        uploadPromise,
+        pipeline.race,
+        async () => {
+          const { error } = await supabase.storage.from(MERGED_BUCKET).remove([storagePath])
+          if (error) console.warn('[merge] failed to clean up late upload', { storagePath, error })
+        },
       )
-      const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
       if (upErr) throw new Error(upErr.message)
+      pipeline.finish()
 
       setMergeProgress(100)
       setMergeStage(null)
@@ -8857,7 +8910,7 @@ export default function DashboardPage() {
       setVideoColumnMessage(friendly)
       }
     } finally {
-      if (pipelineTimer) { clearTimeout(pipelineTimer); pipelineTimer = null }
+      pipeline.finish()
       mergeAbortRef.current = null
       setIsMerging(false)
       setMergeProgress(0)
@@ -8865,13 +8918,6 @@ export default function DashboardPage() {
     }
 
   }
-
-  // Keep the merge ref pointing at the current-render closure so the auto-film
-  // orchestrator always merges with up-to-date state. No dep array: refreshes
-  // after every render, which is exactly when the closed-over state changes.
-  useEffect(() => {
-    handleMergeAllVideosRef.current = handleMergeAllVideos
-  })
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
@@ -10207,18 +10253,15 @@ export default function DashboardPage() {
               setPreviewVideoId(null)
               setPreviewDismissed(false)
             }}
-            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition ${
+            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-cyan-400/20 ${
               hasReadyClips
-                ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100 shadow-[0_0_18px_-4px_rgba(16,185,129,0.7)] hover:border-emerald-300/60 hover:bg-emerald-400/25'
-                : 'border-white/10 bg-white/[0.04] text-zinc-400/70'
+                ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-200 hover:border-cyan-300/65 hover:bg-cyan-400/15 hover:text-cyan-100'
+                : 'border-cyan-400/20 bg-cyan-400/[0.04] text-cyan-200/60 hover:border-cyan-400/30 hover:bg-cyan-400/[0.07] hover:text-cyan-100/75'
             }`}
             aria-label="Connect all cards into one continuous preview"
             title="Connect all cards into one continuous preview"
           >
-            {hasReadyClips ? (
-              <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-emerald-400/50 animate-ping" aria-hidden="true" />
-            ) : null}
-            <Play className={`relative h-[14px] w-[14px] ${hasReadyClips ? 'animate-pulse' : ''}`} aria-hidden="true" />
+            <Play className="relative h-[14px] w-[14px]" aria-hidden="true" />
             <span className="relative hidden xl:inline">Preview</span>
           </button>
         )
@@ -10227,7 +10270,7 @@ export default function DashboardPage() {
 
         <AlertDialogTrigger asChild>
           <button
-            className="flex h-9 items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-violet-300 transition hover:border-violet-300/60 hover:bg-violet-400/[0.15] hover:text-violet-100"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-violet-300 transition hover:border-violet-300/60 hover:bg-violet-400/[0.15] hover:text-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-violet-400/20"
             type="button"
             aria-label="Start over"
           >
@@ -10376,7 +10419,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsMakeFilmWizardOpen(true)}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-fuchsia-300/30 hover:bg-fuchsia-300/[0.06] hover:text-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-9 items-center gap-1.5 rounded-md border border-orange-400/40 bg-orange-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-orange-200 transition hover:border-orange-300/60 hover:bg-orange-400/[0.15] hover:text-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-orange-400/20 disabled:cursor-not-allowed disabled:border-orange-400/15 disabled:bg-orange-400/[0.03] disabled:text-orange-200/45 disabled:opacity-100 disabled:hover:border-orange-400/15 disabled:hover:bg-orange-400/[0.03] disabled:hover:text-orange-200/45"
         aria-label="Open the Make Full Film review wizard"
         title="Make full film: review the scenario and preview images before rendering"
       >
@@ -10389,7 +10432,7 @@ export default function DashboardPage() {
       </button>
 
       {isMerging ? (
-        <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
+        <div className="flex h-9 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/[0.06] px-2 text-xs uppercase tracking-[0.18em] text-emerald-200/80">
           <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
           <span className="tabular-nums px-1">
             {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
@@ -10397,7 +10440,7 @@ export default function DashboardPage() {
           </span>
           <button
             type="button"
-            onClick={() => { mergeAbortRef.current?.abort() }}
+            onClick={() => { mergeAbortRef.current?.abort(new MergeCancelledError()) }}
             className="ml-1 grid h-6 w-6 place-items-center rounded text-zinc-300 transition hover:bg-red-500/20 hover:text-red-200"
             aria-label="Cancel rendering"
             title="Cancel rendering"
@@ -10410,7 +10453,7 @@ export default function DashboardPage() {
           type="button"
           onClick={handleMergeAllVideos}
           disabled={(Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
-          className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-9 items-center gap-1.5 rounded-md border border-emerald-400/40 bg-emerald-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/[0.15] hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-emerald-400/20 disabled:cursor-not-allowed disabled:border-emerald-400/15 disabled:bg-emerald-400/[0.03] disabled:text-emerald-200/45 disabled:opacity-100 disabled:hover:border-emerald-400/15 disabled:hover:bg-emerald-400/[0.03] disabled:hover:text-emerald-200/45"
           aria-label="Save cards as a final film"
           title={(() => {
             const totalCards = completedSourceVideos.length + visibleUserImages.length
@@ -10443,7 +10486,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={handleMusicButtonClick}
-          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100"
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-yellow-400/20"
           aria-label="Edit soundtrack"
           title="Edit soundtrack"
         >
@@ -10466,7 +10509,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={() => musicFileInputRef.current?.click()}
-          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100"
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-yellow-400/20"
           aria-label="Add soundtrack"
           title="Upload a music file as soundtrack for the Final Film"
         >
@@ -10478,7 +10521,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsVoiceoverOpen(true)}
-        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-red-300 transition hover:border-red-400/60 hover:bg-red-500/[0.15] hover:text-red-100"
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-rose-400/40 bg-rose-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-rose-300 transition hover:border-rose-300/60 hover:bg-rose-400/[0.15] hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-rose-400/20"
         aria-label={voiceoverUrl ? 'Replace voiceover' : 'Generate AI voiceover'}
         title={voiceoverUrl ? 'Replace AI voiceover' : 'Generate an AI voiceover from text (Gemini)'}
       >
@@ -10550,10 +10593,10 @@ export default function DashboardPage() {
         userId={userId}
         writeScenario={writeFilmScenario}
         generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet) =>
-          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText, creative, characterSheet)
+          generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
-          void renderApprovedFilm(scenes, perSceneImageUrls, options)
+          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
         }}
       />
 
@@ -12334,20 +12377,10 @@ export default function DashboardPage() {
                               setNarrationReview({
                                 cardId: video.id,
                                 storagePath: video.video?.storage_path ?? '',
-                                // narration_text is set on new merged entries at merge time.
-                                // For legacy Final films already saved to localStorage without
-                                // narration_text, fall back to aggregating from source clips.
-                                narrationText:
-                                  video.narration_text ??
-                                  ((projectSourceJobs[video.id] ?? [])
-                                    .map((j) => j.narration_text)
-                                    .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-                                    .join('\n') || null),
-                                prompt: video.input_prompt ?? null,
                               })
                             }}
-                            aria-label="Review narration"
-                            title="Review narration"
+                            aria-label="Transcribe film audio"
+                            title="Transcribe speech from this film"
                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
                           >
                             <ScanText className="h-3 w-3" aria-hidden="true" />
@@ -12389,8 +12422,6 @@ export default function DashboardPage() {
                       open={narrationReview?.cardId === video.id}
                       onClose={() => setNarrationReview(null)}
                       videoStoragePath={narrationReview?.cardId === video.id ? (narrationReview.storagePath || null) : null}
-                      narrationText={narrationReview?.cardId === video.id ? narrationReview.narrationText : null}
-                      prompt={narrationReview?.cardId === video.id ? narrationReview.prompt : null}
                     />
                   ) : null}
                 </article>

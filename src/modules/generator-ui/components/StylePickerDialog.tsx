@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { X, Search, Check, Film, Clapperboard, ImageIcon } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { X, Search, Check, Film, Clapperboard, ImageIcon, Play } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
@@ -26,18 +26,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'template', label: 'Template' },
 ]
 
-// Check if a URL is likely a video based on path patterns from promptStyles.ts
-function isVideoUrl(url: string): boolean {
-  const lowerUrl = url.toLowerCase()
-  return (
-    lowerUrl.endsWith('.mp4') ||
-    lowerUrl.includes('/cam-') ||
-    lowerUrl.includes('/genre-') ||
-    lowerUrl.includes('/scene-') ||
-    lowerUrl.includes('/vid-')
-  )
-}
-
 export function StylePickerDialog({
   open,
   onOpenChange,
@@ -51,6 +39,9 @@ export function StylePickerDialog({
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<TabKey>('all')
   const [pendingSelection, setPendingSelection] = useState<string>(selectedValue)
+  const [previewingValue, setPreviewingValue] = useState<string | null>(null)
+  const [failedPosters, setFailedPosters] = useState<Set<string>>(() => new Set())
+  const [failedVideos, setFailedVideos] = useState<Set<string>>(() => new Set())
 
   // Reset pending selection when dialog opens
   useEffect(() => {
@@ -58,6 +49,11 @@ export function StylePickerDialog({
       setPendingSelection(selectedValue)
       setSearchQuery('')
       setActiveTab('all')
+      setPreviewingValue(null)
+      setFailedPosters(new Set())
+      setFailedVideos(new Set())
+    } else {
+      setPreviewingValue(null)
     }
   }, [open, selectedValue])
 
@@ -109,6 +105,7 @@ export function StylePickerDialog({
   }, [filteredOptions])
 
   const handleApply = useCallback(() => {
+    setPreviewingValue(null)
     onSelect(pendingSelection)
     onApply()
     onOpenChange(false)
@@ -121,6 +118,7 @@ export function StylePickerDialog({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
+        setPreviewingValue(null)
         onOpenChange(false)
       } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
@@ -132,76 +130,39 @@ export function StylePickerDialog({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [open, handleApply, onOpenChange])
 
-  function renderMedia(option: WizardStyleOption) {
-    const url = safeMediaUrl(option.imageUrl)
-    if (!url || url === '/placeholder.svg' || url.includes('placeholder')) {
-      return (
-        <div className="flex h-full w-full items-center justify-center bg-zinc-800">
-          {icon === 'camera' ? (
-            <Clapperboard className="h-6 w-6 text-zinc-600" />
-          ) : (
-            <Film className="h-6 w-6 text-zinc-600" />
-          )}
-        </div>
-      )
-    }
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) setPreviewingValue(null)
+    onOpenChange(nextOpen)
+  }, [onOpenChange])
 
-    // Use video tag for video files (MP4 previews)
-    if (isVideoUrl(url)) {
-      return (
-        <video
-          src={url}
-          className="h-full w-full object-cover"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          onMouseEnter={(e) => {
-            e.currentTarget.play().catch(() => {})
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.pause()
-            e.currentTarget.currentTime = 0
-          }}
-          onError={(e) => {
-            const target = e.target as HTMLVideoElement
-            target.style.display = 'none'
-            const parent = target.parentElement
-            if (parent) {
-              parent.innerHTML = ''
-              const fallback = document.createElement('div')
-              fallback.className = 'flex h-full w-full items-center justify-center bg-zinc-800'
-              fallback.innerHTML = icon === 'camera' 
-                ? '<svg class="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M7 20h10" /></svg>'
-                : '<svg class="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M7 20h10" /></svg>'
-              parent.appendChild(fallback)
-            }
-          }}
-        />
-      )
-    }
+  function renderFallback(option: WizardStyleOption) {
+    return (
+      <div
+        className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-900"
+        data-testid={`media-fallback-${option.value}`}
+      >
+        {icon === 'camera' ? (
+          <Clapperboard className="h-6 w-6 text-zinc-500" aria-hidden="true" />
+        ) : (
+          <Film className="h-6 w-6 text-zinc-500" aria-hidden="true" />
+        )}
+      </div>
+    )
+  }
 
-    // Use img tag for static images
+  function renderPoster(option: WizardStyleOption) {
+    const posterUrl = safeMediaUrl(option.posterUrl)
+    if (!posterUrl || failedPosters.has(option.value)) return renderFallback(option)
+
     return (
       <img
-        src={url}
-        alt={option.label}
+        src={posterUrl}
+        alt={`${option.label} poster`}
         className="h-full w-full object-cover"
         loading="lazy"
-        onError={(e) => {
-          const target = e.target as HTMLImageElement
-          target.style.display = 'none'
-          const parent = target.parentElement
-          if (parent) {
-            parent.innerHTML = ''
-            const fallback = document.createElement('div')
-            fallback.className = 'flex h-full w-full items-center justify-center bg-zinc-800'
-            fallback.innerHTML = icon === 'camera' 
-              ? '<svg class="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M7 20h10" /></svg>'
-              : '<svg class="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M7 20h10" /></svg>'
-            parent.appendChild(fallback)
-          }
+        decoding="async"
+        onError={() => {
+          setFailedPosters((current) => new Set(current).add(option.value))
         }}
       />
     )
@@ -210,10 +171,10 @@ export function StylePickerDialog({
   const showTabs = hasThemedOptions
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col p-0 gap-0">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-4xl border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col p-0 gap-0 sm:w-full">
         {/* Header */}
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-white/10 flex-shrink-0">
+        <DialogHeader className="px-4 pt-5 pb-4 border-b border-white/10 flex-shrink-0 sm:px-6 sm:pt-6">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg flex items-center gap-2">
               {icon === 'camera' ? (
@@ -223,11 +184,14 @@ export function StylePickerDialog({
               )}
               {title}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Search the available styles, choose one option, and apply it to the film.
+            </DialogDescription>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleOpenChange(false)}
               className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-100"
               aria-label="Close dialog"
             >
@@ -237,26 +201,32 @@ export function StylePickerDialog({
         </DialogHeader>
 
         {/* Search and Tabs */}
-        <div className="px-6 py-4 border-b border-white/10 space-y-3 flex-shrink-0">
+        <div className="px-4 py-4 border-b border-white/10 space-y-3 flex-shrink-0 sm:px-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
             <Input
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setPreviewingValue(null)
+                setSearchQuery(e.target.value)
+              }}
               placeholder="Search styles..."
               className="pl-9 border-white/10 bg-white/[0.03] text-sm text-zinc-100"
             />
           </div>
           
           {showTabs && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1">
               {TABS.map((tab) => (
                 <Button
                   key={tab.key}
                   type="button"
                   variant={activeTab === tab.key ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setActiveTab(tab.key)}
+                  onClick={() => {
+                    setPreviewingValue(null)
+                    setActiveTab(tab.key)
+                  }}
                   className={`h-7 text-xs ${
                     activeTab === tab.key
                       ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
@@ -271,7 +241,7 @@ export function StylePickerDialog({
         </div>
 
         {/* Options Grid */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+        <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 sm:px-6">
           {groupedOptions.size === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
               <ImageIcon className="h-12 w-12 mb-3 opacity-50" />
@@ -287,46 +257,75 @@ export function StylePickerDialog({
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {groupOptions.map((opt) => {
                       const isSelected = pendingSelection === opt.value
+                      const videoUrl = safeMediaUrl(opt.videoUrl)
+                      const isPreviewing = previewingValue === opt.value && Boolean(videoUrl) && !failedVideos.has(opt.value)
                       return (
-                        <button
+                        <div
                           key={opt.value}
-                          type="button"
-                          onClick={() => setPendingSelection(opt.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              setPendingSelection(opt.value)
-                            }
-                          }}
-                          aria-pressed={isSelected}
-                          className={`group relative rounded-lg border overflow-hidden transition-all focus:outline-none focus:ring-2 focus:ring-fuchsia-400 focus:ring-offset-2 focus:ring-offset-zinc-950 ${
+                          className={`group relative overflow-hidden rounded-lg border transition-all ${
                             isSelected
                               ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/30'
                               : 'border-white/10 hover:border-white/30'
                           }`}
                         >
-                          {/* Media Preview */}
-                          <div 
-                            className="aspect-video bg-zinc-900"
-                            style={{ aspectRatio: '16/9' }}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewingValue(null)
+                              setPendingSelection(opt.value)
+                            }}
+                            aria-pressed={isSelected}
+                            aria-label={`Select ${opt.label}`}
+                            className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fuchsia-400"
                           >
-                            {renderMedia(opt)}
-                          </div>
-                          
-                          {/* Label */}
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
-                            <span className="text-[11px] font-medium text-white line-clamp-2 leading-tight">
-                              {opt.label}
-                            </span>
-                          </div>
+                            <div className="aspect-video bg-zinc-900">
+                              {isPreviewing ? (
+                                <video
+                                  key={opt.value}
+                                  src={videoUrl}
+                                  poster={safeMediaUrl(opt.posterUrl) || undefined}
+                                  aria-label={`${opt.label} video preview`}
+                                  className="h-full w-full object-cover"
+                                  autoPlay
+                                  muted
+                                  loop
+                                  playsInline
+                                  preload="metadata"
+                                  onError={() => {
+                                    setFailedVideos((current) => new Set(current).add(opt.value))
+                                    setPreviewingValue(null)
+                                  }}
+                                />
+                              ) : renderPoster(opt)}
+                            </div>
 
-                          {/* Selected Indicator */}
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-2 pb-1.5 pt-6 text-left">
+                              <span className="text-[11px] font-medium text-white line-clamp-2 leading-tight">
+                                {opt.label}
+                              </span>
+                            </div>
+                          </button>
+
+                          {videoUrl && !failedVideos.has(opt.value) && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setPreviewingValue(isPreviewing ? null : opt.value)}
+                              aria-label={isPreviewing ? `Close ${opt.label} preview` : `Preview ${opt.label}`}
+                              className="absolute left-1.5 top-1.5 h-7 gap-1 bg-black/70 px-2 text-[10px] text-white hover:bg-black/85"
+                            >
+                              {isPreviewing ? <X className="h-3 w-3" /> : <Play className="h-3 w-3 fill-current" />}
+                              {isPreviewing ? 'Close' : 'Preview'}
+                            </Button>
+                          )}
+
                           {isSelected && (
-                            <div className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-fuchsia-500 flex items-center justify-center">
+                            <div className="pointer-events-none absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-fuchsia-500 flex items-center justify-center" aria-hidden="true">
                               <Check className="h-3 w-3 text-white" />
                             </div>
                           )}
-                        </button>
+                        </div>
                       )
                     })}
                   </div>
@@ -337,12 +336,15 @@ export function StylePickerDialog({
         </div>
 
         {/* Footer with None, Cancel, Apply */}
-        <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between gap-3 flex-shrink-0">
+        <div className="px-4 py-3 border-t border-white/10 flex items-center justify-between gap-3 flex-shrink-0 sm:px-6 sm:py-4">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setPendingSelection('auto')}
+            onClick={() => {
+              setPreviewingValue(null)
+              setPendingSelection('auto')
+            }}
             className={`h-9 text-xs ${
               pendingSelection === 'auto'
                 ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
@@ -358,7 +360,7 @@ export function StylePickerDialog({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleOpenChange(false)}
               className="h-9 px-4 text-xs text-zinc-300 hover:text-zinc-100"
             >
               Cancel
