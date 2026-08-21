@@ -40,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
 import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlans, buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
@@ -474,7 +475,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       // doesn't match, retry once before giving up.
       let builtPlans: FilmPlan[]
       try {
-        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
+        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
       } catch (firstErr) {
         setProgress('Retrying scenario…')
         const retryWritten = await writeScenario(enrichedPrompt, options)
@@ -483,7 +484,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           setError('The scenario came back empty — try rephrasing your prompt.')
           return
         }
-        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
+        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
       }
       setPlans(builtPlans)
       setImages(new Array(builtPlans.length).fill(undefined))
@@ -512,6 +513,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       }
       let builtPlans: FilmPlan[]
       try {
+        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
         builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
       } catch (firstErr) {
         setProgress('Retrying scenario…')
@@ -521,6 +523,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           setError('The scenario came back empty — try again.')
           return
         }
+        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
         builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
       }
       // Success: replace the plans atomically and reset the stale preview
@@ -1240,7 +1243,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 <p className="text-sm text-zinc-300">
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]">
                   {plans.map((plan, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
@@ -1282,14 +1285,14 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           </div>
                         </div>
                         <div 
-                          className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer max-h-[240px]"
+                          className="grid w-full place-items-center overflow-hidden rounded bg-black/40 cursor-pointer"
                           style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
                           onClick={() => url && openLightbox(url, plan.scenarioText)}
                         >
                           {isRegen ? (
                             <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
                           ) : url ? (
-                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-cover max-h-[240px]" />
+                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-contain" />
                           ) : (
                             <div className="flex flex-col items-center gap-1 text-zinc-600">
                               <ImageIcon className="h-6 w-6" aria-hidden="true" />
