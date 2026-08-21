@@ -204,7 +204,13 @@ export async function runPlanQualityPass(
   const finalIssues = assessPlanScenarios(finalPlans, durationSeconds);
   if (finalIssues.length === 0) return { scenes: finalPlans, retried: true };
 
-  const fallback = finalPlans.length > 0 ? finalPlans : (stripQuotes(finalRaw) ? [stripQuotes(finalRaw)] : []);
+  // Never let an invalid multi-plan output fall through as a single valid plan.
+  // For planCount === 1 parsePlanScenarios always returns [raw] when non-empty,
+  // so finalPlans is only empty here for planCount > 1 — where wrapping the
+  // whole raw output as one plan would silently defeat the required section
+  // count and produce a confusing "returned 1 of N" error downstream. Returning
+  // an empty result surfaces an actionable error instead of a fake plan.
+  const fallback = finalPlans.length > 0 ? finalPlans : [];
   return {
     scenes: fallback,
     retried: true,
