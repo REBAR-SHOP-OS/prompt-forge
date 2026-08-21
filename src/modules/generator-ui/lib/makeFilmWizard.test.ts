@@ -21,6 +21,7 @@ import {
   sanitizeProductName,
   FILM_DURATIONS,
   buildFilmPlans,
+  buildFilmPlansFromScenes,
   validateFilmPlans,
   splitNarrationAcrossPlans,
   splitScenarioIntoPlans,
@@ -548,6 +549,62 @@ describe('buildFilmPlans', () => {
       const parts = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film shows the product in action.`)
       const text = parts.join(' ===SCENE=== ')
       const plans = buildFilmPlans(duration, text, 'Narration: Test narration.')
+      const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
+      expect(total).toBe(duration)
+    }
+  })
+})
+
+describe('buildFilmPlansFromScenes', () => {
+  it('preserves array boundaries when the scene count already matches (30s -> 6 plans)', () => {
+    const scenes = [
+      'Plan one: opening shot.',
+      'Plan two: close-up detail.',
+      'Plan three: product in use.',
+      'Plan four: dynamic angle.',
+      'Plan five: character interaction.',
+      'Plan six: final call-to-action.',
+    ]
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+    expect(plans.map((p) => p.scenarioText)).toEqual(scenes)
+    expect(plans.map((p) => p.coverage)).toEqual(['wide', 'medium', 'close', 'wide', 'medium', 'close'])
+  })
+
+  it('preserves a plan whose text contains its own newlines (embedded narration line)', () => {
+    // A plan with an embedded narration line would collapse under paragraph
+    // parsing; the array path must keep it intact.
+    const scenes = [
+      'Plan one: opening shot.\nNarration: "Welcome to the film."',
+      'Plan two: close-up detail.',
+      'Plan three: product in use.',
+      'Plan four: dynamic angle.',
+      'Plan five: character interaction.',
+      'Plan six: final call-to-action.',
+    ]
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+    expect(plans[0].scenarioText).toBe(scenes[0])
+    expect(plans[0].scenarioText).toContain('Narration:')
+  })
+
+  it('falls back to delimiter parsing when the array is a single legacy string', () => {
+    const scenes = ['Scene one. ===SCENE=== Scene two. ===SCENE=== Scene three. ===SCENE=== Scene four. ===SCENE=== Scene five. ===SCENE=== Scene six.']
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+  })
+
+  it('throws a readable error on a malformed (wrong-count) array', () => {
+    const scenes = ['Only one plan.']
+    expect(() => buildFilmPlansFromScenes(30, scenes, undefined)).toThrow(/1 plan section.*6 sections are required/)
+  })
+
+  it('handles every supported duration with a correctly-sized array', () => {
+    for (const duration of FILM_DURATIONS) {
+      const planCount = expectedPlanCount(duration)
+      const scenes = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film.`)
+      const plans = buildFilmPlansFromScenes(duration, scenes, undefined)
+      expect(plans).toHaveLength(planCount)
       const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
       expect(total).toBe(duration)
     }
