@@ -1087,7 +1087,7 @@ export default function DashboardPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
-  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string } | null>(null)
+  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string; narrationText: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -12538,6 +12538,7 @@ export default function DashboardPage() {
                               setNarrationReview({
                                 cardId: video.id,
                                 storagePath: video.video?.storage_path ?? '',
+                                narrationText: (video as { narration_text?: string | null }).narration_text ?? null,
                               })
                             }}
                             aria-label="Transcribe film audio"
@@ -12583,6 +12584,7 @@ export default function DashboardPage() {
                       open={narrationReview?.cardId === video.id}
                       onClose={() => setNarrationReview(null)}
                       videoStoragePath={narrationReview?.cardId === video.id ? (narrationReview.storagePath || null) : null}
+                      expectedNarration={narrationReview?.cardId === video.id ? (narrationReview.narrationText || null) : null}
                     />
                   ) : null}
                 </article>

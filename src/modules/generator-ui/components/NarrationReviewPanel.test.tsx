@@ -43,9 +43,9 @@ beforeEach(() => {
 })
 
 describe('NarrationReviewPanel film transcription', () => {
-  it('transcribes the selected film automatically and shows only heard speech', async () => {
+  it('transcribes the selected film automatically and shows the heard speech with a transcript-only verdict when no expected narration is saved', async () => {
     mockInvoke.mockResolvedValueOnce({
-      data: { transcript: 'Words actually spoken in the selected film.' },
+      data: { transcript: 'Words actually spoken in the selected film.', words: [] },
       error: null,
     })
 
@@ -65,7 +65,9 @@ describe('NarrationReviewPanel film transcription', () => {
     expect(mockInvoke).toHaveBeenCalledWith('narration-review', {
       body: { videoUrl: 'https://project.supabase.co/signed/films/card-a.mp4' },
     })
-    expect(screen.queryByText(/expected narration/i)).not.toBeInTheDocument()
+    // No expected narration was provided, so the panel shows a transcript-only
+    // verdict and must NOT derive expected narration from the prompt.
+    expect(screen.getByText('Transcript only')).toBeInTheDocument()
     expect(screen.queryByText(/from prompt/i)).not.toBeInTheDocument()
   })
 
