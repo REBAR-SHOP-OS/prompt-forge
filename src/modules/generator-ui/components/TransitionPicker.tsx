@@ -9,6 +9,7 @@ import { Slider } from '@/components/ui/slider'
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
@@ -17,6 +18,7 @@ import {
   TRANSITION_GROUPS,
   TRANSITION_LABEL,
   DURATION_PRESETS,
+  DEFAULT_TRANSITION_DURATION,
   MIN_TRANSITION_MS,
   MAX_TRANSITION_MS,
   clampTransitionDuration,
@@ -69,6 +71,20 @@ export function TransitionPicker({
     [onApplyToAll],
   )
 
+  const durationForSelection = useCallback(
+    (id: TransitionId) => id === value ? draftMs : DEFAULT_TRANSITION_DURATION[id],
+    [draftMs, value],
+  )
+
+  const selectTransition = useCallback(
+    (id: TransitionId) => {
+      const ms = durationForSelection(id)
+      setDraftMs(ms)
+      commit(id, ms)
+    },
+    [commit, durationForSelection],
+  )
+
   // Roving focus across the transition cards via arrow keys.
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -119,23 +135,25 @@ export function TransitionPicker({
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Transition
             </span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onReset()
-                    setDraftMs(0)
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100"
-                  aria-label="Reset to Cut"
-                >
-                  <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                  Reset to Cut
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Set this gap back to a plain Cut</TooltipContent>
-            </Tooltip>
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onReset()
+                      setDraftMs(0)
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100"
+                    aria-label="Reset to Cut"
+                  >
+                    <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                    Reset to Cut
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Set this gap back to a plain Cut</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           <div ref={listRef} className="space-y-3">
@@ -153,11 +171,11 @@ export function TransitionPicker({
                         type="button"
                         data-transition-card
                         tabIndex={0}
-                        onClick={() => commit(opt.id, draftMs)}
+                        onClick={() => selectTransition(opt.id)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
-                            commit(opt.id, draftMs)
+                            selectTransition(opt.id)
                           }
                         }}
                         aria-pressed={selected}
