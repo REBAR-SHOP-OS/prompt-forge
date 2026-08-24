@@ -46,7 +46,7 @@ export function ThemeSwitcher({
           aria-label="Change theme"
           title="Theme"
           className={cn(
-            "grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100",
+            "grid h-9 w-9 place-items-center rounded-md border border-transparent text-muted-foreground transition hover:border-border hover:bg-accent hover:text-foreground",
             triggerClassName,
           )}
         >
@@ -60,9 +60,9 @@ export function ThemeSwitcher({
       <PopoverContent
         align="start"
         sideOffset={8}
-        className="w-44 border-white/10 bg-[#0b0c0e]/95 p-1.5 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+        className="w-44 border-border bg-popover/95 p-1.5 text-popover-foreground shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
       >
-        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Theme
         </div>
         {THEMES.map(({ id, label, icon: Icon }) => {
@@ -77,8 +77,8 @@ export function ThemeSwitcher({
               className={cn(
                 "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-normal transition",
                 isActive
-                  ? "bg-white/[0.08] text-zinc-100"
-                  : "text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200",
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
               )}
             >
               <Icon className="h-3.5 w-3.5" aria-hidden="true" />

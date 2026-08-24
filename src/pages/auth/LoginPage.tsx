@@ -53,7 +53,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-card/40 p-6 shadow-2xl backdrop-blur-xl supports-[backdrop-filter]:bg-card/30">
+          <div className="rounded-2xl border border-border bg-card/40 p-6 shadow-2xl backdrop-blur-xl supports-[backdrop-filter]:bg-card/30">
             <AuthForm mode="login" />
           </div>
         </div>

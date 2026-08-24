@@ -116,7 +116,7 @@ export function TransitionPicker({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border hover:text-foreground"
           title="Transition between these clips"
           aria-label={`Transition: ${TRANSITION_LABEL[value]}`}
         >
@@ -132,7 +132,7 @@ export function TransitionPicker({
       >
         <div className="max-h-[70vh] overflow-y-auto p-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Transition
             </span>
             <TooltipProvider delayDuration={150}>
@@ -144,7 +144,7 @@ export function TransitionPicker({
                       onReset()
                       setDraftMs(0)
                     }}
-                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
                     aria-label="Reset to Cut"
                   >
                     <RotateCcw className="h-3 w-3" aria-hidden="true" />
@@ -159,7 +159,7 @@ export function TransitionPicker({
           <div ref={listRef} className="space-y-3">
             {TRANSITION_GROUPS.map((group) => (
               <div key={group.group}>
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   {group.group}
                 </p>
                 <div className="grid grid-cols-1 gap-1.5">
@@ -182,18 +182,18 @@ export function TransitionPicker({
                         className={`flex items-center gap-3 rounded-lg border p-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/50 ${
                           selected
                             ? 'border-sky-300/50 bg-sky-300/[0.08] shadow-[0_0_0_1px_rgba(125,211,252,0.25)]'
-                            : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.05]'
+                            : 'border-border bg-accent/20 hover:border-border hover:bg-accent/50'
                         }`}
                       >
                         <TransitionPreview id={opt.id} size={40} />
                         <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-1.5 text-sm font-medium text-zinc-100">
+                          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                             {opt.label}
                             {selected && (
                               <Check className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
                             )}
                           </span>
-                          <span className="mt-0.5 block text-[11px] leading-4 text-zinc-500">
+                          <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
                             {opt.description}
                           </span>
                         </span>
@@ -206,10 +206,10 @@ export function TransitionPicker({
           </div>
 
           {!isCut && (
-            <div className="mt-3 border-t border-white/10 pt-3">
+            <div className="mt-3 border-t border-border pt-3">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-medium text-zinc-400">Duration</span>
-                <span className="tabular-nums text-[11px] font-semibold text-zinc-200">
+                <span className="text-[11px] font-medium text-muted-foreground">Duration</span>
+                <span className="tabular-nums text-[11px] font-semibold text-foreground/90">
                   {clampTransitionDuration(draftMs)} ms
                 </span>
               </div>
@@ -237,7 +237,7 @@ export function TransitionPicker({
                     className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
                       clampTransitionDuration(draftMs) === p.ms
                         ? 'border-sky-300/50 bg-sky-300/10 text-sky-200'
-                        : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-200'
+                        : 'border-border bg-accent/20 text-muted-foreground hover:border-border hover:text-foreground/90'
                     }`}
                   >
                     {p.label}
@@ -251,7 +251,7 @@ export function TransitionPicker({
             <button
               type="button"
               onClick={() => commitAll(value, draftMs)}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-medium text-zinc-200 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-100"
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-accent/30 px-3 py-2 text-xs font-medium text-foreground/90 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-100"
             >
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
               Apply to all ({gapCount} gaps)

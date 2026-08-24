@@ -422,7 +422,7 @@ export default function CharacterSheetDialog({
 
           <label
             className={`flex items-center gap-2 text-xs ${
-              userId ? 'text-zinc-300' : 'cursor-not-allowed text-zinc-600'
+              userId ? 'text-foreground/80' : 'cursor-not-allowed text-muted-foreground'
             }`}
           >
             <input
@@ -430,14 +430,14 @@ export default function CharacterSheetDialog({
               checked={uploadIsSheet}
               disabled={!userId}
               onChange={(e) => setUploadIsSheet(e.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-transparent accent-fuchsia-500"
+              className="h-4 w-4 rounded border-border bg-transparent accent-fuchsia-500"
             />
             This upload is a multi-view character sheet (turnaround views + facial
             expressions of one person)
           </label>
 
           <div className="space-y-1.5">
-            <p className="text-xs font-medium text-zinc-400">Character sheet model</p>
+            <p className="text-xs font-medium text-muted-foreground">Character sheet model</p>
             <div className="grid grid-cols-3 gap-2">
               {SHEET_MODELS.map((m) => (
                 <button
@@ -447,11 +447,11 @@ export default function CharacterSheetDialog({
                   className={`rounded-lg border px-2 py-2 text-center transition ${
                     sheetModel === m.key
                       ? 'border-fuchsia-400/70 bg-fuchsia-500/10 text-fuchsia-200'
-                      : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20'
+                      : 'border-border bg-accent/30 text-foreground/80 hover:border-border'
                   }`}
                 >
                   <span className="block text-xs font-medium">{m.label}</span>
-                  <span className="block text-[10px] text-zinc-500">{m.hint}</span>
+                  <span className="block text-[10px] text-muted-foreground">{m.hint}</span>
                 </button>
               ))}
             </div>
@@ -462,12 +462,12 @@ export default function CharacterSheetDialog({
               <img
                 src={initialCharacter.url}
                 alt={initialCharacter.title ?? 'Source character'}
-                className="h-16 w-16 shrink-0 rounded-md border border-white/10 object-cover"
+                className="h-16 w-16 shrink-0 rounded-md border border-border object-cover"
               />
               <div className="min-w-0 flex-1 space-y-2">
                 <div>
                   <p className="text-xs font-medium text-fuchsia-200">Source character</p>
-                  <p className="truncate text-xs text-zinc-400">
+                  <p className="truncate text-xs text-muted-foreground">
                     {initialCharacter.title || 'Untitled'}
                   </p>
                 </div>
@@ -502,8 +502,8 @@ export default function CharacterSheetDialog({
             </div>
           ) : null}
 
-          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
-            <p className="text-xs font-medium text-zinc-400">Describe a character (optional)</p>
+          <div className="space-y-2 rounded-lg border border-border bg-accent/30 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Describe a character (optional)</p>
             <Textarea
               value={promptText}
               onChange={(e) => setPromptText(e.target.value)}
@@ -529,8 +529,8 @@ export default function CharacterSheetDialog({
 
 
 
-          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
-            <p className="text-xs font-medium text-zinc-400">Company logo (optional)</p>
+          <div className="space-y-2 rounded-lg border border-border bg-accent/30 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Company logo (optional)</p>
             <input
               ref={logoInputRef}
               type="file"
@@ -543,10 +543,10 @@ export default function CharacterSheetDialog({
                 <img
                   src={logoUrl}
                   alt="Company logo"
-                  className="h-12 w-12 shrink-0 rounded-md border border-white/10 bg-white object-contain"
+                  className="h-12 w-12 shrink-0 rounded-md border border-border bg-white object-contain"
                 />
               ) : (
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md border border-dashed border-white/15 text-zinc-500">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md border border-dashed border-border text-muted-foreground">
                   <ImagePlus className="h-4 w-4" aria-hidden="true" />
                 </div>
               )}
@@ -572,7 +572,7 @@ export default function CharacterSheetDialog({
                     variant="ghost"
                     size="sm"
                     onClick={handleRemoveLogo}
-                    className="gap-1 text-zinc-400 hover:text-rose-400"
+                    className="gap-1 text-muted-foreground hover:text-rose-400"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     Remove
@@ -582,7 +582,7 @@ export default function CharacterSheetDialog({
             </div>
             <label
               className={`flex items-center gap-2 text-xs ${
-                logoUrl ? 'text-zinc-300' : 'cursor-not-allowed text-zinc-600'
+                logoUrl ? 'text-foreground/80' : 'cursor-not-allowed text-muted-foreground'
               }`}
             >
               <input
@@ -590,7 +590,7 @@ export default function CharacterSheetDialog({
                 checked={applyLogo}
                 disabled={!logoUrl}
                 onChange={(e) => setApplyLogo(e.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-transparent accent-fuchsia-500"
+                className="h-4 w-4 rounded border-border bg-transparent accent-fuchsia-500"
               />
               Apply logo to character when generating the sheet
             </label>
@@ -601,11 +601,11 @@ export default function CharacterSheetDialog({
 
 
           {loading ? (
-            <div className="flex items-center justify-center py-8 text-zinc-500">
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
               <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
             </div>
           ) : images.length === 0 ? (
-            <p className="py-6 text-center text-sm text-zinc-500">No characters uploaded yet.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">No characters uploaded yet.</p>
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto">
               {images.map((img) => (
@@ -626,7 +626,7 @@ export default function CharacterSheetDialog({
 
         {/* Zoom lightbox */}
         <Dialog open={zoomImage !== null} onOpenChange={(o) => { if (!o) setZoomImage(null) }}>
-          <DialogContent className="max-w-3xl border-white/10 bg-black p-2">
+          <DialogContent className="max-w-3xl border-border bg-background p-2">
             {zoomImage ? (
               <CharacterImageZoom
                 img={zoomImage}
@@ -666,21 +666,21 @@ function CharacterImageCard({
   const showSpinner = state === 'loading' || state === 'retrying'
 
   return (
-    <div className="group relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
+    <div className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-accent/30">
       {showSpinner && (
         <div className="flex h-full w-full items-center justify-center bg-black/40">
-          <LoaderCircle className="h-5 w-5 animate-spin text-zinc-300" aria-hidden="true" />
+          <LoaderCircle className="h-5 w-5 animate-spin text-foreground/80" aria-hidden="true" />
         </div>
       )}
 
       {state === 'failed' && (
         <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-zinc-900/60 p-2 text-center">
-          <ImageOff className="h-6 w-6 text-zinc-500" aria-hidden="true" />
-          <span className="text-[10px] text-zinc-500">Image unavailable</span>
+          <ImageOff className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+          <span className="text-[10px] text-muted-foreground">Image unavailable</span>
           <button
             type="button"
             onClick={() => { void handleRetry() }}
-            className="mt-1 flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[10px] text-zinc-200 transition hover:bg-white/20"
+            className="mt-1 flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[10px] text-foreground/90 transition hover:bg-accent"
           >
             <RefreshCw className="h-3 w-3" aria-hidden="true" />
             Retry image
@@ -711,7 +711,7 @@ function CharacterImageCard({
           type="button"
           onClick={() => onZoom(img)}
           aria-label="Zoom character"
-          className="absolute left-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-zinc-200 opacity-0 transition hover:bg-black/80 hover:text-white group-hover:opacity-100"
+          className="absolute left-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-foreground/90 opacity-0 transition hover:bg-black/80 hover:text-white group-hover:opacity-100"
         >
           <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
@@ -721,7 +721,7 @@ function CharacterImageCard({
         type="button"
         onClick={() => onDelete(img.id)}
         aria-label="Delete character"
-        className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-zinc-200 opacity-0 transition hover:bg-rose-600 hover:text-white group-hover:opacity-100"
+        className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-foreground/90 opacity-0 transition hover:bg-rose-600 hover:text-white group-hover:opacity-100"
       >
         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
@@ -775,18 +775,18 @@ function CharacterImageZoom({
     <div className="relative">
       {showSpinner && (
         <div className="flex h-64 w-full items-center justify-center">
-          <LoaderCircle className="h-6 w-6 animate-spin text-zinc-300" aria-hidden="true" />
+          <LoaderCircle className="h-6 w-6 animate-spin text-foreground/80" aria-hidden="true" />
         </div>
       )}
 
       {state === 'failed' && (
         <div className="flex h-64 w-full flex-col items-center justify-center gap-2">
-          <ImageOff className="h-8 w-8 text-zinc-500" aria-hidden="true" />
-          <span className="text-sm text-zinc-500">Image unavailable</span>
+          <ImageOff className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+          <span className="text-sm text-muted-foreground">Image unavailable</span>
           <button
             type="button"
             onClick={() => { void handleRetry() }}
-            className="flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-xs text-zinc-200 transition hover:bg-white/20"
+            className="flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs text-foreground/90 transition hover:bg-accent"
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
             Retry image

@@ -446,7 +446,7 @@ export function SequentialClipPlayer({
   return (
     <div className="flex w-full justify-center">
       <div
-        className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+        className="overflow-hidden rounded-[22px] border border-border bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
         style={{
           width: 'fit-content',
           maxWidth: 'calc(100vw - 56rem)',
@@ -468,7 +468,7 @@ export function SequentialClipPlayer({
               onClick={onClose}
               aria-label="Close preview"
               title="Close preview"
-              className="absolute right-2 top-2 z-20 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+              className="absolute right-2 top-2 z-20 grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -476,7 +476,7 @@ export function SequentialClipPlayer({
 
           {current.kind === 'video' ? (
             srcLoading || !resolvedVideoSrc ? (
-              <div className="grid h-full w-full place-items-center bg-black text-zinc-500">
+              <div className="grid h-full w-full place-items-center bg-black text-muted-foreground">
                 <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
               </div>
             ) : (
@@ -571,14 +571,14 @@ export function SequentialClipPlayer({
               type="button"
               onClick={togglePlay}
               aria-label={isPlaying ? 'Pause' : 'Play'}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/15 bg-black/70 text-zinc-100 transition hover:border-white/30 hover:bg-white/10"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-black/70 text-foreground transition hover:border-border hover:bg-accent"
             >
               {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
 
             <span
               ref={timeLabelRef}
-              className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200"
+              className="shrink-0 text-[11px] font-semibold tabular-nums text-foreground/90"
             >
               {formatDuration(globalTimeRef.current)}
             </span>
@@ -619,7 +619,7 @@ export function SequentialClipPlayer({
               }}
               className="group relative flex h-6 flex-1 cursor-pointer items-center"
             >
-              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-accent">
                 <div
                   ref={fillRef}
                   className="absolute inset-y-0 left-0 rounded-full bg-emerald-400"
@@ -633,7 +633,7 @@ export function SequentialClipPlayer({
               />
             </div>
 
-            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-foreground/90">
               {formatDuration(filmTotal)}
             </span>
           </div>

@@ -58,7 +58,7 @@ export function StylePreviewCard({
       <PopoverContent
         side="top"
         align="center"
-        className="w-64 border-white/10 bg-zinc-900/95 p-2 text-zinc-100 shadow-xl"
+        className="w-64 border-border bg-zinc-900/95 p-2 text-foreground shadow-xl"
         dir={rtl ? 'rtl' : undefined}
       >
         {preview ? (
@@ -72,9 +72,9 @@ export function StylePreviewCard({
             className="mb-2 aspect-video w-full rounded-md bg-black object-cover"
           />
         ) : null}
-        <div className="text-xs font-semibold text-zinc-100">{title}</div>
+        <div className="text-xs font-semibold text-foreground">{title}</div>
         {description ? (
-          <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">{description}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
         ) : null}
         {onSelect ? (
           <button
@@ -83,7 +83,7 @@ export function StylePreviewCard({
             className={`mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
               selected
                 ? 'border-amber-300/60 bg-amber-300/15 text-amber-100 hover:bg-amber-300/25'
-                : 'border-white/15 bg-white/[0.06] text-zinc-100 hover:bg-white/[0.12]'
+                : 'border-border bg-accent/60 text-foreground hover:bg-accent'
             }`}
           >
             {selected ? (selectedLabel ?? 'Selected ✓') : (selectLabel ?? 'Select')}

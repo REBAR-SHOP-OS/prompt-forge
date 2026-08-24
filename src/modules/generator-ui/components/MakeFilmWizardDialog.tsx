@@ -865,10 +865,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => (working ? undefined : onOpenChange(v))}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-border bg-zinc-950/95 text-foreground flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <div className="flex items-center justify-between gap-2 pr-10">
-              <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
+              <DialogTitle className="flex items-center gap-2 text-foreground text-lg">
                 <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
                 Make Full Film
               </DialogTitle>
@@ -884,7 +884,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           aria-label="Regenerate full scenario"
                           disabled={working}
                           onClick={handleRegenerateScenario}
-                          className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {busy === 'scenario' ? (
                             <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -904,7 +904,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     size="icon"
                     aria-label="Review full scenario"
                     onClick={() => setScenarioReviewOpen(true)}
-                    className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100"
+                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
                   >
                     <Eye className="h-4 w-4" aria-hidden="true" />
                   </Button>
@@ -915,9 +915,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               <span className="text-sm font-semibold tracking-wide text-fuchsia-300">
                 Step {stepIndex} of 3
               </span>
-              <span className="text-base font-semibold text-zinc-100">{stepLabel}</span>
+              <span className="text-base font-semibold text-foreground">{stepLabel}</span>
             </div>
-            <DialogDescription className="text-sm text-zinc-400">
+            <DialogDescription className="text-sm text-muted-foreground">
               Review the scenario and one preview image per scene. Nothing renders until you approve.
             </DialogDescription>
           </DialogHeader>
@@ -927,7 +927,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               <div className="space-y-4">
                 {/* Duration selector */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <Clock className="h-3.5 w-3.5" />
                     Film duration
                   </label>
@@ -942,21 +942,21 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         className={`h-8 px-3 text-xs ${
                           duration === d
                             ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
-                            : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                            : 'border-border bg-accent/30 text-foreground/80 hover:bg-accent/60'
                         }`}
                       >
                         {d}s
                       </Button>
                     ))}
                   </div>
-                  <p className="text-[11px] text-zinc-500">
+                  <p className="text-[11px] text-muted-foreground">
                     {expectedPlanCount(duration)} shots × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
                   </p>
                 </div>
 
                 {/* Aspect ratio selector */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <MonitorPlay className="h-3.5 w-3.5" />
                     Aspect ratio
                   </label>
@@ -971,7 +971,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         className={`h-8 gap-1 text-xs ${
                           aspect === a.value
                             ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
-                            : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                            : 'border-border bg-accent/30 text-foreground/80 hover:bg-accent/60'
                         }`}
                       >
                         {a.label}
@@ -983,20 +983,20 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
                 {/* Product selector */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <Package className="h-3.5 w-3.5" />
                     Product for ad
                   </label>
                   <div className="flex items-center gap-2">
                     {selectedProduct ? (
-                      <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-accent/30 px-2 py-1.5">
                         <img src={selectedProduct.url} alt="Product" className="h-8 w-8 rounded object-cover" />
-                        <span className="text-xs text-zinc-300">{currentProductName() || 'Product'}</span>
+                        <span className="text-xs text-foreground/80">{currentProductName() || 'Product'}</span>
                         <button
                           type="button"
                           onClick={() => { setSelectedProduct(null); setProductName('') }}
                           aria-label="Remove product"
-                          className="ml-1 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
+                          className="ml-1 rounded p-0.5 text-muted-foreground hover:text-foreground/80"
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -1007,7 +1007,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         variant="outline"
                         size="sm"
                         onClick={() => { setProductPickerOpen(true); loadProductPhotos() }}
-                        className="h-8 gap-1 border-white/10 bg-white/[0.03] text-xs text-zinc-300 hover:bg-white/[0.06]"
+                        className="h-8 gap-1 border-border bg-accent/30 text-xs text-foreground/80 hover:bg-accent/60"
                       >
                         <Package className="h-3.5 w-3.5" />
                         Choose product
@@ -1021,25 +1021,25 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     aria-label="Product name"
                     placeholder="Product name (type manually or choose a saved product)"
                     disabled={working}
-                    className="h-8 border-white/10 bg-white/[0.03] text-xs text-zinc-100 placeholder:text-zinc-500"
+                    className="h-8 border-border bg-accent/30 text-xs text-foreground placeholder:text-muted-foreground"
                   />
                 </div>
 
                 {/* Character selector */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <UserRound className="h-3.5 w-3.5" />
                     Character
                   </label>
                   <div className="flex items-center gap-2">
                     {selectedCharacter ? (
-                      <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-accent/30 px-2 py-1.5">
                         <img src={selectedCharacter.url} alt="Character" className="h-8 w-8 rounded object-cover" />
-                        <span className="text-xs text-zinc-300">{selectedCharacter.title ?? 'Character'}</span>
+                        <span className="text-xs text-foreground/80">{selectedCharacter.title ?? 'Character'}</span>
                         <button
                           type="button"
                           onClick={() => setSelectedCharacter(null)}
-                          className="ml-1 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
+                          className="ml-1 rounded p-0.5 text-muted-foreground hover:text-foreground/80"
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -1050,7 +1050,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         variant="outline"
                         size="sm"
                         onClick={() => { setCharacterPickerOpen(true); loadCharacterPhotos() }}
-                        className="h-8 gap-1 border-white/10 bg-white/[0.03] text-xs text-zinc-300 hover:bg-white/[0.06]"
+                        className="h-8 gap-1 border-border bg-accent/30 text-xs text-foreground/80 hover:bg-accent/60"
                       >
                         <UserRound className="h-3.5 w-3.5" />
                         Choose character
@@ -1061,7 +1061,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
                 {/* Narration toggle */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <Mic className="h-3.5 w-3.5" />
                     Narration
                   </label>
@@ -1074,7 +1074,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       className={`h-8 gap-1 text-xs ${
                         withNarration
                           ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
-                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                          : 'border-border bg-accent/30 text-foreground/80 hover:bg-accent/60'
                       }`}
                     >
                       <Mic className="h-3.5 w-3.5" />
@@ -1088,7 +1088,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       className={`h-8 gap-1 text-xs ${
                         !withNarration
                           ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
-                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                          : 'border-border bg-accent/30 text-foreground/80 hover:bg-accent/60'
                       }`}
                     >
                       <MicOff className="h-3.5 w-3.5" />
@@ -1099,7 +1099,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
                 {/* No text on images toggle */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <ImageIcon className="h-3.5 w-3.5" />
                     Text on images
                   </label>
@@ -1112,7 +1112,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       className={`h-8 gap-1 text-xs ${
                         noTextOnImages
                           ? 'bg-emerald-500/90 text-white hover:bg-emerald-500'
-                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                          : 'border-border bg-accent/30 text-foreground/80 hover:bg-accent/60'
                       }`}
                     >
                       <Check className="h-3.5 w-3.5" />
@@ -1126,7 +1126,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       className={`h-8 gap-1 text-xs ${
                         !noTextOnImages
                           ? 'bg-emerald-500/90 text-white hover:bg-emerald-500'
-                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                          : 'border-border bg-accent/30 text-foreground/80 hover:bg-accent/60'
                       }`}
                     >
                       <ImageIcon className="h-3.5 w-3.5" />
@@ -1137,7 +1137,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
                 {/* Film type selector - inline toggle buttons */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <Film className="h-3.5 w-3.5" />
                     Film type
                   </label>
@@ -1153,7 +1153,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         className={`h-8 gap-1 text-xs ${
                           selectedFilmType === ft.value
                             ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
-                            : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                            : 'border-border bg-accent/30 text-foreground/80 hover:bg-accent/60'
                         }`}
                       >
                         {ft.icon}
@@ -1162,13 +1162,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     ))}
                   </div>
                   {selectedFilmTypeDesc && (
-                    <p className="text-[11px] text-zinc-500">{selectedFilmTypeDesc}</p>
+                    <p className="text-[11px] text-muted-foreground">{selectedFilmTypeDesc}</p>
                   )}
                 </div>
 
                 {/* Camera angle selector - opens dialog */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <Clapperboard className="h-3.5 w-3.5" />
                     Camera angle
                   </label>
@@ -1177,16 +1177,16 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     variant="outline"
                     onClick={() => setCameraPickerOpen(true)}
                     aria-label={`Camera angle: ${selectedCameraLabel}`}
-                    className="w-full h-10 justify-between border-white/10 bg-white/[0.03] text-zinc-100 hover:bg-white/[0.06]"
+                    className="w-full h-10 justify-between border-border bg-accent/30 text-foreground hover:bg-accent/60"
                   >
                     <span className="text-sm">{selectedCameraLabel}</span>
-                    <span className="text-xs text-zinc-500">Click to change</span>
+                    <span className="text-xs text-muted-foreground">Click to change</span>
                   </Button>
                 </div>
 
                 {/* Visual theme selector - opens dialog */}
                 <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <Film className="h-3.5 w-3.5" />
                     Visual theme
                   </label>
@@ -1195,16 +1195,16 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     variant="outline"
                     onClick={() => setThemePickerOpen(true)}
                     aria-label={`Visual theme: ${selectedThemeLabel}`}
-                    className="w-full h-10 justify-between border-white/10 bg-white/[0.03] text-zinc-100 hover:bg-white/[0.06]"
+                    className="w-full h-10 justify-between border-border bg-accent/30 text-foreground hover:bg-accent/60"
                   >
                     <span className="text-sm">{selectedThemeLabel}</span>
-                    <span className="text-xs text-zinc-500">Click to change</span>
+                    <span className="text-xs text-muted-foreground">Click to change</span>
                   </Button>
                 </div>
 
                 {/* Prompt */}
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Your prompt
                   </label>
                   <div className="relative">
@@ -1216,7 +1216,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       }}
                       placeholder="Describe the film you want (any language)…"
                       rows={5}
-                      className="resize-none border-white/10 bg-white/[0.03] pr-10 text-sm text-zinc-100"
+                      className="resize-none border-border bg-accent/30 pr-10 text-sm text-foreground"
                     />
                     <TooltipProvider delayDuration={150}>
                       <Tooltip>
@@ -1227,7 +1227,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                             aria-disabled={optimizing || prompt.trim().length === 0}
                             disabled={optimizing || prompt.trim().length === 0}
                             onClick={handleOptimizePrompt}
-                            className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             {optimizing ? (
                               <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1246,7 +1246,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     <p className="text-[11px] text-red-400">{optimizeError}</p>
                   )}
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-muted-foreground">
                       AI will auto-adjust scene count based on {duration}s duration.
                     </p>
                     {promptBeforeOptimize !== null && !optimizing && (
@@ -1266,12 +1266,12 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             {/* Step 2 — review / edit the scenario. */}
             {step === 'scenario' && (
               <div className="space-y-3">
-                <p className="text-sm text-zinc-300">
+                <p className="text-sm text-foreground/80">
                   Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {plans.map((plan, i) => (
-                      <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4">
+                      <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-4">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
                           Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
                         </div>
@@ -1285,7 +1285,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                             })
                           }
                           rows={3}
-                          className="min-h-44 w-full resize-none overflow-y-auto border-white/10 bg-white/[0.03] text-sm leading-6 text-zinc-100 [overflow-wrap:anywhere]"
+                          className="min-h-44 w-full resize-none overflow-y-auto border-border bg-accent/30 text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
                         />
                       </div>
                     ))}
@@ -1296,7 +1296,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             {/* Step 3 — review preview images with zoom. */}
             {step === 'images' && (
               <div className="space-y-3">
-                <p className="text-sm text-zinc-300">
+                <p className="text-sm text-foreground/80">
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
                 <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]">
@@ -1305,7 +1305,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     const isRegen = regenIndex === i
                     const sceneError = imageErrors[i]
                     return (
-                      <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
+                      <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
                             Shot {i + 1}
@@ -1317,7 +1317,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => openLightbox(url, plan.scenarioText)}
-                                className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:text-fuchsia-100"
+                                className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
                               >
                                 <ZoomIn className="h-3.5 w-3.5" />
                                 Zoom
@@ -1329,7 +1329,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                               variant="ghost"
                               disabled={working}
                               onClick={() => handleRegenerate(i)}
-                              className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:text-fuchsia-100"
+                              className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
                             >
                               {isRegen ? (
                                 <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -1346,11 +1346,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           onClick={() => url && openLightbox(url, plan.scenarioText)}
                         >
                           {isRegen ? (
-                            <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
+                            <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
                           ) : url ? (
                             <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-contain" />
                           ) : (
-                            <div className="flex flex-col items-center gap-1 text-zinc-600">
+                            <div className="flex flex-col items-center gap-1 text-muted-foreground">
                               <ImageIcon className="h-6 w-6" aria-hidden="true" />
                               <span className="text-[11px]">No image — regenerate</span>
                             </div>
@@ -1361,7 +1361,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                             {sceneError}
                           </div>
                         )}
-                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{plan.scenarioText}</p>
+                        <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">{plan.scenarioText}</p>
                       </div>
                     )
                   })}
@@ -1370,7 +1370,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             )}
 
             {progress && (
-              <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-zinc-300">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-accent/30 px-3 py-2 text-xs text-foreground/80">
                 <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                 {progress}
               </div>
@@ -1383,7 +1383,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           </div>
 
           {/* Footer navigation */}
-          <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-3">
+          <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
             <div>
               {step === 'prompt' && (
                 <Button
@@ -1391,20 +1391,20 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   variant="ghost"
                   disabled={working}
                   onClick={() => onOpenChange(false)}
-                  className="gap-1 text-zinc-300 hover:text-zinc-100"
+                  className="gap-1 text-foreground/80 hover:text-foreground"
                 >
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   Back
                 </Button>
               )}
               {step === 'scenario' && (
-                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('prompt')} className="gap-1 text-zinc-300 hover:text-zinc-100">
+                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('prompt')} className="gap-1 text-foreground/80 hover:text-foreground">
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   Back
                 </Button>
               )}
               {step === 'images' && (
-                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('scenario')} className="gap-1 text-zinc-300 hover:text-zinc-100">
+                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('scenario')} className="gap-1 text-foreground/80 hover:text-foreground">
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   Back
                 </Button>
@@ -1461,19 +1461,19 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
       {/* Scenario Review Dialog */}
       <Dialog open={scenarioReviewOpen} onOpenChange={setScenarioReviewOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
+        <DialogContent className="max-w-2xl max-h-[85vh] border-border bg-zinc-950/95 text-foreground flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <div className="flex items-center justify-between gap-2 pr-10">
-              <DialogTitle className="flex items-center gap-2 text-base text-zinc-100">
+              <DialogTitle className="flex items-center gap-2 text-base text-foreground">
                 Scenario Review
-                <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] pl-2 pr-1 py-0.5">
+                <div className="inline-flex items-center gap-1 rounded-full border border-border bg-accent/40 pl-2 pr-1 py-0.5">
                   <Languages className="h-3.5 w-3.5 text-fuchsia-300" aria-hidden="true" />
                   <select
                     value={reviewLang}
                     onChange={(e) => void translateReview(e.target.value)}
                     disabled={reviewTranslating}
                     aria-label="Translate scenario"
-                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-zinc-200 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-zinc-200"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-foreground/90 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-foreground/90"
                   >
                     {REVIEW_LANGS.map((l) => (
                       <option key={l.code} value={l.code}>{l.label}</option>
@@ -1485,25 +1485,25 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 </div>
               </DialogTitle>
             </div>
-            <DialogDescription className="text-sm text-zinc-400">
+            <DialogDescription className="text-sm text-muted-foreground">
               Full film scenario with settings and every shot in order.
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
-            <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 space-y-1 text-sm text-zinc-300">
+            <div className="rounded-md border border-border bg-accent/30 p-3 space-y-1 text-sm text-foreground/80">
               <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span><strong className="text-zinc-200">Duration:</strong> {duration}s</span>
-                <span><strong className="text-zinc-200">Aspect:</strong> {aspect}</span>
-                <span><strong className="text-zinc-200">Narration:</strong> {withNarration ? 'Yes' : 'No'}</span>
+                <span><strong className="text-foreground/90">Duration:</strong> {duration}s</span>
+                <span><strong className="text-foreground/90">Aspect:</strong> {aspect}</span>
+                <span><strong className="text-foreground/90">Narration:</strong> {withNarration ? 'Yes' : 'No'}</span>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span><strong className="text-zinc-200">Product:</strong> {(reviewProductNameEn ?? currentProductName()) || '—'}</span>
-                <span><strong className="text-zinc-200">Character:</strong> {(reviewCharacterNameEn ?? selectedCharacter?.title) || '—'}</span>
+                <span><strong className="text-foreground/90">Product:</strong> {(reviewProductNameEn ?? currentProductName()) || '—'}</span>
+                <span><strong className="text-foreground/90">Character:</strong> {(reviewCharacterNameEn ?? selectedCharacter?.title) || '—'}</span>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span><strong className="text-zinc-200">Film type:</strong> {englishFilmType(selectedFilmType) || '—'}</span>
-                <span><strong className="text-zinc-200">Camera:</strong> {selectedCameraLabel}</span>
-                <span><strong className="text-zinc-200">Theme:</strong> {selectedThemeLabel}</span>
+                <span><strong className="text-foreground/90">Film type:</strong> {englishFilmType(selectedFilmType) || '—'}</span>
+                <span><strong className="text-foreground/90">Camera:</strong> {selectedCameraLabel}</span>
+                <span><strong className="text-foreground/90">Theme:</strong> {selectedThemeLabel}</span>
               </div>
             </div>
             {reviewError ? (
@@ -1517,7 +1517,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             <div
               data-testid="scenario-review-body"
               dir={reviewTranslation && isRtlLang(reviewLang) ? 'rtl' : 'ltr'}
-              className="rounded-md border border-white/10 bg-white/[0.02] p-3 text-sm leading-6 text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]"
+              className="rounded-md border border-border bg-accent/20 p-3 text-sm leading-6 text-foreground/90 whitespace-pre-wrap [overflow-wrap:anywhere]"
             >
               {reviewTranslation ?? unifiedScenario}
             </div>
@@ -1560,7 +1560,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           productPickerControllerRef.current = new AbortController()
         }
       }}>
-        <DialogContent className="max-w-lg border-white/10 bg-zinc-950/95 text-zinc-100">
+        <DialogContent className="max-w-lg border-border bg-zinc-950/95 text-foreground">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a product</DialogTitle>
             <DialogDescription>
@@ -1568,7 +1568,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             </DialogDescription>
           </DialogHeader>
           {loadingProducts ? (
-            <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+            <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading products…
             </div>
           ) : productLoadError ? (
@@ -1579,7 +1579,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               </Button>
             </div>
           ) : productPhotos.length === 0 ? (
-            <div className="py-10 text-center text-sm text-zinc-500">No saved product photos yet.</div>
+            <div className="py-10 text-center text-sm text-muted-foreground">No saved product photos yet.</div>
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
               {productPhotos.map((photo) => (
@@ -1599,7 +1599,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
       {/* Character Picker Dialog */}
       <Dialog open={characterPickerOpen} onOpenChange={setCharacterPickerOpen}>
-        <DialogContent className="max-w-lg border-white/10 bg-zinc-950/95 text-zinc-100">
+        <DialogContent className="max-w-lg border-border bg-zinc-950/95 text-foreground">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a character</DialogTitle>
             <DialogDescription>
@@ -1607,17 +1607,17 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             </DialogDescription>
           </DialogHeader>
           {loadingCharacters ? (
-            <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+            <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading characters…
             </div>
           ) : characterPhotos.length === 0 ? (
-            <div className="py-10 text-center text-sm text-zinc-500">No characters yet. Create one with the Character Sheet.</div>
+            <div className="py-10 text-center text-sm text-muted-foreground">No characters yet. Create one with the Character Sheet.</div>
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
               {characterPhotos.map((photo) => (
                 <div
                   key={photo.id}
-                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 transition hover:border-amber-300/40"
+                  className="group relative overflow-hidden rounded-md border border-border bg-black/30 transition hover:border-amber-300/40"
                 >
                   <button
                     type="button"
@@ -1625,7 +1625,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     className="block w-full text-left"
                   >
                     <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
-                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
+                    <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || 'Untitled'}</div>
                   </button>
                   {!isCharacterSheetRef(photo) ? (
                     <TooltipProvider delayDuration={150}>
@@ -1638,7 +1638,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                               event.stopPropagation()
                               openCharacterSheetFlow(photo)
                             }}
-                            className="absolute right-1.5 top-1.5 grid h-10 w-10 touch-manipulation place-items-center rounded-full border border-white/15 bg-black/75 text-fuchsia-200 shadow-sm transition hover:border-fuchsia-300/50 hover:bg-fuchsia-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                            className="absolute right-1.5 top-1.5 grid h-10 w-10 touch-manipulation place-items-center rounded-full border border-border bg-black/75 text-fuchsia-200 shadow-sm transition hover:border-fuchsia-300/50 hover:bg-fuchsia-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
                           >
                             <Sparkles className="h-4 w-4" aria-hidden="true" />
                           </button>
@@ -1668,7 +1668,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
       {/* Lightbox for zoom */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="max-w-4xl border-white/10 bg-zinc-950/95 text-zinc-100">
+        <DialogContent className="max-w-4xl border-border bg-zinc-950/95 text-foreground">
           <DialogHeader>
             <DialogTitle className="text-base">Preview</DialogTitle>
             <DialogDescription>
@@ -1678,7 +1678,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           {lightboxImage && (
             <div className="flex flex-col items-center gap-3">
               <img src={lightboxImage} alt="Preview" className="max-h-[70vh] w-auto max-w-full rounded-lg object-contain" />
-              <p className="text-sm text-zinc-400">{lightboxScene}</p>
+              <p className="text-sm text-muted-foreground">{lightboxScene}</p>
             </div>
           )}
         </DialogContent>
@@ -1806,11 +1806,11 @@ function ProductPickerCard({
 
   if (retryState === 'failed') {
     return (
-      <div className="relative overflow-hidden rounded-md border border-white/10 bg-zinc-900/60 p-2 text-center">
+      <div className="relative overflow-hidden rounded-md border border-border bg-zinc-900/60 p-2 text-center">
         <div className="flex aspect-square w-full items-center justify-center bg-zinc-800/50">
-          <ImageIcon className="h-6 w-6 text-zinc-500" aria-hidden="true" />
+          <ImageIcon className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
         </div>
-        <div className="mt-2 truncate text-[11px] text-zinc-400">{photo.title || 'Untitled'}</div>
+        <div className="mt-2 truncate text-[11px] text-muted-foreground">{photo.title || 'Untitled'}</div>
         <Button
           type="button"
           variant="ghost"
@@ -1833,13 +1833,13 @@ function ProductPickerCard({
       type="button"
       disabled={!selectable}
       onClick={() => onSelect({ id: photo.id, title: photo.title, url: signedUrl })}
-      className={`group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-fuchsia-300/40 ${
+      className={`group relative overflow-hidden rounded-md border border-border bg-black/30 text-left transition hover:border-fuchsia-300/40 ${
         selectable ? '' : 'cursor-not-allowed opacity-60'
       }`}
     >
       {showSpinner && (
         <div className="flex aspect-square w-full items-center justify-center bg-black/40">
-          <LoaderCircle className="h-5 w-5 animate-spin text-zinc-300" aria-hidden="true" />
+          <LoaderCircle className="h-5 w-5 animate-spin text-foreground/80" aria-hidden="true" />
         </div>
       )}
       {showImage && (
@@ -1852,7 +1852,7 @@ function ProductPickerCard({
           onError={handleImageError}
         />
       )}
-      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
+      <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || 'Untitled'}</div>
     </button>
   )
 }

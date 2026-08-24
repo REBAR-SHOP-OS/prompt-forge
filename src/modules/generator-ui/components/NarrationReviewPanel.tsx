@@ -219,24 +219,24 @@ export function NarrationReviewPanel({
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
 
       <div
-        className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-[#0f1012] p-5 shadow-2xl"
+        className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-[#0f1012] p-5 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-center gap-2.5">
           <ScanText className="h-4 w-4 shrink-0 text-violet-300" aria-hidden="true" />
-          <h2 className="flex-1 text-sm font-semibold text-zinc-100">Film transcript</h2>
+          <h2 className="flex-1 text-sm font-semibold text-foreground">Film transcript</h2>
           <button
             type="button"
             onClick={close}
             aria-label="Close film transcript"
-            className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+            className="grid h-6 w-6 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-border hover:text-foreground"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>
 
         {loading ? (
-          <div className="flex items-center gap-2.5 py-6 text-sm text-zinc-400">
+          <div className="flex items-center gap-2.5 py-6 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
             <span>{loadingLabel}</span>
           </div>
@@ -251,7 +251,7 @@ export function NarrationReviewPanel({
             <button
               type="button"
               onClick={() => void runTranscription()}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-foreground/80 transition hover:border-border hover:text-foreground"
             >
               <RotateCcw className="h-3 w-3" aria-hidden="true" />
               Retry
@@ -304,22 +304,22 @@ export function NarrationReviewPanel({
                   {isPass ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />}
                   {verdict}
                 </span>
-                <span className="text-xs font-semibold tabular-nums text-zinc-400">
+                <span className="text-xs font-semibold tabular-nums text-muted-foreground">
                   {review.matchPercent}% match
                 </span>
               </div>
 
-              <p className="text-xs leading-5 text-zinc-300">{reviewVerdictDetail(review)}</p>
+              <p className="text-xs leading-5 text-foreground/80">{reviewVerdictDetail(review)}</p>
 
               {hasExpected && review.issues.length > 0 ? (
                 <ul className="space-y-2">
                   {review.issues.map((issue, i) => (
                     <li
                       key={i}
-                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
+                      className="rounded-xl border border-border bg-accent/30 p-3"
                     >
                       <div className="mb-1 flex items-center gap-2">
-                        <span className="text-[10px] font-semibold tabular-nums text-zinc-500">
+                        <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">
                           {formatNarrationTimestamp(issue.startSeconds)}–{formatNarrationTimestamp(issue.endSeconds)}
                         </span>
                         <span
@@ -334,10 +334,10 @@ export function NarrationReviewPanel({
                           {issue.kind === 'missing' ? 'Missing' : issue.kind === 'extra' ? 'Extra' : 'Changed'}
                         </span>
                       </div>
-                      <p className="text-xs leading-5 text-zinc-200">{issue.problem}</p>
+                      <p className="text-xs leading-5 text-foreground/90">{issue.problem}</p>
                       {issue.suggestion ? (
-                        <p className="mt-1 text-[11px] leading-5 text-zinc-500">
-                          Should be: <span className="text-zinc-300">{issue.suggestion}</span>
+                        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                          Should be: <span className="text-foreground/80">{issue.suggestion}</span>
                         </p>
                       ) : null}
                     </li>
@@ -346,12 +346,12 @@ export function NarrationReviewPanel({
               ) : null}
 
               <div className="space-y-1">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                   Speech heard in this film
                 </p>
                 <p
                   dir="auto"
-                  className="rounded-xl border border-violet-300/20 bg-violet-300/[0.06] p-3 text-sm leading-6 text-zinc-100"
+                  className="rounded-xl border border-violet-300/20 bg-violet-300/[0.06] p-3 text-sm leading-6 text-foreground"
                 >
                   {result.transcript}
                 </p>

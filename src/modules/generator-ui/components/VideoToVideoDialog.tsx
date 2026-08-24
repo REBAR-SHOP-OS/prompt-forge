@@ -271,7 +271,7 @@ export default function VideoToVideoDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="overflow-hidden rounded-lg border border-white/10 bg-black">
+          <div className="overflow-hidden rounded-lg border border-border bg-black">
             <video
               src={videoUrl}
               controls
@@ -288,11 +288,11 @@ export default function VideoToVideoDialog({
             disabled={busy}
             className="resize-none"
           />
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted-foreground">
             Tip: short, visual instructions work best. The model uses your video's first frame as the reference and generates a fresh 8-second clip with the change applied.
           </p>
           {busy ? (
-            <div className="flex items-center gap-2 text-xs text-zinc-300">
+            <div className="flex items-center gap-2 text-xs text-foreground/80">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               <span>{stage}</span>
             </div>
