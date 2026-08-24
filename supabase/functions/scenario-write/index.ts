@@ -4,6 +4,7 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+import { getServiceClient } from "../_shared/core/supabase.ts";
 import {
   getScenarioDurationPolicy,
   getPlanDurationPolicy,
@@ -11,6 +12,13 @@ import {
   runPlanQualityPass,
   SCENE_DELIMITER,
 } from "./scenario-policy.ts";
+import {
+  buildScenarioFingerprint,
+  buildSemanticJudgePrompt,
+  parseSemanticJudgeResult,
+  runAntiDuplicatePass,
+  type ScenarioHistoryEntry,
+} from "./scenario-fingerprint.ts";
 
 interface ProductAdOpts {
   productName?: string;
@@ -598,12 +606,198 @@ Deno.serve(async (req) => {
       });
     }
 
-    const scenario = scenes.join("\n\n");
+    // -------------------------------------------------------------------------
+    // Anti-duplicate (two-stage): reject a scenario that is an exact or
+    // near/semantic duplicate of a film this user already made.
+    //
+    // Stage 1 is a fast structural fingerprint; Stage 2 is an LLM semantic
+    // judge (existing Lovable gateway, no new provider) for the ambiguous band.
+    // Product/character identity is metadata only — a re-told story with a new
+    // identity is still a duplicate.
+    //
+    // History is persistent, user-scoped, and NOT capped at 20: we read ALL of
+    // the user's accepted scenarios (paginated) and compare against every one.
+    //
+    // Concurrency: a per-user lease serializes generate→check→insert so two
+    // simultaneous requests cannot both accept a similar concept. If the lease
+    // cannot be acquired, we fail closed (409).
+    // -------------------------------------------------------------------------
+    const subjectCombo = [
+      productAd?.productName ? `product:${productAd.productName}` : "",
+      characterSheet?.characterName ? `character:${characterSheet.characterName}` : "",
+    ]
+      .filter(Boolean)
+      .join("|");
 
-    return new Response(JSON.stringify({ scenario, scenes, ...(quality.warning ? { warning: quality.warning } : {}) }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const serviceClient = getServiceClient();
+
+    // Acquire the per-user lease. Fail closed if another request is in flight.
+    let leaseToken: string | null = null;
+    try {
+      const { data: leaseData, error: leaseErr } = await serviceClient.rpc(
+        "generator_acquire_scenario_lease",
+        { _user_id: auth.userId, _ttl_seconds: 120 },
+      );
+      if (leaseErr || !leaseData) {
+        const busy = String(leaseErr?.message ?? "").includes("scenario_busy");
+        return new Response(
+          JSON.stringify({
+            error: busy
+              ? "Another film is already being generated for you. Please wait a moment and try again."
+              : "Could not start the film. Please try again.",
+          }),
+          { status: busy ? 409 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      leaseToken = leaseData as string;
+    } catch (leaseAcquireErr) {
+      console.error("scenario-write lease acquire error", leaseAcquireErr);
+      return new Response(JSON.stringify({ error: "Could not start the film. Please try again." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    try {
+      // Load the user's FULL history (paginated). A read failure fails closed:
+      // we must not accept a scenario we could not check against history.
+      const historyEntries: ScenarioHistoryEntry[] = [];
+      const PAGE = 200;
+      let from = 0;
+      let historyLoadFailed = false;
+      while (true) {
+        const { data: pageRows, error: pageErr } = await serviceClient
+          .from("generator_scenario_history")
+          .select("fingerprint, scenario_text")
+          .eq("user_id", auth.userId)
+          .order("created_at", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (pageErr) {
+          console.error("scenario-write history load error", pageErr.message);
+          historyLoadFailed = true;
+          break;
+        }
+        const rows = pageRows ?? [];
+        for (const r of rows) {
+          const fp = r?.fingerprint;
+          const text = typeof r?.scenario_text === "string" ? r.scenario_text : "";
+          if (fp && typeof fp === "object" && text) {
+            historyEntries.push({ fingerprint: fp as ScenarioHistoryEntry["fingerprint"], scenarioText: text });
+          }
+        }
+        if (rows.length < PAGE) break;
+        from += PAGE;
+      }
+      if (historyLoadFailed) {
+        return new Response(
+          JSON.stringify({ error: "Could not verify this film against your history. Please try again." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Stage-2 semantic judge via the existing Lovable gateway.
+      const judge = async (candidateText: string, historyText: string): Promise<boolean> => {
+        const judgeResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [
+              { role: "user", content: buildSemanticJudgePrompt(candidateText, historyText) },
+            ],
+          }),
+        });
+        if (!judgeResp.ok) {
+          // Fail closed: an unreadable judge result must not let a duplicate through.
+          throw new Error(`semantic judge error ${judgeResp.status}`);
+        }
+        const judgeData = await readJsonLoose(judgeResp, "scenario-write semantic judge");
+        const judgeRaw = (judgeData?.choices?.[0]?.message?.content ?? "").trim();
+        const verdict = parseSemanticJudgeResult(judgeRaw);
+        if (verdict === null) {
+          throw new Error("semantic judge returned an unparseable verdict");
+        }
+        return verdict;
+      };
+
+      const antiDup = await runAntiDuplicatePass(
+        scenes,
+        historyEntries,
+        async (instruction) => {
+          const retryResp = await callGateway(
+            apiKey,
+            duration,
+            effectiveIdea,
+            resolvedImageUrl,
+            productAd,
+            autoFromImage,
+            characterSheet,
+            businessInfo,
+            outputLanguage,
+            narration,
+            instruction,
+            unit,
+          );
+          if (!retryResp.ok) {
+            console.error("scenario-write anti-duplicate retry error", retryResp.status);
+            return null;
+          }
+          const retryData = await readJsonLoose(retryResp, "scenario-write anti-duplicate retry");
+          const retryRaw = (retryData?.choices?.[0]?.message?.content ?? "").trim();
+          if (!retryRaw) return null;
+          const retryQuality = unit === "plan"
+            ? await runPlanQualityPass(duration, retryRaw, async () => null)
+            : await runScenarioQualityPass(duration, retryRaw, async () => null);
+          return retryQuality.scenes.length > 0 ? retryQuality.scenes : null;
+        },
+        judge,
+        3,
+      );
+
+      if (!antiDup.accepted) {
+        const msg =
+          antiDup.reason === "judge-error"
+            ? "Could not verify this film against your history. Please try again."
+            : "This film is too similar to one you already made. Please change the story concept, opening, action, camera flow, or ending and try again.";
+        return new Response(JSON.stringify({ error: msg }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const finalScenes = antiDup.scenes;
+      const scenario = finalScenes.join("\n\n");
+
+      // Persist the accepted fingerprint + full text so future films for this
+      // user are compared against it. A write failure fails closed: we must not
+      // accept a scenario we could not record for future duplicate checks.
+      const acceptedFingerprint = buildScenarioFingerprint(finalScenes, subjectCombo);
+      const { error: insertErr } = await serviceClient
+        .from("generator_scenario_history")
+        .insert({ user_id: auth.userId, fingerprint: acceptedFingerprint, scenario_text: scenario });
+      if (insertErr) {
+        console.error("scenario-write history insert error", insertErr.message);
+        return new Response(
+          JSON.stringify({ error: "Could not save this film. Please try again." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(JSON.stringify({ scenario, scenes: finalScenes, ...(quality.warning ? { warning: quality.warning } : {}) }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } finally {
+      if (leaseToken) {
+        await serviceClient.rpc("generator_release_scenario_lease", {
+          _user_id: auth.userId,
+          _token: leaseToken,
+        }).catch((relErr) => console.error("scenario-write lease release error", relErr));
+      }
+    }
   } catch (e) {
     console.error("scenario-write unhandled error", e);
     return new Response(JSON.stringify({ error: "Internal error" }), {

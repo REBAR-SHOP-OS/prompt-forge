@@ -9,6 +9,20 @@ vi.mock("../supabase/functions/_shared/core/auth.ts", () => ({
 vi.mock("../supabase/functions/_shared/core/safe-json.ts", () => ({
   readJsonLoose: vi.fn(),
 }));
+vi.mock("../supabase/functions/_shared/core/supabase.ts", () => ({
+  getServiceClient: vi.fn(() => ({
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          order: vi.fn(() => ({
+            limit: vi.fn(async () => ({ data: [], error: null })),
+          })),
+        })),
+      })),
+      insert: vi.fn(async () => ({ error: null })),
+    })),
+  })),
+}));
 
 let buildSystemPrompt: typeof import("../supabase/functions/scenario-write/index.ts").buildSystemPrompt;
 
