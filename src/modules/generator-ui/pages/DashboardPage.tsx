@@ -6365,14 +6365,22 @@ export default function DashboardPage() {
       })
     }
 
-    // 8. Move the film cover over to the draft scope.
+    // 8. Do NOT move the film cover from the finalized project to the draft
+    // scope. Covers are explicitly scoped to the project where the user
+    // created them. Auto-carrying causes stale covers to leak into new/draft
+    // projects. The user can create a new cover in the draft if desired.
+    // Clean up the old scope's cover association without deleting the file.
     setCoverImages((prev) => {
-      const cover = prev[finalId]
-      if (!cover) return prev
+      if (!(finalId in prev)) return prev
       const { [finalId]: _dropCover, ...rest } = prev
-      const next = { ...rest, [draftId]: cover }
-      persistCoverImages(next)
-      return next
+      persistCoverImages(rest)
+      return rest
+    })
+    setCoverDurations((prev) => {
+      if (!(finalId in prev)) return prev
+      const { [finalId]: _dropDur, ...rest } = prev
+      persistCoverDurations(rest)
+      return rest
     })
 
     // 8b. Move the film's persisted audio over to the draft scope so the
@@ -8601,6 +8609,9 @@ export default function DashboardPage() {
       // Bake the film cover (if any) as the opening segment so it is truly
       // rendered into the exported file and becomes the natural first-frame
       // thumbnail. It is held for the user-configured cover duration.
+      // SECURITY: currentCover is derived from coverScopeKey (the current
+      // project/draft scope) ONLY. Covers from other scopes, stale
+      // localStorage entries, or previous projects can never reach here.
       if (currentCover?.storage_path) {
         try {
           const coverSrc = await pipeline.race(proxiedVideoUrl(currentCover.storage_path))
@@ -8976,27 +8987,10 @@ export default function DashboardPage() {
             })
           }
         }
-        // Carry the Film Cover from the finalized draft/project scope over to
-        // the new merged project so it stays attached and visible after Final
-        // Film, and never lingers under the now-retired draft id.
-        {
-          const sourceScopeKeys = [selectedProjectId, activeDraftId].filter(
-            (k): k is string => !!k,
-          )
-          let movedCover: UserImageItem | null = null
-          for (const k of sourceScopeKeys) {
-            if (coverImages[k]) { movedCover = coverImages[k]; break }
-          }
-          if (movedCover) {
-            setCoverImages((prev) => {
-              const next = { ...prev }
-              for (const k of sourceScopeKeys) delete next[k]
-              next[mergedId] = movedCover as UserImageItem
-              persistCoverImages(next)
-              return next
-            })
-          }
-        }
+        // Do NOT carry the Film Cover from the finalized draft/project scope
+        // over to the new merged project. Covers must only exist for the
+        // scope where the user explicitly created them. Auto-carrying causes
+        // stale covers from previous projects to leak into new projects.
         setActiveDraftId(null)
         persistActiveDraftId(null)
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
@@ -9137,6 +9131,27 @@ export default function DashboardPage() {
       for (const i of userImages) nextHiddenImgs.add(i.id)
       setWorkspaceHiddenImageIds(nextHiddenImgs)
       persistWorkspaceHiddenImageIds(nextHiddenImgs)
+    }
+    // Clear the cover association for the current scope so it cannot leak
+    // into the next project. The underlying image file is NOT deleted — only
+    // the scope→cover mapping is dropped. The user can create a fresh cover
+    // in the new project.
+    {
+      const scopeKey = selectedProjectId ?? activeDraftId ?? null
+      if (scopeKey) {
+        setCoverImages((prev) => {
+          if (!(scopeKey in prev)) return prev
+          const { [scopeKey]: _drop, ...rest } = prev
+          persistCoverImages(rest)
+          return rest
+        })
+        setCoverDurations((prev) => {
+          if (!(scopeKey in prev)) return prev
+          const { [scopeKey]: _drop, ...rest } = prev
+          persistCoverDurations(rest)
+          return rest
+        })
+      }
     }
     setSelectedProjectId(null)
     // Releasing the project lock so the user can pick a different ratio.
