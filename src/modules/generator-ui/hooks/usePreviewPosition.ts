@@ -65,10 +65,26 @@ export function usePreviewPosition(
 ): PreviewPosition {
   const [offset, setOffset] = useState<PreviewOffset>(() => loadPreviewOffset(userId))
   const [dragging, setDragging] = useState(false)
+  // Track whether we need to skip the next persist cycle (e.g. right after
+  // re-hydrating from localStorage when userId resolves from null to a real id).
+  const skipPersistRef = useRef(false)
   const [disabled, setDisabled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth < MOBILE_BREAKPOINT
   })
+
+  // Re-hydrate the offset when userId resolves from null to a real id,
+  // so the initial DEFAULT_OFFSET (loaded with null userId) doesn't clobber
+  // the user's saved position.
+  useEffect(() => {
+    if (!userId) return
+    const stored = loadPreviewOffset(userId)
+    setOffset((prev) => {
+      if (prev.x === stored.x && prev.y === stored.y) return prev
+      skipPersistRef.current = true
+      return stored
+    })
+  }, [userId])
 
   // Keep the disabled flag in sync with viewport resizes.
   useEffect(() => {
@@ -102,7 +118,13 @@ export function usePreviewPosition(
   }, [disabled, refs.workspace, refs.rightSidebar, refs.leftSidebar, refs.composer, refs.frame, refs.header, ...deps])
 
   // Persist the offset per-user (debounced lightly via effect on change).
+  // Skip the first persist after a userId change to avoid clobbering the
+  // just-loaded stored offset.
   useEffect(() => {
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false
+      return
+    }
     savePreviewOffset(userId, offset)
   }, [userId, offset])
 

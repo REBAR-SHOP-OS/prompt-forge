@@ -446,7 +446,7 @@ export function SequentialClipPlayer({
   return (
     <div className="flex w-full justify-center">
       <div
-        className="overflow-hidden rounded-[22px] border border-border bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+        className="overflow-hidden rounded-[22px] border border-border bg-card/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
         style={{
           width: 'fit-content',
           maxWidth: 'calc(100vw - 56rem)',

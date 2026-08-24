@@ -223,7 +223,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   )
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col bg-[#07080a]/95 backdrop-blur">
+    <div className="absolute inset-0 z-20 flex flex-col bg-card/95 backdrop-blur">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <span className="text-sm font-semibold text-foreground">Transcript</span>
         <div className="flex items-center gap-2">

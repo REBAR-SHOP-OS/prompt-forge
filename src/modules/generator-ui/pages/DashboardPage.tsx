@@ -288,7 +288,7 @@ type UploadedFile = {
   error: string | null
 }
 
-type UserImageItem = {
+export type UserImageItem = {
   id: string
   storage_path: string
   created_at: string
@@ -1646,14 +1646,6 @@ export default function DashboardPage() {
     }
   }, [signStorageUrl])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
-  const previewPosition = usePreviewPosition(userId, {
-    workspace: previewWorkspaceRef,
-    rightSidebar: previewRightSidebarRef,
-    leftSidebar: previewLeftSidebarRef,
-    composer: composerRef,
-    frame: previewFrameRef,
-    header: previewHeaderRef,
-  }, [aspectRatio, previewMaxHeightPx, isApprovedPanelOpen])
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
@@ -1868,6 +1860,16 @@ export default function DashboardPage() {
   useEffect(() => {
     try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
   }, [aspectRatio])
+  // Draggable preview position — must be called AFTER aspectRatio and
+  // previewMaxHeightPx are declared to avoid temporal dead zone violations.
+  const previewPosition = usePreviewPosition(userId, {
+    workspace: previewWorkspaceRef,
+    rightSidebar: previewRightSidebarRef,
+    leftSidebar: previewLeftSidebarRef,
+    composer: composerRef,
+    frame: previewFrameRef,
+    header: previewHeaderRef,
+  }, [aspectRatio, previewMaxHeightPx, isApprovedPanelOpen])
   // Per-job aspect ratio map so the preview chrome matches the clip exactly,
   // even before the asset row carries `aspect_ratio`. Persisted in localStorage.
   type Ratio = '9:16' | '1:1' | '16:9'
@@ -6367,23 +6369,11 @@ export default function DashboardPage() {
       })
     }
 
-    // 8. Do NOT move the film cover from the finalized project to the draft
-    // scope. Covers are explicitly scoped to the project where the user
-    // created them. Auto-carrying causes stale covers to leak into new/draft
-    // projects. The user can create a new cover in the draft if desired.
-    // Clean up the old scope's cover association without deleting the file.
-    setCoverImages((prev) => {
-      if (!(finalId in prev)) return prev
-      const { [finalId]: _dropCover, ...rest } = prev
-      persistCoverImages(rest)
-      return rest
-    })
-    setCoverDurations((prev) => {
-      if (!(finalId in prev)) return prev
-      const { [finalId]: _dropDur, ...rest } = prev
-      persistCoverDurations(rest)
-      return rest
-    })
+    // 8. Do NOT move or delete the film cover. The finalized project keeps
+    // its cover association (it still exists in Library). The new draft starts
+    // without a cover — the user can create one if desired. This prevents
+    // both stale cover leaks into the draft AND unnecessary cover loss from
+    // the original Final project.
 
     // 8b. Move the film's persisted audio over to the draft scope so the
     // soundtrack stays attached and is restored into the live audio state.
