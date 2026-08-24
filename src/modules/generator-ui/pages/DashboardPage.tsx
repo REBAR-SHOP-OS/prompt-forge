@@ -141,7 +141,6 @@ import {
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
 import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHandoff'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
-import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import { AccountCenterDialog } from '@/modules/generator-ui/components/AccountCenterDialog'
 import { ThemeSwitcher } from '@/modules/generator-ui/components/ThemeSwitcher'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
@@ -9425,8 +9424,6 @@ export default function DashboardPage() {
         >
           <Database className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
-
-        <UsageStatsPopover triggerClassName="grid h-9 w-9 place-items-center rounded-md border border-transparent text-foreground/80 transition hover:border-border hover:bg-accent/45 hover:text-foreground" />
 
         <ThemeSwitcher />
 
