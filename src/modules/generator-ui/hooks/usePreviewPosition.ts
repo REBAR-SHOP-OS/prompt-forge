@@ -6,7 +6,7 @@ import {
   savePreviewOffset,
   type PreviewOffset,
   type Rect,
-  ZERO_OFFSET,
+  DEFAULT_OFFSET,
 } from '@/modules/generator-ui/lib/previewPosition'
 
 export interface PreviewPositionRefs {
@@ -20,6 +20,8 @@ export interface PreviewPositionRefs {
   composer: React.RefObject<HTMLElement | null>
   /** The preview frame itself (untranslated, grid-centered). */
   frame: React.RefObject<HTMLElement | null>
+  /** The fixed top header bar (Start Over / Final Film / Schedule). */
+  header: React.RefObject<HTMLElement | null>
 }
 
 export interface PreviewPosition {
@@ -31,7 +33,7 @@ export interface PreviewPosition {
   disabled: boolean
   /** Start a drag from the handle. */
   onHandlePointerDown: (e: React.PointerEvent<HTMLElement>) => void
-  /** Reset the offset back to centered. */
+  /** Reset the offset back to the default position. */
   reset: () => void
 }
 
@@ -49,13 +51,17 @@ const MOBILE_BREAKPOINT = 768
  *
  * The preview stays in its normal grid-centered flow; this hook only manages a
  * `translate(x, y)` offset that is clamped to the safe workspace (central area
- * minus the right/left sidebars and the bottom composer). The offset is
- * persisted per-user in localStorage and restored on mount. On small viewports
- * dragging is disabled and the preview keeps its centered behavior.
+ * minus the right/left sidebars, the bottom composer, and the top header). The
+ * offset is persisted per-user in localStorage and restored on mount. On small
+ * viewports dragging is disabled and the preview keeps its centered behavior.
+ *
+ * @param deps Extra dependency values that trigger a re-clamp when they change
+ *             (e.g. aspectRatio, previewMaxHeightPx, sidebar open state).
  */
 export function usePreviewPosition(
   userId: string | null,
   refs: PreviewPositionRefs,
+  deps: ReadonlyArray<unknown> = [],
 ): PreviewPosition {
   const [offset, setOffset] = useState<PreviewOffset>(() => loadPreviewOffset(userId))
   const [dragging, setDragging] = useState(false)
@@ -74,7 +80,9 @@ export function usePreviewPosition(
   }, [])
 
   // Re-clamp the stored offset whenever the layout changes (resize, sidebar
-  // open/close, composer height) so the preview never drifts out of bounds.
+  // open/close, composer height, aspect ratio change) so the preview never
+  // drifts out of bounds. The `deps` array lets the caller trigger re-clamping
+  // on layout-affecting state changes.
   useEffect(() => {
     if (disabled) return
     const frame = rectOf(refs.frame.current)
@@ -84,12 +92,14 @@ export function usePreviewPosition(
       rectOf(refs.rightSidebar.current),
       rectOf(refs.leftSidebar.current),
       rectOf(refs.composer.current),
+      rectOf(refs.header.current),
     )
     setOffset((prev) => {
       const next = clampOffset(prev, frame, safe)
       return next.x === prev.x && next.y === prev.y ? prev : next
     })
-  }, [disabled, refs.workspace, refs.rightSidebar, refs.leftSidebar, refs.composer, refs.frame])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, refs.workspace, refs.rightSidebar, refs.leftSidebar, refs.composer, refs.frame, refs.header, ...deps])
 
   // Persist the offset per-user (debounced lightly via effect on change).
   useEffect(() => {
@@ -121,6 +131,7 @@ export function usePreviewPosition(
           rectOf(refs.rightSidebar.current),
           rectOf(refs.leftSidebar.current),
           rectOf(refs.composer.current),
+          rectOf(refs.header.current),
         )
         const raw = {
           x: startOffset.x + (clientX - startX),
@@ -143,10 +154,10 @@ export function usePreviewPosition(
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
     },
-    [disabled, offset, refs.frame, refs.workspace, refs.rightSidebar, refs.leftSidebar, refs.composer],
+    [disabled, offset, refs.frame, refs.workspace, refs.rightSidebar, refs.leftSidebar, refs.composer, refs.header],
   )
 
-  const reset = useCallback(() => setOffset(ZERO_OFFSET), [])
+  const reset = useCallback(() => setOffset(DEFAULT_OFFSET), [])
 
   return { offset, dragging, disabled, onHandlePointerDown, reset }
 }

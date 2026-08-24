@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePreviewPosition, type PreviewPositionRefs } from './usePreviewPosition'
+import { DEFAULT_OFFSET } from '@/modules/generator-ui/lib/previewPosition'
 
 function makeEl(rect: { left: number; top: number; right: number; bottom: number }): HTMLElement {
   const el = document.createElement('div')
@@ -25,14 +26,16 @@ function makeRefs() {
   const leftSidebar = makeEl({ left: 0, top: 0, right: 200, bottom: 800 })
   const composer = makeEl({ left: 0, top: 700, right: 1000, bottom: 800 })
   const frame = makeEl({ left: 400, top: 200, right: 600, bottom: 500 })
+  const header = makeEl({ left: 0, top: 0, right: 1000, bottom: 76 })
   const refs: PreviewPositionRefs = {
     workspace: { current: workspace },
     rightSidebar: { current: rightSidebar },
     leftSidebar: { current: leftSidebar },
     composer: { current: composer },
     frame: { current: frame },
+    header: { current: header },
   }
-  return { refs, workspace, rightSidebar, leftSidebar, composer, frame }
+  return { refs, workspace, rightSidebar, leftSidebar, composer, frame, header }
 }
 
 describe('usePreviewPosition', () => {
@@ -42,10 +45,10 @@ describe('usePreviewPosition', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 })
   })
 
-  it('starts centered and enabled on desktop', () => {
+  it('starts at DEFAULT_OFFSET and enabled on desktop', () => {
     const { refs } = makeRefs()
     const { result } = renderHook(() => usePreviewPosition('user-1', refs))
-    expect(result.current.offset).toEqual({ x: 0, y: 0 })
+    expect(result.current.offset).toEqual(DEFAULT_OFFSET)
     expect(result.current.disabled).toBe(false)
   })
 
@@ -60,16 +63,15 @@ describe('usePreviewPosition', () => {
     const { refs } = makeRefs()
     const { result } = renderHook(() => usePreviewPosition('user-1', refs))
     act(() => result.current.reset())
-    // reset writes {0,0}; verify a non-zero value persists via a drag below.
-    expect(window.localStorage.getItem('generator:previewOffset:user-1')).toBe(JSON.stringify({ x: 0, y: 0 }))
+    expect(window.localStorage.getItem('generator:previewOffset:user-1')).toBe(JSON.stringify(DEFAULT_OFFSET))
   })
 
-  it('resets the offset to centered', () => {
+  it('resets the offset to DEFAULT_OFFSET', () => {
     window.localStorage.setItem('generator:previewOffset:user-1', JSON.stringify({ x: 40, y: 20 }))
     const { refs } = makeRefs()
     const { result } = renderHook(() => usePreviewPosition('user-1', refs))
     act(() => result.current.reset())
-    expect(result.current.offset).toEqual({ x: 0, y: 0 })
+    expect(result.current.offset).toEqual(DEFAULT_OFFSET)
   })
 
   it('disables dragging on a small viewport', () => {
@@ -92,7 +94,40 @@ describe('usePreviewPosition', () => {
     act(() => {
       result.current.reset()
     })
-    expect(result.current.offset).toEqual({ x: 0, y: 0 })
+    expect(result.current.offset).toEqual(DEFAULT_OFFSET)
+  })
+
+  it('re-clamps when deps change (aspectRatio)', async () => {
+    // Store an offset that will be out of bounds once the header grows.
+    window.localStorage.setItem('generator:previewOffset:user-1', JSON.stringify({ x: 0, y: -100 }))
+    const { refs } = makeRefs()
+    const { result, rerender } = renderHook(
+      ({ deps }) => usePreviewPosition('user-1', refs, deps),
+      { initialProps: { deps: ['9:16'] as ReadonlyArray<unknown> } },
+    )
+    // y=-100 is within bounds (minY = 76 - 200 = -124)
+    expect(result.current.offset.y).toBe(-100)
+
+    // Move the header down so y=-100 is now out of bounds.
+    refs.header.current!.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 1000, bottom: 300, width: 1000, height: 300, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+    // safe.top = 300, minY = 300 - 200 = 100, so y=-100 should clamp to 100
+    // Re-render with changed deps to trigger the re-clamp effect.
+    rerender({ deps: ['1:1'] })
+    // Flush effects and the resulting state update.
+    await act(async () => { /* act flushes pending effects */ })
+    expect(result.current.offset.y).toBe(100)
+  })
+
+  it('clamps the offset using the header bound', () => {
+    window.localStorage.setItem('generator:previewOffset:user-1', JSON.stringify({ x: 0, y: -200 }))
+    const { refs } = makeRefs()
+    // frame.top = 200, header.bottom = 76
+    // safe.top = max(0, 76) = 76
+    // minY = 76 - 200 = -124
+    // y=-200 should be clamped to -124
+    const { result } = renderHook(() => usePreviewPosition('user-1', refs))
+    expect(result.current.offset.y).toBe(-124)
   })
 
   it('does not start a drag from a non-handle pointer (no-op when disabled)', () => {

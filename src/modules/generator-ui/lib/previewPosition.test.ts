@@ -6,6 +6,7 @@ import {
   previewOffsetStorageKey,
   savePreviewOffset,
   ZERO_OFFSET,
+  DEFAULT_OFFSET,
   type Rect,
 } from './previewPosition'
 
@@ -66,9 +67,38 @@ describe('computeSafeRect', () => {
     expect(safe.bottom).toBe(700)
   })
 
+  it('shrinks the top edge to the header bottom', () => {
+    const header: Rect = { left: 0, top: 0, right: 1000, bottom: 76 }
+    const safe = computeSafeRect(workspace, null, null, null, header)
+    expect(safe.top).toBe(76)
+  })
+
+  it('ignores an absent header (null)', () => {
+    const safe = computeSafeRect(workspace, null, null, null, null)
+    expect(safe).toEqual(workspace)
+  })
+
   it('ignores absent overlays', () => {
     const safe = computeSafeRect(workspace, null, null, null)
     expect(safe).toEqual(workspace)
+  })
+
+  it('combines header and composer bounds', () => {
+    const header: Rect = { left: 0, top: 0, right: 1000, bottom: 76 }
+    const composer: Rect = { left: 0, top: 700, right: 1000, bottom: 800 }
+    const safe = computeSafeRect(workspace, null, null, composer, header)
+    expect(safe.top).toBe(76)
+    expect(safe.bottom).toBe(700)
+  })
+})
+
+describe('DEFAULT_OFFSET', () => {
+  it('has a y value of 24', () => {
+    expect(DEFAULT_OFFSET).toEqual({ x: 0, y: 24 })
+  })
+
+  it('is distinct from ZERO_OFFSET', () => {
+    expect(DEFAULT_OFFSET).not.toEqual(ZERO_OFFSET)
   })
 })
 
@@ -82,21 +112,21 @@ describe('persistence', () => {
     expect(loadPreviewOffset('user-1')).toEqual({ x: 12, y: -34 })
   })
 
-  it('returns zero offset when nothing is stored', () => {
-    expect(loadPreviewOffset('user-none')).toEqual(ZERO_OFFSET)
+  it('returns default offset when nothing is stored', () => {
+    expect(loadPreviewOffset('user-none')).toEqual(DEFAULT_OFFSET)
   })
 
-  it('returns zero offset for a null user', () => {
-    expect(loadPreviewOffset(null)).toEqual(ZERO_OFFSET)
+  it('returns default offset for a null user', () => {
+    expect(loadPreviewOffset(null)).toEqual(DEFAULT_OFFSET)
   })
 
   it('ignores malformed stored JSON', () => {
     window.localStorage.setItem(previewOffsetStorageKey('user-bad'), '{not json')
-    expect(loadPreviewOffset('user-bad')).toEqual(ZERO_OFFSET)
+    expect(loadPreviewOffset('user-bad')).toEqual(DEFAULT_OFFSET)
   })
 
-  it('sanitizes non-numeric stored values', () => {
+  it('sanitizes non-numeric stored values to zeros', () => {
     window.localStorage.setItem(previewOffsetStorageKey('user-nan'), JSON.stringify({ x: 'a', y: null }))
-    expect(loadPreviewOffset('user-nan')).toEqual(ZERO_OFFSET)
+    expect(loadPreviewOffset('user-nan')).toEqual({ x: 0, y: 0 })
   })
 })
