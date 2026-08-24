@@ -23,8 +23,8 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 const ROWS = [
   { id: 'c1', storage_path: 'user-1/uuid1.png', title: 'Alpha', created_at: '2026-01-01' },
-  { id: 'c2', storage_path: 'https://host/storage/v1/object/public/user-images/user-1/uuid2.png', title: 'Beta', created_at: '2026-01-02' },
-  { id: 'c3', storage_path: 'https://host/storage/v1/object/sign/user-images/user-1/uuid3.png?token=expired', title: 'Gamma', created_at: '2026-01-03' },
+  { id: 'c2', storage_path: 'https://x.supabase.co/storage/v1/object/public/user-images/user-1/uuid2.png', title: 'Beta', created_at: '2026-01-02' },
+  { id: 'c3', storage_path: 'https://x.supabase.co/storage/v1/object/sign/user-images/user-1/uuid3.png?token=expired', title: 'Gamma', created_at: '2026-01-03' },
 ]
 
 function mockRows(rows: typeof ROWS = ROWS) {
@@ -72,19 +72,19 @@ describe('resolveObjectKey', () => {
 
   it('extracts the key from a public URL and drops query/hash', () => {
     expect(
-      resolveObjectKey('https://host/storage/v1/object/public/user-images/user-1/uuid.png?x=1#frag'),
+      resolveObjectKey('https://x.supabase.co/storage/v1/object/public/user-images/user-1/uuid.png?x=1#frag'),
     ).toBe('user-1/uuid.png')
   })
 
   it('extracts the key from a signed URL and drops the token', () => {
     expect(
-      resolveObjectKey('https://host/storage/v1/object/sign/user-images/user-1/uuid.png?token=abc'),
+      resolveObjectKey('https://x.supabase.co/storage/v1/object/sign/user-images/user-1/uuid.png?token=abc'),
     ).toBe('user-1/uuid.png')
   })
 
   it('decodes percent-encoded path segments', () => {
     expect(
-      resolveObjectKey('https://host/storage/v1/object/public/user-images/user%201/uuid%20x.png'),
+      resolveObjectKey('https://x.supabase.co/storage/v1/object/public/user-images/user%201/uuid%20x.png'),
     ).toBe('user 1/uuid x.png')
   })
 
@@ -93,8 +93,17 @@ describe('resolveObjectKey', () => {
     expect(resolveObjectKey('data:image/png;base64,AAAA')).toBeNull()
   })
 
-  it('returns null for URLs without the bucket marker and empty values', () => {
-    expect(resolveObjectKey('https://evil.example.com/other/a.png')).toBeNull()
+  it('rejects a foreign host even with a user-images path', () => {
+    expect(
+      resolveObjectKey('https://evil.example.com/storage/v1/object/public/user-images/user-1/uuid.png'),
+    ).toBeNull()
+  })
+
+  it('rejects a supabase host with a non-storage path', () => {
+    expect(resolveObjectKey('https://x.supabase.co/other/user-images/user-1/uuid.png')).toBeNull()
+  })
+
+  it('returns null for empty values', () => {
     expect(resolveObjectKey('')).toBeNull()
     expect(resolveObjectKey(null)).toBeNull()
     expect(resolveObjectKey(undefined)).toBeNull()
@@ -108,7 +117,7 @@ describe('signUrl', () => {
   })
 
   it('re-signs an expired signed URL instead of returning it verbatim', async () => {
-    const url = await signUrl('https://host/storage/v1/object/sign/user-images/user-1/uuid.png?token=expired')
+    const url = await signUrl('https://x.supabase.co/storage/v1/object/sign/user-images/user-1/uuid.png?token=expired')
     expect(url).toBe('https://signed/1.png')
   })
 
@@ -185,7 +194,7 @@ describe('CharacterSheetDialog thumbnails', () => {
     await waitFor(() => expect(screen.getAllByText('Image unavailable').length).toBeGreaterThan(0))
 
     // Trigger the manual retry path once; it should fail and stay failed.
-    const retryButtons = screen.getAllByText('Try again')
+    const retryButtons = screen.getAllByText('Retry image')
     fireEvent.click(retryButtons[0])
     await waitFor(() => expect(signCount).toBeGreaterThan(0))
     // Still showing placeholder, no broken <img>.

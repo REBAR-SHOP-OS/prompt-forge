@@ -683,7 +683,7 @@ function CharacterImageCard({
             className="mt-1 flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[10px] text-zinc-200 transition hover:bg-white/20"
           >
             <RefreshCw className="h-3 w-3" aria-hidden="true" />
-            Try again
+            Retry image
           </button>
         </div>
       )}
@@ -789,7 +789,7 @@ function CharacterImageZoom({
             className="flex items-center gap-1 rounded-md bg-white/10 px-3 py-1.5 text-xs text-zinc-200 transition hover:bg-white/20"
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-            Try again
+            Retry image
           </button>
         </div>
       )}

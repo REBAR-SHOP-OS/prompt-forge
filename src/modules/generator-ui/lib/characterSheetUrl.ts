@@ -2,17 +2,27 @@ import { supabase } from '@/integrations/supabase/client'
 
 const USER_IMAGES_BUCKET = 'user-images'
 
+// Supabase storage URLs are served from a project subdomain of supabase.co.
+const SUPABASE_STORAGE_HOST = /\.supabase\.co$/
+
+// Canonical Supabase storage path: /storage/v1/object/{public|sign}/user-images/<key>
+const STORAGE_PATH_RE = new RegExp(
+  `/storage/v1/object/(?:public|sign)/${USER_IMAGES_BUCKET}/(.+)$`,
+)
+
 /**
  * Canonicalize any storage reference into a `user-images` object key.
  *
  * Accepts three shapes and normalizes them all to the same bucket key:
  *   - raw key:            `userId/uuid.png`
- *   - public URL:         `https://<host>/storage/v1/object/public/user-images/userId/uuid.png`
- *   - signed URL:         `https://<host>/storage/v1/object/sign/user-images/userId/uuid.png?token=...`
+ *   - public URL:         `https://<ref>.supabase.co/storage/v1/object/public/user-images/userId/uuid.png`
+ *   - signed URL:         `https://<ref>.supabase.co/storage/v1/object/sign/user-images/userId/uuid.png?token=***`
  *
  * Query strings and hashes are dropped and the path is percent-decoded so a
- * signed URL with a token never leaks into the key. Returns `null` for
- * non-storage references (blob/data URLs, foreign hosts, empty values).
+ * signed URL with a token never leaks into the key. Only Supabase storage URLs
+ * (a `*.supabase.co` host with the canonical `/storage/v1/object/...` path) are
+ * accepted; a foreign host or path returns `null` so it can never be treated as
+ * a valid object key.
  */
 export function resolveObjectKey(storagePath: string | null | undefined): string | null {
   if (!storagePath) return null
@@ -22,11 +32,10 @@ export function resolveObjectKey(storagePath: string | null | undefined): string
 
   try {
     const url = new URL(raw)
-    const marker = `/${USER_IMAGES_BUCKET}/`
-    const idx = url.pathname.indexOf(marker)
-    if (idx < 0) return null
-    const key = url.pathname.slice(idx + marker.length)
-    return decodeURIComponent(key)
+    if (!SUPABASE_STORAGE_HOST.test(url.hostname)) return null
+    const match = url.pathname.match(STORAGE_PATH_RE)
+    if (!match) return null
+    return decodeURIComponent(match[1])
   } catch {
     // Not a URL — treat as a raw key unless it looks like an absolute URL.
     if (/^https?:/i.test(raw)) return null
