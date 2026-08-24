@@ -17,6 +17,7 @@ import {
   TRANSITION_GROUPS,
   TRANSITION_LABEL,
   DURATION_PRESETS,
+  DEFAULT_TRANSITION_DURATION,
   MIN_TRANSITION_MS,
   MAX_TRANSITION_MS,
   clampTransitionDuration,
@@ -67,6 +68,11 @@ export function TransitionPicker({
       onApplyToAll(transitionSpecFor(id, ms))
     },
     [onApplyToAll],
+  )
+
+  const durationForSelection = useCallback(
+    (id: TransitionId) => id === value ? draftMs : DEFAULT_TRANSITION_DURATION[id],
+    [draftMs, value],
   )
 
   // Roving focus across the transition cards via arrow keys.
@@ -153,11 +159,11 @@ export function TransitionPicker({
                         type="button"
                         data-transition-card
                         tabIndex={0}
-                        onClick={() => commit(opt.id, draftMs)}
+                        onClick={() => commit(opt.id, durationForSelection(opt.id))}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
-                            commit(opt.id, draftMs)
+                            commit(opt.id, durationForSelection(opt.id))
                           }
                         }}
                         aria-pressed={selected}
