@@ -105,6 +105,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 
 import { ApiError } from '@/core/api/client'
@@ -115,6 +116,8 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { TransitionPicker } from '@/modules/generator-ui/components/TransitionPicker'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
+import { DraggablePreview } from '@/modules/generator-ui/components/DraggablePreview'
+import { usePreviewPosition } from '@/modules/generator-ui/hooks/usePreviewPosition'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
@@ -139,6 +142,8 @@ import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/record
 import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHandoff'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
+import { AccountCenterDialog } from '@/modules/generator-ui/components/AccountCenterDialog'
+import { ThemeSwitcher } from '@/modules/generator-ui/components/ThemeSwitcher'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
@@ -1540,6 +1545,19 @@ export default function DashboardPage() {
   // line, ratio chips wrapping). We observe its top edge and reserve that
   // much room for the preview so the video card never slides under the chat.
   const composerRef = useRef<HTMLFormElement | null>(null)
+  // Refs for the draggable central Preview: the workspace area, the fixed
+  // sidebars, the composer, and the preview frame itself.
+  const previewWorkspaceRef = useRef<HTMLElement | null>(null)
+  const previewRightSidebarRef = useRef<HTMLElement | null>(null)
+  const previewLeftSidebarRef = useRef<HTMLElement | null>(null)
+  const previewFrameRef = useRef<HTMLElement | null>(null)
+  const previewPosition = usePreviewPosition(userId, {
+    workspace: previewWorkspaceRef,
+    rightSidebar: previewRightSidebarRef,
+    leftSidebar: previewLeftSidebarRef,
+    composer: composerRef,
+    frame: previewFrameRef,
+  })
   const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
     if (typeof window === 'undefined') return 600
     return Math.max(240, Math.round(Math.min(window.innerHeight - 320, window.innerHeight * 0.72) * 0.88))
@@ -1817,6 +1835,7 @@ export default function DashboardPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [upcomingOccasion, setUpcomingOccasion] = useState<{ title: string; daysAway: number } | null>(null)
   const [isBusinessOpen, setIsBusinessOpen] = useState(false)
+  const [isAccountCenterOpen, setIsAccountCenterOpen] = useState(false)
   const [hasBusinessInfo, setHasBusinessInfo] = useState<boolean | null>(null)
 
   // Deterministic daily check: is today (or within the next 3 days) a curated
@@ -9311,18 +9330,11 @@ export default function DashboardPage() {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={8} className="w-64">
-          <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+          <DropdownMenuItem onSelect={() => setIsAccountCenterOpen(true)} className="flex items-center gap-2 text-xs font-normal text-muted-foreground focus:text-zinc-200">
             <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
             <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setIsApprovedPanelOpen(true)}>
-            <Library className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>Library</span>
-            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {approvedIds.size}
-            </span>
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => { void signOut() }} className="text-red-400 focus:text-red-300">
             <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
             <span>Sign out</span>
@@ -9331,6 +9343,32 @@ export default function DashboardPage() {
       </DropdownMenu>
 
       <div className={`fixed left-14 top-4 flex items-center gap-2 sm:left-16 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Library"
+                title="Library"
+                onClick={() => setIsApprovedPanelOpen((open) => !open)}
+                className={`relative grid h-9 w-9 place-items-center rounded-md border transition ${
+                  isApprovedPanelOpen
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                    : 'border-transparent text-zinc-200/80 hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100'
+                }`}
+              >
+                <Library className="h-[18px] w-[18px]" aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-white/10 bg-[#1a1c1f] px-1 text-[10px] font-semibold leading-none text-zinc-200 tabular-nums">
+                  {approvedIds.size}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Library
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
         {(() => {
           const isAlert = upcomingOccasion !== null
           const occasionLabel = upcomingOccasion
@@ -9390,6 +9428,8 @@ export default function DashboardPage() {
 
         <UsageStatsPopover triggerClassName="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100" />
 
+        <ThemeSwitcher />
+
         <button
           type="button"
           aria-label="About your business (required)"
@@ -9423,6 +9463,11 @@ export default function DashboardPage() {
         onOpenChange={setIsBusinessOpen}
         userId={userId}
         onSaved={(filled) => setHasBusinessInfo(filled)}
+      />
+
+      <AccountCenterDialog
+        open={isAccountCenterOpen}
+        onOpenChange={setIsAccountCenterOpen}
       />
 
 
@@ -11117,12 +11162,14 @@ export default function DashboardPage() {
       </div>
 
       <main
+        ref={previewWorkspaceRef}
         className="grid place-items-center px-4"
         aria-live="polite"
         style={{ minHeight: `${previewMaxHeightPx + 76}px`, paddingTop: '76px' }}
       >
         {previewItem ? (
-          previewItem.kind === 'sequence' ? (
+          <DraggablePreview position={previewPosition} frameRef={previewFrameRef}>
+          {previewItem.kind === 'sequence' ? (
             <SequentialClipPlayer
               clips={previewItem.clips.map((c) => {
                 if (c.kind === 'image') {
@@ -11485,6 +11532,8 @@ export default function DashboardPage() {
             </div>
           </div>
           )
+          }
+          </DraggablePreview>
         ) : (
           <div className="-translate-y-10 text-center sm:-translate-y-8">
             <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
@@ -11497,6 +11546,7 @@ export default function DashboardPage() {
       </main>
 
       <aside
+        ref={previewRightSidebarRef}
         className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
         aria-label="Pending"
       >
@@ -11548,7 +11598,7 @@ export default function DashboardPage() {
               type="button"
               onClick={handlePickImage}
               disabled={isUploadingImage}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-cyan-400/25 bg-cyan-400/[0.06] px-3 text-xs font-medium text-cyan-200 transition hover:border-cyan-300/50 hover:bg-cyan-300/15 hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 active:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-cyan-400/25 disabled:hover:bg-cyan-400/[0.06] disabled:hover:text-cyan-200"
               aria-label="Upload image"
               title="Upload image"
             >
@@ -11563,7 +11613,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
               disabled={!coverScopeKey}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-[#141518]/95 disabled:hover:text-zinc-300"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-violet-400/25 bg-violet-400/[0.06] px-3 text-xs font-medium text-violet-200 transition hover:border-violet-300/50 hover:bg-violet-300/15 hover:text-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 active:bg-violet-300/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-violet-400/25 disabled:hover:bg-violet-400/[0.06] disabled:hover:text-violet-200"
               aria-label="Generate film cover with AI"
               title={coverScopeKey ? 'Generate film cover with AI' : 'Open or create a project first'}
             >
@@ -11585,7 +11635,7 @@ export default function DashboardPage() {
               aria-label="Upload film"
               aria-disabled={isUploadingVideo}
               title="Upload film"
-              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-sky-300/30 hover:bg-sky-300/[0.08] hover:text-sky-100 ${isUploadingVideo ? 'pointer-events-none opacity-60' : ''}`}
+              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-3 text-xs font-medium text-amber-200 transition hover:border-amber-300/50 hover:bg-amber-300/15 hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 active:bg-amber-300/20 ${isUploadingVideo ? 'pointer-events-none opacity-40' : ''}`}
             >
               {isUploadingVideo ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -12214,6 +12264,7 @@ export default function DashboardPage() {
       />
 
       <aside
+        ref={previewLeftSidebarRef}
         className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-96 lg:w-[26rem] xl:w-[30rem] 2xl:w-[34rem] ${
           isApprovedPanelOpen
             ? 'pointer-events-auto visible translate-x-0 opacity-100'

@@ -163,6 +163,32 @@ describe('MakeFilmWizardDialog Regenerate full scenario', () => {
     await waitFor(() => expect(screen.getAllByText(/Shot \d/).length).toBe(6))
   })
 
+  it('preserves plan boundaries when the backend returns 6 separate plans (one with embedded newlines)', async () => {
+    // The real scenario-write backend returns an ARRAY of 6 plan strings. A plan
+    // whose text contains its own newlines (e.g. an embedded narration line)
+    // must survive regeneration intact — re-joining the array and re-parsing it
+    // collapses those boundaries and throws "1 plan section ... 6 required".
+    const sixSeparatePlans = [
+      'Plan one: opening shot.\nNarration: "Welcome to the film."',
+      'Plan two: close-up detail.',
+      'Plan three: product in use.',
+      'Plan four: dynamic angle.',
+      'Plan five: character interaction.',
+      'Plan six: final call-to-action.',
+    ]
+    writeScenario.mockResolvedValue(sixSeparatePlans)
+    renderWizard()
+    await writeInitialScenario()
+    writeScenario.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate full scenario' }))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalledTimes(1))
+
+    // No error surfaced, and all 6 shots remain with the embedded narration intact.
+    await waitFor(() => expect(screen.getAllByText(/Shot \d/).length).toBe(6))
+    expect(screen.getByText(/Welcome to the film/)).toBeInTheDocument()
+  })
+
   it('keeps the previous scenario intact on failure', async () => {
     renderWizard()
     await writeInitialScenario()
