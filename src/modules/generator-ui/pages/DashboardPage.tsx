@@ -141,6 +141,7 @@ import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/record
 import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHandoff'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
+import { AccountCenterDialog } from '@/modules/generator-ui/components/AccountCenterDialog'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
@@ -1832,6 +1833,7 @@ export default function DashboardPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [upcomingOccasion, setUpcomingOccasion] = useState<{ title: string; daysAway: number } | null>(null)
   const [isBusinessOpen, setIsBusinessOpen] = useState(false)
+  const [isAccountCenterOpen, setIsAccountCenterOpen] = useState(false)
   const [hasBusinessInfo, setHasBusinessInfo] = useState<boolean | null>(null)
 
   // Deterministic daily check: is today (or within the next 3 days) a curated
@@ -9326,10 +9328,10 @@ export default function DashboardPage() {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={8} className="w-64">
-          <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+          <DropdownMenuItem onSelect={() => setIsAccountCenterOpen(true)} className="flex items-center gap-2 text-xs font-normal text-muted-foreground focus:text-zinc-200">
             <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
             <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
-          </DropdownMenuLabel>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setIsApprovedPanelOpen(true)}>
             <Library className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -9438,6 +9440,11 @@ export default function DashboardPage() {
         onOpenChange={setIsBusinessOpen}
         userId={userId}
         onSaved={(filled) => setHasBusinessInfo(filled)}
+      />
+
+      <AccountCenterDialog
+        open={isAccountCenterOpen}
+        onOpenChange={setIsAccountCenterOpen}
       />
 
 
