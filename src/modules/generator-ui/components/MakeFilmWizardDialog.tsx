@@ -39,7 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlans, buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
@@ -569,7 +569,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       let builtPlans: FilmPlan[]
       try {
         builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
-        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
       } catch (firstErr) {
         setProgress('Retrying scenario…')
         const retryWritten = await writeScenario(enrichedPrompt, options)
@@ -579,7 +578,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           return
         }
         builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
-        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
       }
       // Success: replace the plans atomically and reset the stale preview
       // images so they never mismatch the new shots.
