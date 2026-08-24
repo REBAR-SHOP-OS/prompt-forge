@@ -2,6 +2,23 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Apply the persisted theme before first paint to avoid a flash of the
+      // wrong theme. Mirrors next-themes' storage key and resolution order.
+      (function () {
+        try {
+          var key = 'theme';
+          var stored = localStorage.getItem(key);
+          var theme = stored || 'dark';
+          if (theme === 'system') {
+            theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+          var root = document.documentElement;
+          root.classList.remove('light', 'dark', 'midnight', 'neon', 'slate');
+          root.classList.add(theme);
+        } catch (e) {}
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="REBAR SHOP AI VIDEO — forge cinematic AI videos, soundtracks, and voiceovers in one studio." />
     <meta name="author" content="REBAR SHOP AI VIDEO" />

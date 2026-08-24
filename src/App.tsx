@@ -1,5 +1,6 @@
 import { HashRouter } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/core/auth/AuthProvider'
+import { ThemeProvider } from '@/core/ui/ThemeProvider'
 import DashboardPage from './modules/generator-ui/pages/DashboardPage'
 import LoginPage from './pages/auth/LoginPage'
 import OAuthConsent from './pages/auth/OAuthConsent'
@@ -29,11 +30,13 @@ function Gate() {
 function App() {
   return (
     <RootErrorBoundary>
-      <HashRouter>
-        <AuthProvider>
-          <Gate />
-        </AuthProvider>
-      </HashRouter>
+      <ThemeProvider>
+        <HashRouter>
+          <AuthProvider>
+            <Gate />
+          </AuthProvider>
+        </HashRouter>
+      </ThemeProvider>
     </RootErrorBoundary>
   )
 }
