@@ -365,7 +365,7 @@ export default function ScenarioWriterDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent dir={dir} className="max-w-2xl border-border bg-[#0b0c0e]/95 text-foreground">
+      <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clapperboard className="h-5 w-5 text-amber-300" aria-hidden="true" />
@@ -389,7 +389,7 @@ export default function ScenarioWriterDialog({
                     )}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 border-border bg-[#0b0c0e] text-foreground">
+                <PopoverContent align="end" className="w-80 border-border bg-card text-foreground">
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
                     {t.businessLabel} <span className="text-amber-300">{t.businessRequired}</span>
                   </div>
@@ -402,7 +402,7 @@ export default function ScenarioWriterDialog({
                     }}
                     rows={4}
                     placeholder={t.businessPlaceholder}
-                    className="min-h-[96px] border-border bg-black/30 text-sm text-foreground"
+                    className="min-h-[96px] border-border bg-surface-2 text-sm text-foreground"
                   />
                   <div className="mt-2 flex justify-end">
                     <Button
@@ -527,7 +527,7 @@ export default function ScenarioWriterDialog({
                     ? t.ideaPlaceholderAuto
                     : t.ideaPlaceholder
                 }
-                className="min-h-[100px] border-border bg-black/30 pb-12 text-foreground disabled:opacity-60"
+                className="min-h-[100px] border-border bg-surface-2 pb-12 text-foreground disabled:opacity-60"
               />
               <div className="absolute bottom-2 left-2 flex items-center gap-2">
                 <input
@@ -543,7 +543,7 @@ export default function ScenarioWriterDialog({
                   disabled={isUploadingImage}
                   title={t.attachImage}
                   aria-label={t.attachImage}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-black/40 text-foreground/80 transition hover:bg-accent hover:text-white disabled:opacity-50"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-2/60 text-foreground/80 transition hover:bg-accent hover:text-foreground disabled:opacity-50"
                 >
                   {isUploadingImage ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -562,7 +562,7 @@ export default function ScenarioWriterDialog({
                       type="button"
                       onClick={clearImage}
                       aria-label={t.removeImage}
-                      className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-zinc-900 text-foreground/90 ring-1 ring-white/20 hover:bg-zinc-800"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-card text-foreground/90 ring-1 ring-foreground/20 hover:bg-surface-2"
                     >
                       <X className="h-3 w-3" aria-hidden="true" />
                     </button>
@@ -586,7 +586,7 @@ export default function ScenarioWriterDialog({
               {scenes.map((text, i) => (
                 <div
                   key={i}
-                  className="rounded-md border border-border bg-black/30 p-3"
+                  className="rounded-md border border-border bg-surface-2 p-3"
                 >
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -612,7 +612,7 @@ export default function ScenarioWriterDialog({
               ))}
             </div>
           ) : scenes.length > 0 ? (
-            <div className="rounded-md border border-border bg-black/30 p-3">
+            <div className="rounded-md border border-border bg-surface-2 p-3">
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t.scenario} ({duration}s)
               </div>

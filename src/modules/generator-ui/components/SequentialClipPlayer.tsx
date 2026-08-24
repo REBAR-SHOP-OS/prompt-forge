@@ -468,7 +468,7 @@ export function SequentialClipPlayer({
               onClick={onClose}
               aria-label="Close preview"
               title="Close preview"
-              className="absolute right-2 top-2 z-20 grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+              className="absolute right-2 top-2 z-20 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -571,7 +571,7 @@ export function SequentialClipPlayer({
               type="button"
               onClick={togglePlay}
               aria-label={isPlaying ? 'Pause' : 'Play'}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-black/70 text-foreground transition hover:border-border hover:bg-accent"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground transition hover:border-border hover:bg-accent"
             >
               {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>

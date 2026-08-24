@@ -200,7 +200,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <div className="mb-1 text-xs text-muted-foreground">Original</div>
-              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-border bg-black/40 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
+              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-border bg-surface-2/60 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
                 {safeMediaUrl(previewUrl) ? (
                   <img src={safeMediaUrl(previewUrl) ?? ''} alt="Original" className="max-h-full max-w-full object-contain" />
                 ) : (
@@ -224,7 +224,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
                   </button>
                 ) : null}
               </div>
-              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-border bg-black/40 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
+              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-border bg-surface-2/60 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
                 {loading ? (
                   <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" />
                 ) : resultUrl ? (

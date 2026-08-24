@@ -34,7 +34,7 @@ export function DraggablePreview({ position, frameRef, children }: Props) {
             onPointerDown={onHandlePointerDown}
             aria-label="Drag preview"
             title="Drag preview"
-            className="grid h-7 w-7 cursor-grab touch-none select-none place-items-center rounded-md border border-border bg-black/60 text-foreground/80 backdrop-blur transition hover:border-border hover:text-foreground active:cursor-grabbing"
+            className="grid h-7 w-7 cursor-grab touch-none select-none place-items-center rounded-md border border-border bg-surface-2/80 text-foreground/80 backdrop-blur transition hover:border-border hover:text-foreground active:cursor-grabbing"
           >
             <GripHorizontal className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -43,7 +43,7 @@ export function DraggablePreview({ position, frameRef, children }: Props) {
             onClick={reset}
             aria-label="Reset preview position"
             title="Reset position"
-            className="grid h-7 w-7 place-items-center rounded-md border border-border bg-black/60 text-foreground/80 backdrop-blur transition hover:border-border hover:text-foreground"
+            className="grid h-7 w-7 place-items-center rounded-md border border-border bg-surface-2/80 text-foreground/80 backdrop-blur transition hover:border-border hover:text-foreground"
           >
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
           </button>

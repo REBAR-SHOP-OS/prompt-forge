@@ -1306,7 +1306,7 @@ export function VoiceoverDialog({
                 onRangeChange={(r) => { if (r[1] > r[0]) onVoiceoverRangeChange?.([r[0], r[1]]) }}
               />
 
-              <div className="space-y-3 rounded-md border border-border bg-black/40 p-3">
+              <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
                 <div className="flex items-center justify-between text-xs text-foreground/80">
                   <span className="font-medium">Play on video from … to</span>
                   <span className="tabular-nums text-foreground/90">

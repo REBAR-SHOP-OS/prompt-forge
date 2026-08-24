@@ -327,7 +327,7 @@ export default function ClipTrimmerDialog({
               >
                 <span className="absolute -top-0.5 left-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
                 {scrubbing ? (
-                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] tabular-nums text-foreground ring-1 ring-white/15">
+                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-card px-1.5 py-0.5 text-[10px] tabular-nums text-foreground ring-1 ring-foreground/15">
                     {fmtTime(currentTime)}
                   </span>
                 ) : null}
