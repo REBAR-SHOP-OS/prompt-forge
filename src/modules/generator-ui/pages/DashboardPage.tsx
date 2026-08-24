@@ -1550,13 +1550,7 @@ export default function DashboardPage() {
   const previewRightSidebarRef = useRef<HTMLElement | null>(null)
   const previewLeftSidebarRef = useRef<HTMLElement | null>(null)
   const previewFrameRef = useRef<HTMLElement | null>(null)
-  const previewPosition = usePreviewPosition(userId, {
-    workspace: previewWorkspaceRef,
-    rightSidebar: previewRightSidebarRef,
-    leftSidebar: previewLeftSidebarRef,
-    composer: composerRef,
-    frame: previewFrameRef,
-  })
+  const previewHeaderRef = useRef<HTMLElement | null>(null)
   const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
     if (typeof window === 'undefined') return 600
     return Math.max(240, Math.round(Math.min(window.innerHeight - 320, window.innerHeight * 0.72) * 0.88))
@@ -1652,6 +1646,14 @@ export default function DashboardPage() {
     }
   }, [signStorageUrl])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
+  const previewPosition = usePreviewPosition(userId, {
+    workspace: previewWorkspaceRef,
+    rightSidebar: previewRightSidebarRef,
+    leftSidebar: previewLeftSidebarRef,
+    composer: composerRef,
+    frame: previewFrameRef,
+    header: previewHeaderRef,
+  }, [aspectRatio, previewMaxHeightPx, isApprovedPanelOpen])
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
@@ -10422,7 +10424,7 @@ export default function DashboardPage() {
 
 
 
-      <div className="fixed left-1/2 top-[3.25rem] z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:top-5">
+      <div ref={previewHeaderRef} className="fixed left-1/2 top-[3.25rem] z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:top-5">
       {(() => {
         const hasReadyClips = playableSequenceClips.length > 0 && !isAutoFilming
         return (
