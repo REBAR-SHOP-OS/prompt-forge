@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { TRANSITION_GROUPS } from '@/modules/generator-ui/lib/transitions'
 import { TransitionPicker } from './TransitionPicker'
 
 vi.mock('@/modules/generator-ui/components/TransitionPreview', () => ({
@@ -8,7 +9,9 @@ vi.mock('@/modules/generator-ui/components/TransitionPreview', () => ({
 }))
 
 describe('TransitionPicker interactions', () => {
-  it('uses the catalog default when changing from Cut to Fade', () => {
+  const effects = TRANSITION_GROUPS.flatMap((group) => group.items).filter((item) => item.id !== 'cut')
+
+  it.each(effects)('uses the $label catalog default when changing from Cut', (effect) => {
     const onSelect = vi.fn()
     render(
       <TooltipProvider>
@@ -24,8 +27,8 @@ describe('TransitionPicker interactions', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Transition: Cut' }))
-    fireEvent.click(screen.getByRole('button', { name: /Fade/ }))
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(effect.label) }))
 
-    expect(onSelect).toHaveBeenCalledWith({ id: 'fade', durationMs: 500 })
+    expect(onSelect).toHaveBeenCalledWith({ id: effect.id, durationMs: effect.defaultMs })
   })
 })
