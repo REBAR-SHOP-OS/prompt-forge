@@ -199,32 +199,6 @@ export function SequentialClipPlayer({
     s.handleSeek(offsetBeforeIndex(index) + Math.max(0, localTime))
   }
 
-  // Preload every video clip's duration so the scrub bar math is accurate even
-  // before a clip has been played. This is the SINGLE metadata-probing path
-  // (the total-duration display reads from `filmTotal`, derived from this map).
-  useEffect(() => {
-    let cancelled = false
-    const videos = clips.filter((c): c is SeqVideoClip => c.kind === 'video')
-    const missing = videos.filter((v) => !(v.id in clipDurations))
-    if (missing.length === 0) return
-    missing.forEach((v) => {
-      const el = document.createElement('video')
-      el.preload = 'metadata'
-      el.muted = true
-      el.src = v.src
-      const done = (dur: number) => {
-        if (cancelled) return
-        if (Number.isFinite(dur) && dur > 0) {
-          setClipDurations((prev) => (prev[v.id] === dur ? prev : { ...prev, [v.id]: dur }))
-        }
-      }
-      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
-      el.addEventListener('error', () => done(0), { once: true })
-    })
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clips.map((c) => `${c.kind}:${c.id}`).join('|')])
-
   // Keep index inside bounds when clips change.
   useEffect(() => {
     if (clips.length === 0) {
@@ -249,6 +223,40 @@ export function SequentialClipPlayer({
     [clips.map((c) => `${c.kind}:${c.id}:${c.src}`).join('|')],
   )
   const { urls: resolvedAllSrcs } = usePlayableVideoUrls(allVideoSrcs)
+
+  // Preload every video clip's duration so the scrub bar math is accurate even
+  // before a clip has been played. This is the SINGLE metadata-probing path
+  // (the total-duration display reads from `filmTotal`, derived from this map).
+  // Each clip is probed with its RESOLVED (signed/proxied) URL — not the raw
+  // storage path — because private clips' raw srcs never load, which would
+  // leave their duration (and thus filmTotal) missing. If a URL is not resolved
+  // yet, the clip is skipped and re-probed once `resolvedAllSrcs` updates.
+  useEffect(() => {
+    let cancelled = false
+    const videos = clips
+      .map((c, i) => ({ clip: c, index: i }))
+      .filter((x): x is { clip: SeqVideoClip; index: number } => x.clip.kind === 'video')
+    const missing = videos.filter(({ clip }) => !(clip.id in clipDurations))
+    if (missing.length === 0) return
+    missing.forEach(({ clip, index }) => {
+      const resolved = resolvedAllSrcs[index]
+      if (!resolved) return
+      const el = document.createElement('video')
+      el.preload = 'metadata'
+      el.muted = true
+      el.src = resolved
+      const done = (dur: number) => {
+        if (cancelled) return
+        if (Number.isFinite(dur) && dur > 0) {
+          setClipDurations((prev) => (prev[clip.id] === dur ? prev : { ...prev, [clip.id]: dur }))
+        }
+      }
+      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
+      el.addEventListener('error', () => done(0), { once: true })
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips.map((c) => `${c.kind}:${c.id}`).join('|'), resolvedAllSrcs])
 
   // A new user-created batch is a new film playback session. Reset the player
   // before its one automatic play attempt, even when the previous film was
