@@ -143,6 +143,7 @@ import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHa
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import { AccountCenterDialog } from '@/modules/generator-ui/components/AccountCenterDialog'
+import { ThemeSwitcher } from '@/modules/generator-ui/components/ThemeSwitcher'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
@@ -9426,6 +9427,8 @@ export default function DashboardPage() {
         </button>
 
         <UsageStatsPopover triggerClassName="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100" />
+
+        <ThemeSwitcher />
 
         <button
           type="button"
