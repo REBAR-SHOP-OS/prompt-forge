@@ -11595,7 +11595,7 @@ export default function DashboardPage() {
               type="button"
               onClick={handlePickImage}
               disabled={isUploadingImage}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-cyan-400/25 bg-cyan-400/[0.06] px-3 text-xs font-medium text-cyan-200 transition hover:border-cyan-300/50 hover:bg-cyan-300/15 hover:text-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 active:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-cyan-400/25 disabled:hover:bg-cyan-400/[0.06] disabled:hover:text-cyan-200"
               aria-label="Upload image"
               title="Upload image"
             >
@@ -11610,7 +11610,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
               disabled={!coverScopeKey}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-[#141518]/95 disabled:hover:text-zinc-300"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-violet-400/25 bg-violet-400/[0.06] px-3 text-xs font-medium text-violet-200 transition hover:border-violet-300/50 hover:bg-violet-300/15 hover:text-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 active:bg-violet-300/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-violet-400/25 disabled:hover:bg-violet-400/[0.06] disabled:hover:text-violet-200"
               aria-label="Generate film cover with AI"
               title={coverScopeKey ? 'Generate film cover with AI' : 'Open or create a project first'}
             >
@@ -11632,7 +11632,7 @@ export default function DashboardPage() {
               aria-label="Upload film"
               aria-disabled={isUploadingVideo}
               title="Upload film"
-              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-sky-300/30 hover:bg-sky-300/[0.08] hover:text-sky-100 ${isUploadingVideo ? 'pointer-events-none opacity-60' : ''}`}
+              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-3 text-xs font-medium text-amber-200 transition hover:border-amber-300/50 hover:bg-amber-300/15 hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 active:bg-amber-300/20 ${isUploadingVideo ? 'pointer-events-none opacity-40' : ''}`}
             >
               {isUploadingVideo ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
