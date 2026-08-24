@@ -58,7 +58,7 @@ export function StylePreviewCard({
       <PopoverContent
         side="top"
         align="center"
-        className="w-64 border-border bg-zinc-900/95 p-2 text-foreground shadow-xl"
+        className="w-64 border-border bg-card p-2 text-foreground shadow-xl"
         dir={rtl ? 'rtl' : undefined}
       >
         {preview ? (

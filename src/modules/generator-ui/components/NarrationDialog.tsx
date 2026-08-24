@@ -448,7 +448,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
           onClick={onClose}
           aria-label="Close narration"
           title="Close"
-          className="grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+          className="grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -471,7 +471,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                     onChange={(e) => void translateNarration(e.target.value)}
                     disabled={translating}
                     aria-label="Translate narration"
-                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-foreground/90 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-foreground/90"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-foreground/90 outline-none [&>option]:bg-card [&>option]:text-foreground/90"
                   >
                     <option value="">{t('original')}</option>
                     {TRANSLATE_LANGS.map((l) => (

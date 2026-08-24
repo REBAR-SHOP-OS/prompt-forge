@@ -543,7 +543,7 @@ export default function CharacterSheetDialog({
                 <img
                   src={logoUrl}
                   alt="Company logo"
-                  className="h-12 w-12 shrink-0 rounded-md border border-border bg-white object-contain"
+                  className="h-12 w-12 shrink-0 rounded-md border border-border bg-card object-contain"
                 />
               ) : (
                 <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md border border-dashed border-border text-muted-foreground">
@@ -668,13 +668,13 @@ function CharacterImageCard({
   return (
     <div className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-accent/30">
       {showSpinner && (
-        <div className="flex h-full w-full items-center justify-center bg-black/40">
+        <div className="flex h-full w-full items-center justify-center bg-surface-2/60">
           <LoaderCircle className="h-5 w-5 animate-spin text-foreground/80" aria-hidden="true" />
         </div>
       )}
 
       {state === 'failed' && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-zinc-900/60 p-2 text-center">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-surface-2/80 p-2 text-center">
           <ImageOff className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
           <span className="text-[10px] text-muted-foreground">Image unavailable</span>
           <button
@@ -711,7 +711,7 @@ function CharacterImageCard({
           type="button"
           onClick={() => onZoom(img)}
           aria-label="Zoom character"
-          className="absolute left-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-foreground/90 opacity-0 transition hover:bg-black/80 hover:text-white group-hover:opacity-100"
+          className="absolute left-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-surface-2/80 text-foreground/90 opacity-0 transition hover:bg-surface-2 hover:text-foreground group-hover:opacity-100"
         >
           <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
@@ -721,7 +721,7 @@ function CharacterImageCard({
         type="button"
         onClick={() => onDelete(img.id)}
         aria-label="Delete character"
-        className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-foreground/90 opacity-0 transition hover:bg-rose-600 hover:text-white group-hover:opacity-100"
+        className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-surface-2/80 text-foreground/90 opacity-0 transition hover:bg-rose-600 hover:text-white group-hover:opacity-100"
       >
         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
       </button>

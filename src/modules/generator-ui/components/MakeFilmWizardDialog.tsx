@@ -1341,7 +1341,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           </div>
                         </div>
                         <div 
-                          className="grid w-full place-items-center overflow-hidden rounded bg-black/40 cursor-pointer"
+                          className="grid w-full place-items-center overflow-hidden rounded bg-surface-2/60 cursor-pointer"
                           style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
                           onClick={() => url && openLightbox(url, plan.scenarioText)}
                         >
@@ -1473,7 +1473,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     onChange={(e) => void translateReview(e.target.value)}
                     disabled={reviewTranslating}
                     aria-label="Translate scenario"
-                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-foreground/90 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-foreground/90"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-foreground/90 outline-none [&>option]:bg-card [&>option]:text-foreground/90"
                   >
                     {REVIEW_LANGS.map((l) => (
                       <option key={l.code} value={l.code}>{l.label}</option>
@@ -1617,14 +1617,14 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               {characterPhotos.map((photo) => (
                 <div
                   key={photo.id}
-                  className="group relative overflow-hidden rounded-md border border-border bg-black/30 transition hover:border-amber-300/40"
+                  className="group relative overflow-hidden rounded-md border border-border bg-surface-2 transition hover:border-amber-300/40"
                 >
                   <button
                     type="button"
                     onClick={() => pickCharacter(photo)}
                     className="block w-full text-left"
                   >
-                    <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
+                    <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-surface-2/60 object-cover" />
                     <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || 'Untitled'}</div>
                   </button>
                   {!isCharacterSheetRef(photo) ? (
@@ -1638,7 +1638,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                               event.stopPropagation()
                               openCharacterSheetFlow(photo)
                             }}
-                            className="absolute right-1.5 top-1.5 grid h-10 w-10 touch-manipulation place-items-center rounded-full border border-border bg-black/75 text-fuchsia-200 shadow-sm transition hover:border-fuchsia-300/50 hover:bg-fuchsia-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                            className="absolute right-1.5 top-1.5 grid h-10 w-10 touch-manipulation place-items-center rounded-full border border-border bg-surface-2/80 text-fuchsia-700 shadow-sm transition hover:border-fuchsia-300/50 hover:bg-fuchsia-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
                           >
                             <Sparkles className="h-4 w-4" aria-hidden="true" />
                           </button>
@@ -1806,8 +1806,8 @@ function ProductPickerCard({
 
   if (retryState === 'failed') {
     return (
-      <div className="relative overflow-hidden rounded-md border border-border bg-zinc-900/60 p-2 text-center">
-        <div className="flex aspect-square w-full items-center justify-center bg-zinc-800/50">
+      <div className="relative overflow-hidden rounded-md border border-border bg-surface-2/80 p-2 text-center">
+        <div className="flex aspect-square w-full items-center justify-center bg-surface-2">
           <ImageIcon className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
         </div>
         <div className="mt-2 truncate text-[11px] text-muted-foreground">{photo.title || 'Untitled'}</div>
@@ -1833,12 +1833,12 @@ function ProductPickerCard({
       type="button"
       disabled={!selectable}
       onClick={() => onSelect({ id: photo.id, title: photo.title, url: signedUrl })}
-      className={`group relative overflow-hidden rounded-md border border-border bg-black/30 text-left transition hover:border-fuchsia-300/40 ${
+      className={`group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-fuchsia-300/40 ${
         selectable ? '' : 'cursor-not-allowed opacity-60'
       }`}
     >
       {showSpinner && (
-        <div className="flex aspect-square w-full items-center justify-center bg-black/40">
+        <div className="flex aspect-square w-full items-center justify-center bg-surface-2/60">
           <LoaderCircle className="h-5 w-5 animate-spin text-foreground/80" aria-hidden="true" />
         </div>
       )}
@@ -1847,7 +1847,7 @@ function ProductPickerCard({
           src={signedUrl}
           alt={photo.title ?? 'Product'}
           loading="lazy"
-          className="aspect-square w-full bg-black/40 object-cover"
+          className="aspect-square w-full bg-surface-2/60 object-cover"
           onLoad={handleLoad}
           onError={handleImageError}
         />

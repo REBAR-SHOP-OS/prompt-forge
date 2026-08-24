@@ -9483,7 +9483,7 @@ export default function DashboardPage() {
         }}
       >
         <DialogContent
-          className="z-50 flex h-[min(90vh,52rem)] w-[min(72rem,95vw)] max-w-none flex-col gap-0 border-border bg-[#0b0c0e]/95 p-0 text-foreground shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+          className="z-50 flex h-[min(90vh,52rem)] w-[min(72rem,95vw)] max-w-none flex-col gap-0 border-border bg-card p-0 text-foreground shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl"
         >
           <DialogHeader className="border-b border-border px-6 py-4">
             <div className="flex items-center justify-between gap-3">
@@ -9526,7 +9526,7 @@ export default function DashboardPage() {
               >
                 <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
                 Films
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveJobs.length + finalizedItems.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveJobs.length + finalizedItems.length}</span>
               </button>
               <button
                 type="button"
@@ -9539,7 +9539,7 @@ export default function DashboardPage() {
               >
                 <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
                 Images
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveImages.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveImages.length}</span>
               </button>
               <button
                 type="button"
@@ -9552,7 +9552,7 @@ export default function DashboardPage() {
               >
                 <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
                 Audio
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveAudio.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveAudio.length}</span>
               </button>
               <button
                 type="button"
@@ -9565,7 +9565,7 @@ export default function DashboardPage() {
               >
                 <Package className="h-3.5 w-3.5" aria-hidden="true" />
                 Product Photos
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveProductImages.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductImages.length}</span>
               </button>
             </div>
           </DialogHeader>
@@ -9744,7 +9744,7 @@ export default function DashboardPage() {
                             <span
                               role="presentation"
                               onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(img.id) }}
-                              className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                              className="absolute left-2 top-2 grid place-items-center rounded-md bg-surface-2/80 p-1 backdrop-blur-sm"
                             >
                               <Checkbox
                                 checked={selectedArchiveIds.has(img.id)}
@@ -9919,7 +9919,7 @@ export default function DashboardPage() {
                           <p className="truncate text-sm font-medium text-foreground/90" title={a.name ?? undefined}>
                             {a.name || (a.kind === 'voiceover' ? 'Voiceover' : 'Music')}
                           </p>
-                          <span className="mt-0.5 inline-flex items-center rounded-full border border-border bg-black/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          <span className="mt-0.5 inline-flex items-center rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                             {a.kind === 'voiceover' ? 'Voiceover' : 'Music'}
                           </span>
                         </div>
@@ -10025,7 +10025,7 @@ export default function DashboardPage() {
                         <span
                           role="presentation"
                           onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(img.id) }}
-                          className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                          className="absolute left-2 top-2 grid place-items-center rounded-md bg-surface-2/80 p-1 backdrop-blur-sm"
                         >
                           <Checkbox
                             checked={selectedArchiveIds.has(img.id)}
@@ -10116,7 +10116,7 @@ export default function DashboardPage() {
                   }`}
                 >
                   {label}
-                  <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{count}</span>
+                  <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{count}</span>
                 </button>
               )
               return (
@@ -10234,7 +10234,7 @@ export default function DashboardPage() {
                                 }}
                               />
                               <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                                <span className="grid h-10 w-10 place-items-center rounded-full bg-black/50 text-white backdrop-blur-sm transition group-hover:bg-black/60">
+                                <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2/80 text-foreground backdrop-blur-sm transition group-hover:bg-surface-2">
                                   <Play className="h-5 w-5" aria-hidden="true" />
                                 </span>
                               </div>
@@ -10248,7 +10248,7 @@ export default function DashboardPage() {
                             role="presentation"
                             onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(job.id) }}
                             onKeyDown={(e) => e.stopPropagation()}
-                            className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                            className="absolute left-2 top-2 grid place-items-center rounded-md bg-surface-2/80 p-1 backdrop-blur-sm"
                           >
                             <Checkbox
                               checked={selectedArchiveIds.has(job.id)}
@@ -10371,7 +10371,7 @@ export default function DashboardPage() {
         open={!!playerFilm}
         onOpenChange={(next) => { if (!next) setPlayerFilm(null) }}
       >
-        <DialogContent className="z-[60] w-[min(60rem,95vw)] max-w-none border-border bg-[#0b0c0e]/95 p-0 text-foreground shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+        <DialogContent className="z-[60] w-[min(60rem,95vw)] max-w-none border-border bg-card p-0 text-foreground shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl">
           <DialogHeader className="border-b border-border px-5 py-3">
             <DialogTitle className="line-clamp-1 pr-8 text-sm font-medium text-foreground/90">
               {playerFilm?.title ?? 'Film'}
@@ -10538,7 +10538,7 @@ export default function DashboardPage() {
                 </p>
               )}
               {scheduleDebug && (
-                <div className="space-y-0.5 rounded-md border border-border bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-foreground/80">
+                <div className="space-y-0.5 rounded-md border border-border bg-surface-2/60 p-2 font-mono text-[10px] leading-relaxed text-foreground/80">
                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Debug
                   </p>
@@ -11021,7 +11021,7 @@ export default function DashboardPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="rounded-md border border-border bg-black/40 px-3 py-2 text-xs text-foreground/80">
+            <div className="rounded-md border border-border bg-surface-2/60 px-3 py-2 text-xs text-foreground/80">
               <div className="break-all font-medium">{musicName ?? '—'}</div>
               <div className="mt-0.5 text-muted-foreground">
                 Duration: {formatTimeMS(musicDuration)}
@@ -11057,7 +11057,7 @@ export default function DashboardPage() {
             ) : null}
 
             {/* Placement on the video timeline */}
-            <div className="space-y-3 rounded-md border border-border bg-black/40 p-3">
+            <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
               <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-foreground/80">
                 <span className="font-medium">Play on video from … to</span>
                 <span className="tabular-nums text-foreground/90">
@@ -11101,7 +11101,7 @@ export default function DashboardPage() {
 
 
             {/* Audio mode: music-only vs mix */}
-            <div className="space-y-3 rounded-md border border-border bg-black/40 p-3">
+            <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
               <div className="flex items-center">
                 <div
                   className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-500/60 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-emerald-200"
@@ -11240,7 +11240,7 @@ export default function DashboardPage() {
                     onClick={closePreview}
                     aria-label="Close preview"
                     title="Close preview"
-                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -11277,7 +11277,7 @@ export default function DashboardPage() {
                           onClick={closePreview}
                           aria-label="Close preview"
                           title="Close preview"
-                          className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                          className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -11286,7 +11286,7 @@ export default function DashboardPage() {
                           onClick={() => void openTranscript(src)}
                           aria-label="Show transcript"
                           title="Transcript"
-                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
+                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
                         >
                           <FileText className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -11360,7 +11360,7 @@ export default function DashboardPage() {
 
                         </>
                       )
-                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-foreground/0 hover:ring-foreground/40'}`
                       const panelBg = contactOverlay.panelEnabled
                         ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
                         : 'transparent'
@@ -11435,7 +11435,7 @@ export default function DashboardPage() {
                     onClick={closePreview}
                     aria-label="Close preview"
                     title="Close preview"
-                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -11470,7 +11470,7 @@ export default function DashboardPage() {
                                       fill="none"
                                       stroke="currentColor"
                                       strokeWidth="8"
-                                      className="text-white/10"
+                                      className="text-foreground/10"
                                     />
                                     <circle
                                       cx="60" cy="60" r={radius}
@@ -11546,7 +11546,7 @@ export default function DashboardPage() {
 
       <aside
         ref={previewRightSidebarRef}
-        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-border bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
+        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-border bg-card p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
         aria-label="Pending"
       >
         <div className="flex items-center justify-between border-b border-border pb-3">
@@ -11684,7 +11684,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
-                      className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-black/30 px-2 text-[11px] font-medium text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+                      className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-2 px-2 text-[11px] font-medium text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
                       aria-label="Regenerate cover"
                       title="Regenerate cover"
                     >
@@ -11701,7 +11701,7 @@ export default function DashboardPage() {
                           return next
                         })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-black/30 text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
                       aria-label="Remove cover"
                       title="Remove cover"
                     >
@@ -11721,7 +11721,7 @@ export default function DashboardPage() {
                         const nextVal = Math.max(1, currentCoverDuration - 1)
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-black/30 text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10"
                       aria-label="Decrease cover duration"
                     >
                       −
@@ -11737,7 +11737,7 @@ export default function DashboardPage() {
                         const v = Math.max(1, Math.min(10, Math.round(Number(e.target.value) || DEFAULT_COVER_DURATION)))
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: v }; persistCoverDurations(n); return n })
                       }}
-                      className="h-7 w-12 rounded-md border border-border bg-black/30 text-center text-[12px] font-semibold text-amber-100 outline-none focus:border-amber-300/40"
+                      className="h-7 w-12 rounded-md border border-border bg-surface-2 text-center text-[12px] font-semibold text-amber-100 outline-none focus:border-amber-300/40"
                     />
                     <button
                       type="button"
@@ -11746,7 +11746,7 @@ export default function DashboardPage() {
                         const nextVal = Math.min(10, currentCoverDuration + 1)
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-black/30 text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10"
                       aria-label="Increase cover duration"
                     >
                       +
@@ -11801,7 +11801,7 @@ export default function DashboardPage() {
                             loading="lazy"
                           />
                           <span
-                            className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                            className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-surface-2 px-1.5 text-xs font-semibold tabular-nums text-foreground shadow-md ring-1 ring-foreground/15"
                             aria-label={`Card ${index + 1}`}
                           >
                             {index + 1}
@@ -11959,7 +11959,7 @@ export default function DashboardPage() {
                         </div>
                       )}
                       <span
-                        className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                        className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-surface-2 px-1.5 text-xs font-semibold tabular-nums text-foreground shadow-md ring-1 ring-foreground/15"
                         aria-label={`Card ${index + 1}`}
                       >
                         {index + 1}
@@ -12264,7 +12264,7 @@ export default function DashboardPage() {
 
       <aside
         ref={previewLeftSidebarRef}
-        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-border bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-96 lg:w-[26rem] xl:w-[30rem] 2xl:w-[34rem] ${
+        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-border bg-card p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-96 lg:w-[26rem] xl:w-[30rem] 2xl:w-[34rem] ${
           isApprovedPanelOpen
             ? 'pointer-events-auto visible translate-x-0 opacity-100'
             : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
@@ -12984,7 +12984,7 @@ export default function DashboardPage() {
                       </button>
                       <button
                         type="button"
-                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-border bg-black/80 text-foreground/80 shadow transition hover:text-foreground"
+                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-border bg-surface-2 text-foreground/80 shadow transition hover:text-foreground"
                         aria-label={`Remove ${file.name}`}
                         onClick={() => removeUploadedFile(file.id)}
                       >
@@ -13025,7 +13025,7 @@ export default function DashboardPage() {
               <PopoverContent
                 side="top"
                 align="end"
-                className="w-72 border-border bg-[#0b0c0e]/95 p-2 text-foreground/90 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+                className="w-72 border-border bg-card p-2 text-foreground/90 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
               >
                 {pickerModels.map((choice) => {
                   const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
@@ -13710,7 +13710,7 @@ export default function DashboardPage() {
               <PopoverContent
                 side="top"
                 align="end"
-                className={`${styleMode === 'input' || scenarioMode === 'input' ? 'w-[min(26rem,calc(100vw-2rem))]' : 'w-80'} border-border bg-[#0b0c0e]/95 p-2 text-foreground/90 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
+                className={`${styleMode === 'input' || scenarioMode === 'input' ? 'w-[min(26rem,calc(100vw-2rem))]' : 'w-80'} border-border bg-card p-2 text-foreground/90 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
               >
                 <button
                   type="button"
@@ -13760,7 +13760,7 @@ export default function DashboardPage() {
                       rows={4}
                       maxLength={1500}
                       placeholder="Type the exact words the narrator should say…"
-                      className="w-full rounded-md border border-border bg-black/40 px-3 py-2 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus:border-amber-300/40"
+                      className="w-full rounded-md border border-border bg-surface-2/60 px-3 py-2 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus:border-amber-300/40"
                     />
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] text-muted-foreground">{narratorScript.length}/1500</span>
@@ -14001,7 +14001,7 @@ export default function DashboardPage() {
       )}
 
       <Dialog open={!!previewImageUrl} onOpenChange={(o) => { if (!o) setPreviewImageUrl(null) }}>
-        <DialogContent className="w-fit max-w-[95vw] border-border bg-black/90 p-3">
+        <DialogContent className="w-fit max-w-[95vw] border-border bg-card p-3">
           <DialogHeader className="sr-only">
             <DialogTitle>Image preview</DialogTitle>
           </DialogHeader>
@@ -14015,7 +14015,7 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
       <Dialog open={promptViewer !== null} onOpenChange={(o) => { if (!o) setPromptViewer(null) }}>
-        <DialogContent className="max-w-2xl border-border bg-[#0b0c0e]/95">
+        <DialogContent className="max-w-2xl border-border bg-card">
           <DialogHeader>
             <DialogTitle>Prompt</DialogTitle>
           </DialogHeader>
@@ -14037,7 +14037,7 @@ export default function DashboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl border-border bg-[#0b0c0e]/95">
+        <DialogContent className="max-w-2xl border-border bg-card">
           <DialogHeader>
             <DialogTitle>Edit prompt & regenerate</DialogTitle>
             <DialogDescription className="text-muted-foreground">
@@ -14048,7 +14048,7 @@ export default function DashboardPage() {
             value={editPromptText}
             onChange={(e) => setEditPromptText(e.target.value)}
             rows={8}
-            className="w-full resize-y rounded-lg border border-border bg-black/40 p-3 text-sm leading-6 text-foreground outline-none focus:border-sky-300/40"
+            className="w-full resize-y rounded-lg border border-border bg-surface-2/60 p-3 text-sm leading-6 text-foreground outline-none focus:border-sky-300/40"
             placeholder="Describe what you want to generate…"
           />
           <DialogFooter>
@@ -14094,7 +14094,7 @@ export default function DashboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-lg border-border bg-[#0b0c0e]/95 text-foreground">
+        <DialogContent className="max-w-lg border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Shield className="h-4 w-4 text-violet-300" aria-hidden="true" />
@@ -14122,7 +14122,7 @@ export default function DashboardPage() {
                 className="h-8 rounded-md border border-border bg-accent/40 px-2 text-xs text-foreground/90 outline-none focus:border-violet-300/40"
               >
                 {COPYRIGHT_LANGS.map((l) => (
-                  <option key={l.value} value={l.value} className="bg-[#0b0c0e]">
+                  <option key={l.value} value={l.value} className="bg-card">
                     {l.label}
                   </option>
                 ))}
@@ -14208,14 +14208,14 @@ export default function DashboardPage() {
 
 
       <Dialog open={confirmCostOpen} onOpenChange={setConfirmCostOpen}>
-        <DialogContent className="max-w-md border-border bg-[#0b0c0e]/95 text-foreground">
+        <DialogContent className="max-w-md border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle>Confirm generation cost</DialogTitle>
             <DialogDescription className="text-muted-foreground">
               Review the estimated cost before generating. Credits are deducted only if generation succeeds.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2.5 rounded-lg border border-border bg-black/30 p-4 text-sm">
+          <div className="space-y-2.5 rounded-lg border border-border bg-surface-2 p-4 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Model</span>
               <span className="font-semibold">{selectedModel.label}</span>

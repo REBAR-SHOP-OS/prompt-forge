@@ -123,7 +123,7 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl border-border bg-[#0b0c0e]/95 text-foreground">
+      <DialogContent className="max-w-xl border-border bg-card text-foreground">
         <div className="flex items-center gap-2">
           {contactLogo ? (
             <img
@@ -132,11 +132,11 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
               className="h-10 w-10 rounded-md border border-border bg-accent/50 object-contain p-0.5"
             />
           ) : (
-            <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-border bg-black/30 text-muted-foreground">
+            <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground">
               <ImagePlus className="h-4 w-4" aria-hidden="true" />
             </div>
           )}
-          <label className="cursor-pointer rounded-md border border-border bg-black/30 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border">
+          <label className="cursor-pointer rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border">
             {contactLogo ? 'Replace' : 'Company logo'}
             <input
               type="file"
@@ -176,7 +176,7 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
               onChange={(e) => { setBusinessInfo(e.target.value); setSaved(false); if (error) setError(null) }}
               rows={6}
               placeholder="Describe your business: what you sell, your products/services, target audience, and brand tone…"
-              className="min-h-[140px] resize-y border-border bg-black/30 text-sm text-foreground"
+              className="min-h-[140px] resize-y border-border bg-surface-2 text-sm text-foreground"
               disabled={loading}
             />
           </div>
@@ -190,7 +190,7 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
               onChange={(e) => { setNarrationInstructions(e.target.value); setSaved(false) }}
               rows={4}
               placeholder="How should the voiceover sound? e.g. formal and confident tone, emphasize quality and trust, speak slowly, mention our brand name warmly…"
-              className="min-h-[100px] resize-y border-border bg-black/30 text-sm text-foreground"
+              className="min-h-[100px] resize-y border-border bg-surface-2 text-sm text-foreground"
               disabled={loading}
             />
           </div>
@@ -204,21 +204,21 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
                 value={contactWebsite}
                 onChange={(e) => { setContactWebsite(e.target.value); setSaved(false) }}
                 placeholder="Website"
-                className="h-9 border-border bg-black/30 text-sm text-foreground"
+                className="h-9 border-border bg-surface-2 text-sm text-foreground"
                 disabled={loading}
               />
               <Input
                 value={contactPhone}
                 onChange={(e) => { setContactPhone(e.target.value); setSaved(false) }}
                 placeholder="Phone"
-                className="h-9 border-border bg-black/30 text-sm text-foreground"
+                className="h-9 border-border bg-surface-2 text-sm text-foreground"
                 disabled={loading}
               />
               <Input
                 value={contactAddress}
                 onChange={(e) => { setContactAddress(e.target.value); setSaved(false) }}
                 placeholder="Address"
-                className="h-9 border-border bg-black/30 text-sm text-foreground"
+                className="h-9 border-border bg-surface-2 text-sm text-foreground"
                 disabled={loading}
               />
             </div>

@@ -1018,7 +1018,7 @@ export default function AiImageDialog({
                         disabled={!prompt.trim() || isOptimizingPrompt || isLoading}
                         aria-label="Optimize prompt with AI"
                         title="Optimize prompt with AI"
-                        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-black/50 text-foreground/80 transition hover:border-border hover:bg-accent/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface-2/80 text-foreground/80 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {isOptimizingPrompt ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -1079,7 +1079,7 @@ export default function AiImageDialog({
                   type="button"
                   onClick={() => referenceInputRef.current?.click()}
                   disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                  className="inline-flex items-center gap-2 rounded-full border border-border bg-black/40 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   title="Upload reference images"
                 >
                   <ImagePlus className="h-4 w-4" />
@@ -1093,7 +1093,7 @@ export default function AiImageDialog({
                       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         selectedTheme
                           ? 'border-amber-300/60 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20'
-                          : 'border-border bg-black/40 text-foreground/90 hover:border-border hover:bg-accent/80 hover:text-white'
+                          : 'border-border bg-surface-2/60 text-foreground/90 hover:border-border hover:bg-accent/80 hover:text-foreground'
                       }`}
                       title="Pick a visual theme"
                     >
@@ -1173,7 +1173,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                      className="inline-flex items-center gap-2 rounded-full border border-border bg-black/40 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                       title="Use one of your saved products as a reference"
                     >
                       <Package className="h-4 w-4" />
@@ -1204,9 +1204,9 @@ export default function AiImageDialog({
                               onClick={() => void handleSelectProduct(p)}
                               className="group flex flex-col gap-1.5 rounded-xl border border-border p-1.5 text-left transition hover:border-border hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <span className="relative block h-20 w-full overflow-hidden rounded-lg border border-border bg-black/30">
+                              <span className="relative block h-20 w-full overflow-hidden rounded-lg border border-border bg-surface-2">
                                 {brokenProductIds.has(p.id) ? (
-                                  <span className="absolute inset-0 grid place-items-center bg-black/30 text-muted-foreground">
+                                  <span className="absolute inset-0 grid place-items-center bg-surface-2 text-muted-foreground">
                                     <Package className="h-5 w-5" aria-hidden="true" />
                                   </span>
                                 ) : (
@@ -1237,7 +1237,7 @@ export default function AiImageDialog({
                   type="button"
                   onClick={() => void handleUseFilmFrame()}
                   disabled={isLoading || isGrabbingFrame || !filmFrameSourceUrl || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                  className="inline-flex items-center gap-2 rounded-full border border-border bg-black/40 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   title={filmFrameSourceUrl ? "Use the first frame of your film as a reference" : "No film clip available yet"}
                 >
                   {isGrabbingFrame ? (
@@ -1360,7 +1360,7 @@ export default function AiImageDialog({
                         type="button"
                         onClick={() => handleRemoveReference(index)}
                         disabled={isLoading}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         title="Remove reference image"
                       >
                         <X className="h-4 w-4" />
@@ -1437,7 +1437,7 @@ export default function AiImageDialog({
                 onPointerLeave={() => { isDrawingRef.current = false }}
               />
               {isLoading ? (
-                <div className="absolute inset-0 grid place-items-center bg-black/60 backdrop-blur-sm">
+                <div className="absolute inset-0 grid place-items-center bg-surface-2/80 backdrop-blur-sm">
                   <LoaderCircle className="h-8 w-8 animate-spin text-white" />
                 </div>
               ) : null}
@@ -1528,7 +1528,7 @@ export default function AiImageDialog({
                         type="button"
                         onClick={() => handleRemoveRefineReference(index)}
                         disabled={isLoading || isSaving}
-                        className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-foreground/90 transition hover:bg-black/90 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-surface-2/80 text-foreground/90 transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         title="Remove reference image"
                       >
                         <X className="h-3 w-3" />
@@ -1604,7 +1604,7 @@ export default function AiImageDialog({
 
                     <div>
                       <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Text on image</div>
-                      <p className="select-text whitespace-pre-wrap rounded-md border border-border bg-black/30 px-2.5 py-2 text-sm text-foreground">
+                      <p className="select-text whitespace-pre-wrap rounded-md border border-border bg-surface-2 px-2.5 py-2 text-sm text-foreground">
                         {inspection.text}
                       </p>
                     </div>
@@ -1630,7 +1630,7 @@ export default function AiImageDialog({
                         value={translateLang}
                         onChange={(e) => setTranslateLang(e.target.value)}
                         disabled={isTranslating}
-                        className="rounded-md border border-border bg-black/40 px-2 py-1 text-xs text-foreground/90 outline-none"
+                        className="rounded-md border border-border bg-surface-2/60 px-2 py-1 text-xs text-foreground/90 outline-none"
                       >
                         {GUARDIAN_LANGS.map((l) => (
                           <option key={l.code} value={l.code}>{l.label}</option>
@@ -1652,7 +1652,7 @@ export default function AiImageDialog({
                         <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Translation</div>
                         <p
                           dir="auto"
-                          className="select-text whitespace-pre-wrap rounded-md border border-border bg-black/30 px-2.5 py-2 text-sm text-foreground"
+                          className="select-text whitespace-pre-wrap rounded-md border border-border bg-surface-2 px-2.5 py-2 text-sm text-foreground"
                         >
                           {translatedText}
                         </p>
