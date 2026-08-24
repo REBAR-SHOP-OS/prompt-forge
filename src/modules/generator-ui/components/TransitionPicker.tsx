@@ -75,6 +75,15 @@ export function TransitionPicker({
     [draftMs, value],
   )
 
+  const selectTransition = useCallback(
+    (id: TransitionId) => {
+      const ms = durationForSelection(id)
+      setDraftMs(ms)
+      commit(id, ms)
+    },
+    [commit, durationForSelection],
+  )
+
   // Roving focus across the transition cards via arrow keys.
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -159,11 +168,11 @@ export function TransitionPicker({
                         type="button"
                         data-transition-card
                         tabIndex={0}
-                        onClick={() => commit(opt.id, durationForSelection(opt.id))}
+                        onClick={() => selectTransition(opt.id)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
-                            commit(opt.id, durationForSelection(opt.id))
+                            selectTransition(opt.id)
                           }
                         }}
                         aria-pressed={selected}
