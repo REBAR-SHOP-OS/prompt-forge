@@ -115,6 +115,8 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { TransitionPicker } from '@/modules/generator-ui/components/TransitionPicker'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
+import { DraggablePreview } from '@/modules/generator-ui/components/DraggablePreview'
+import { usePreviewPosition } from '@/modules/generator-ui/hooks/usePreviewPosition'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
@@ -1540,6 +1542,19 @@ export default function DashboardPage() {
   // line, ratio chips wrapping). We observe its top edge and reserve that
   // much room for the preview so the video card never slides under the chat.
   const composerRef = useRef<HTMLFormElement | null>(null)
+  // Refs for the draggable central Preview: the workspace area, the fixed
+  // sidebars, the composer, and the preview frame itself.
+  const previewWorkspaceRef = useRef<HTMLElement | null>(null)
+  const previewRightSidebarRef = useRef<HTMLElement | null>(null)
+  const previewLeftSidebarRef = useRef<HTMLElement | null>(null)
+  const previewFrameRef = useRef<HTMLElement | null>(null)
+  const previewPosition = usePreviewPosition(userId, {
+    workspace: previewWorkspaceRef,
+    rightSidebar: previewRightSidebarRef,
+    leftSidebar: previewLeftSidebarRef,
+    composer: composerRef,
+    frame: previewFrameRef,
+  })
   const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
     if (typeof window === 'undefined') return 600
     return Math.max(240, Math.round(Math.min(window.innerHeight - 320, window.innerHeight * 0.72) * 0.88))
@@ -11117,12 +11132,14 @@ export default function DashboardPage() {
       </div>
 
       <main
+        ref={previewWorkspaceRef}
         className="grid place-items-center px-4"
         aria-live="polite"
         style={{ minHeight: `${previewMaxHeightPx + 76}px`, paddingTop: '76px' }}
       >
         {previewItem ? (
-          previewItem.kind === 'sequence' ? (
+          <DraggablePreview position={previewPosition} frameRef={previewFrameRef}>
+          {previewItem.kind === 'sequence' ? (
             <SequentialClipPlayer
               clips={previewItem.clips.map((c) => {
                 if (c.kind === 'image') {
@@ -11485,6 +11502,8 @@ export default function DashboardPage() {
             </div>
           </div>
           )
+          }
+          </DraggablePreview>
         ) : (
           <div className="-translate-y-10 text-center sm:-translate-y-8">
             <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
@@ -11497,6 +11516,7 @@ export default function DashboardPage() {
       </main>
 
       <aside
+        ref={previewRightSidebarRef}
         className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
         aria-label="Pending"
       >
@@ -12214,6 +12234,7 @@ export default function DashboardPage() {
       />
 
       <aside
+        ref={previewLeftSidebarRef}
         className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-96 lg:w-[26rem] xl:w-[30rem] 2xl:w-[34rem] ${
           isApprovedPanelOpen
             ? 'pointer-events-auto visible translate-x-0 opacity-100'
