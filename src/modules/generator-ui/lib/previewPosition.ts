@@ -16,6 +16,7 @@ export interface Rect {
 }
 
 export const ZERO_OFFSET: PreviewOffset = { x: 0, y: 0 }
+export const DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 24 }
 
 /**
  * Clamp a translate offset so the preview frame (given its *untranslated*
@@ -43,14 +44,16 @@ export function computeSafeRect(
   rightSidebar: Rect | null,
   leftSidebar: Rect | null,
   composer: Rect | null,
+  header: Rect | null = null,
 ): Rect {
   let left = workspace.left
   let right = workspace.right
-  const top = workspace.top
+  let top = workspace.top
   let bottom = workspace.bottom
   if (rightSidebar) right = Math.min(right, rightSidebar.left)
   if (leftSidebar) left = Math.max(left, leftSidebar.right)
   if (composer) bottom = Math.min(bottom, composer.top)
+  if (header) top = Math.max(top, header.bottom)
   return { left, top, right, bottom }
 }
 
@@ -59,16 +62,16 @@ export function previewOffsetStorageKey(userId: string): string {
 }
 
 export function loadPreviewOffset(userId: string | null): PreviewOffset {
-  if (!userId) return ZERO_OFFSET
+  if (!userId) return DEFAULT_OFFSET
   try {
     const raw = window.localStorage.getItem(previewOffsetStorageKey(userId))
-    if (!raw) return ZERO_OFFSET
+    if (!raw) return DEFAULT_OFFSET
     const parsed = JSON.parse(raw) as Partial<PreviewOffset>
     const x = typeof parsed.x === 'number' && Number.isFinite(parsed.x) ? parsed.x : 0
     const y = typeof parsed.y === 'number' && Number.isFinite(parsed.y) ? parsed.y : 0
     return { x, y }
   } catch {
-    return ZERO_OFFSET
+    return DEFAULT_OFFSET
   }
 }
 
