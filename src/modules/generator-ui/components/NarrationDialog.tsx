@@ -438,8 +438,8 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
       role="dialog"
       aria-label="Narration"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-        <span className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-100">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <span className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
           <MessageSquareQuote className="h-4 w-4 text-violet-300" aria-hidden="true" />
           {t('narration')}
         </span>
@@ -448,7 +448,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
           onClick={onClose}
           aria-label="Close narration"
           title="Close"
-          className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+          className="grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -458,20 +458,20 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
         {/* 1) Narration from the prompt */}
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('fromPrompt')}
             </h3>
             {promptLines.length > 0 ? (
               <div className="flex items-center gap-2">
                 {/* Translate language selector */}
-                <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] pl-2 pr-1 py-0.5">
+                <div className="inline-flex items-center gap-1 rounded-full border border-border bg-accent/40 pl-2 pr-1 py-0.5">
                   <Languages className="h-3.5 w-3.5 text-violet-300" aria-hidden="true" />
                   <select
                     value={targetLang}
                     onChange={(e) => void translateNarration(e.target.value)}
                     disabled={translating}
                     aria-label="Translate narration"
-                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-zinc-200 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-zinc-200"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-foreground/90 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-foreground/90"
                   >
                     <option value="">{t('original')}</option>
                     {TRANSLATE_LANGS.map((l) => (
@@ -509,7 +509,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 {promptLines.map((line, i) => (
                   <li
                     key={i}
-                    className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                    className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-foreground"
                   >
                     {line}
                   </li>
@@ -518,7 +518,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               {translation ? (
                 <div
                   dir="auto"
-                  className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                  className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-foreground"
                 >
                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
                     {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
@@ -530,7 +530,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               <audio ref={narrAudioRef} className="hidden" />
             </>
           ) : (
-            <p className="text-sm leading-6 text-zinc-400">
+            <p className="text-sm leading-6 text-muted-foreground">
               {t('noPrompt')}
             </p>
           )}
@@ -538,15 +538,15 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
 
 
         {/* 2) Narration on the film */}
-        <section className="space-y-2 border-t border-white/10 pt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <section className="space-y-2 border-t border-border pt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t('onFilm')}
           </h3>
 
           {/* Full film-audio player — hear the real film voice and compare it
               with the reference narration above. */}
           {hasVideo ? (
-            <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-accent/30 px-3 py-2">
               <button
                 type="button"
                 onClick={() => void toggleFilmAudio()}
@@ -564,15 +564,15 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 )}
               </button>
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-zinc-300">{t('filmVoice')}</p>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <p className="text-[11px] font-medium text-foreground/80">{t('filmVoice')}</p>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-accent">
                   <div
                     className="h-full rounded-full bg-violet-400 transition-[width] duration-150"
                     style={{ width: filmDuration > 0 ? `${(filmTime / filmDuration) * 100}%` : '0%' }}
                   />
                 </div>
               </div>
-              <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">
+              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                 {fmt(filmTime)} / {fmt(filmDuration)}
               </span>
               {filmAudioUrl ? (
@@ -593,11 +593,11 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
 
 
           {!hasVideo ? (
-            <p className="text-sm leading-6 text-zinc-500">
+            <p className="text-sm leading-6 text-muted-foreground">
               {t('noVideo')}
             </p>
           ) : loading ? (
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               {t('listening')}
             </div>
@@ -607,7 +607,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               <button
                 type="button"
                 onClick={() => void runTranscribe()}
-                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08]"
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-accent/40 px-4 py-1.5 text-xs font-semibold text-foreground/90 transition hover:bg-accent/80"
               >
                 <Mic className="h-3.5 w-3.5" aria-hidden="true" /> {t('retry')}
               </button>
@@ -630,7 +630,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               ) : null}
               <p
                 dir={rtlOf(transcript)}
-                className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
+                className="whitespace-pre-wrap text-[15px] leading-7 text-foreground/90"
               >
                 {showWords
                   ? words.map((w, i) => (
@@ -663,7 +663,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               {transcriptTranslation ? (
                 <div
                   dir="auto"
-                  className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                  className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-foreground"
                 >
                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
                     {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
@@ -677,8 +677,8 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
 
         {/* 3) Comparison / health check */}
         {check ? (
-          <section className="space-y-2 border-t border-white/10 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          <section className="space-y-2 border-t border-border pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('check')}
             </h3>
             <div
@@ -686,7 +686,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 check.status === 'ok'
                   ? 'border-emerald-400/30 bg-emerald-500/[0.08] text-emerald-100'
                   : check.status === 'none'
-                    ? 'border-white/10 bg-white/[0.03] text-zinc-300'
+                    ? 'border-border bg-accent/30 text-foreground/80'
                     : 'border-amber-400/30 bg-amber-500/[0.08] text-amber-100'
               }`}
             >
@@ -726,10 +726,10 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
             {/* Word-level diff: where exactly prompt and film differ */}
             {check.diff.length > 0 && (check.status === 'ok' || check.status === 'mismatch') ? (
               <div className="space-y-2">
-                <p className="text-[11px] text-zinc-400">
-                  <span className="text-zinc-300">{t('wordDiff')}</span> — {t('diffLegend')}
+                <p className="text-[11px] text-muted-foreground">
+                  <span className="text-foreground/80">{t('wordDiff')}</span> — {t('diffLegend')}
                 </p>
-                <p dir="auto" className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[14px] leading-7">
+                <p dir="auto" className="rounded-lg border border-border bg-accent/30 px-3 py-2 text-[14px] leading-7">
                   {check.diff.map((tok, i) => (
                     <span
                       key={i}
@@ -738,7 +738,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                           ? 'rounded-sm bg-rose-500/15 px-0.5 text-rose-300 line-through decoration-rose-400/70'
                           : tok.kind === 'extra'
                             ? 'rounded-sm bg-amber-400/15 px-0.5 text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2'
-                            : 'text-zinc-200'
+                            : 'text-foreground/90'
                       }
                     >
                       {tok.text}

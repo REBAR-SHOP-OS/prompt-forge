@@ -195,7 +195,7 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
       <div className="space-y-2">
         <div
           ref={containerRef}
-          className="w-full overflow-hidden rounded-md border border-white/10 bg-black/40 px-2 py-2"
+          className="w-full overflow-hidden rounded-md border border-border bg-black/40 px-2 py-2"
           style={{ minHeight: height + 16 }}
         />
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
@@ -204,7 +204,7 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
               type="button"
               onClick={togglePlay}
               disabled={!isReady}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-40"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition hover:border-border hover:bg-accent disabled:opacity-40"
               aria-label={isPlaying ? 'Pause' : 'Play full track'}
               title={isPlaying ? 'Pause' : 'Play full track'}
             >
@@ -222,11 +222,11 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
               <span>Play selection</span>
             </button>
           </div>
-          <span className="tabular-nums text-zinc-600">
+          <span className="tabular-nums text-muted-foreground">
             {fmt(currentTime)} / {fmt(duration)}
           </span>
         </div>
-        <p className="text-[11px] leading-relaxed text-zinc-500">
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
           Drag the edges of the green box to choose the section. That section will play
           across the entire Final Film.
         </p>

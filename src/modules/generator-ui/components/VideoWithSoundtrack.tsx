@@ -139,7 +139,7 @@ export function VideoWithSoundtrack({
     <div className="flex w-full flex-col">
       <div className={`relative ${videoBoxClassName ?? ''}`} style={videoBoxStyle}>
         {srcLoading ? (
-          <div className={`grid h-full w-full place-items-center bg-black text-zinc-500 ${videoClassName ?? ''}`} style={videoStyle}>
+          <div className={`grid h-full w-full place-items-center bg-black text-muted-foreground ${videoClassName ?? ''}`} style={videoStyle}>
             <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
           </div>
         ) : (

@@ -241,8 +241,8 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100', todayOnly ? 'max-w-4xl' : 'max-w-7xl')}>
-        <DialogHeader className="border-b border-white/10 px-6 py-4">
+      <DialogContent className={cn('border-border bg-[#0b0c0e]/95 p-0 text-foreground', todayOnly ? 'max-w-4xl' : 'max-w-7xl')}>
+        <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
             <span>{todayOnly ? "Today's Occasions" : 'Calendar'}</span>
@@ -251,7 +251,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
         <div className={cn('grid gap-0', todayOnly ? 'md:grid-cols-[1fr,1fr]' : 'md:grid-cols-[auto,1fr,1fr,1fr]')}>
           {/* Column 1: calendar */}
           {!todayOnly && (
-          <div className="border-white/10 p-4 md:border-r">
+          <div className="border-border p-4 md:border-r">
 
             <Calendar
               mode="single"
@@ -265,14 +265,14 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           )}
 
           {/* Column 2: day details */}
-          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-white/10">
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
-              <div className="text-sm font-medium text-zinc-200" dir="auto">{longLabel}</div>
+          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-border">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
+              <div className="text-sm font-medium text-foreground/90" dir="auto">{longLabel}</div>
 
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
               {loading && (
-                <div className="flex items-center gap-2 px-2 text-sm text-zinc-400">
+                <div className="flex items-center gap-2 px-2 text-sm text-muted-foreground">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                   {t.loading}
                 </div>
@@ -281,39 +281,39 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                 <div className="px-2 text-sm text-rose-300">{error}</div>
               )}
               {!loading && !error && occasions && occasions.length === 0 && (
-                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.empty}</div>
+                <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.empty}</div>
               )}
               {!loading && !error && occasions && occasions.length > 0 && (
                 <ul className="flex flex-col gap-1.5">
                   {occasions.map((occ, i) => {
                     const isOpen = expandedIndex === i
                     return (
-                      <li key={i} className="rounded-md border border-white/5 bg-white/[0.02]">
+                      <li key={i} className="rounded-md border border-border/50 bg-accent/20">
                         <button
                           type="button"
                           onClick={() => { setExpandedIndex(isOpen ? null : i); pickOccasion(occ) }}
                           className={cn(
-                            'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]',
-                            isOpen && 'bg-white/[0.04]',
+                            'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent/40',
+                            isOpen && 'bg-accent/40',
                           )}
                           dir="auto"
                         >
                           <span className="text-sm font-medium text-amber-300">{occ.title}</span>
                           <ChevronDown
                             className={cn(
-                              'h-4 w-4 shrink-0 text-zinc-500 transition-transform',
+                              'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
                               isOpen && 'rotate-180',
                             )}
                           />
                         </button>
                         {isOpen && (
-                          <div className="space-y-3 border-t border-white/5 px-3 py-3 text-sm text-zinc-200" dir="auto">
+                          <div className="space-y-3 border-t border-border/50 px-3 py-3 text-sm text-foreground/90" dir="auto">
                             <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.whatItIs}</div>
+                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.whatItIs}</div>
                               <p className="leading-relaxed">{occ.whatItIs}</p>
                             </div>
                             <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.history}</div>
+                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.history}</div>
                               <p className="leading-relaxed">{occ.history}</p>
                             </div>
                           </div>
@@ -324,7 +324,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                 </ul>
               )}
               {!loading && !error && !occasions && (
-                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.pick}</div>
+                <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.pick}</div>
               )}
             </div>
           </div>
@@ -333,10 +333,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           {!todayOnly && (
           <div className="flex max-h-[70vh] min-h-[420px] flex-col">
 
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
               <div className="flex flex-col leading-tight">
-                <div className="text-[10px] uppercase tracking-wide text-zinc-500">{t.monthTitle}</div>
-                <div className="text-sm font-medium text-zinc-200" dir="auto">{monthLabel}</div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t.monthTitle}</div>
+                <div className="text-sm font-medium text-foreground/90" dir="auto">{monthLabel}</div>
               </div>
               <div className="flex items-center gap-1">
                 {filterIcons.map(({ cat, Icon, label }) => {
@@ -353,7 +353,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                         'flex h-8 w-8 items-center justify-center rounded-md border transition-colors',
                         on
                           ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/15'
-                          : 'border-white/10 bg-transparent text-zinc-600 hover:text-zinc-400',
+                          : 'border-border bg-transparent text-muted-foreground hover:text-muted-foreground',
                       )}
                     >
                       <Icon className="h-4 w-4" />
@@ -364,7 +364,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
               {monthLoading && (
-                <div className="flex items-center gap-2 px-2 text-sm text-zinc-400">
+                <div className="flex items-center gap-2 px-2 text-sm text-muted-foreground">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                   {t.loading}
                 </div>
@@ -373,7 +373,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                 <div className="px-2 text-sm text-rose-300">{monthError}</div>
               )}
               {!monthLoading && !monthError && filteredMonthOccasions && filteredMonthOccasions.length === 0 && (
-                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.monthEmpty}</div>
+                <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.monthEmpty}</div>
               )}
               {!monthLoading && !monthError && filteredMonthOccasions && filteredMonthOccasions.length > 0 && (
                 <ul className="flex flex-col gap-0.5">
@@ -386,12 +386,12 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                           type="button"
                           onClick={() => { handleMonthOccasionClick(occ.date); pickOccasion(occ) }}
                           className={cn(
-                            'flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.04]',
-                            isSelected && 'bg-white/[0.04]',
+                            'flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40',
+                            isSelected && 'bg-accent/40',
                           )}
                           dir="auto"
                         >
-                          <span className="mt-0.5 inline-flex h-6 w-7 shrink-0 items-center justify-center rounded text-xs font-medium text-zinc-400">
+                          <span className="mt-0.5 inline-flex h-6 w-7 shrink-0 items-center justify-center rounded text-xs font-medium text-muted-foreground">
                             {day}
                           </span>
                           <span className="text-sm font-medium leading-snug text-emerald-400 hover:text-emerald-300">
@@ -411,11 +411,11 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
 
           {/* Column 4: AI scenario */}
-          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-white/10">
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
+          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-border">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
               <div className="flex items-center gap-2">
                 <Clapperboard className="h-4 w-4 text-amber-300" />
-                <div className="text-sm font-medium text-zinc-200">{t.scenarioTitle}</div>
+                <div className="text-sm font-medium text-foreground/90">{t.scenarioTitle}</div>
               </div>
               <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
                 {t.badge10s}
@@ -423,13 +423,13 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-3">
               {!selectedOccasion && (
-                <div className="px-1 text-sm text-zinc-400" dir="auto">{t.pickOccasion}</div>
+                <div className="px-1 text-sm text-muted-foreground" dir="auto">{t.pickOccasion}</div>
               )}
               {selectedOccasion && (
                 <div className="space-y-3">
                   <div className="text-sm font-medium text-amber-300" dir="auto">{selectedOccasion.title}</div>
                   {scenarioLoading && (
-                    <div className="flex items-center gap-2 text-sm text-zinc-400">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <LoaderCircle className="h-4 w-4 animate-spin" />
                       {t.generating}
                     </div>
@@ -438,7 +438,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                     <div className="text-sm text-rose-300">{scenarioError}</div>
                   )}
                   {!scenarioLoading && currentScenario && (
-                    <p className="whitespace-pre-wrap rounded-md border border-white/5 bg-white/[0.02] p-3 text-sm leading-relaxed text-zinc-100" dir="auto">
+                    <p className="whitespace-pre-wrap rounded-md border border-border/50 bg-accent/20 p-3 text-sm leading-relaxed text-foreground" dir="auto">
                       {currentScenario}
                     </p>
                   )}
@@ -446,13 +446,13 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
               )}
             </div>
             {selectedOccasion && (
-              <div className="flex items-center justify-end gap-2 border-t border-white/10 px-4 py-2">
+              <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => generateScenario(selectedOccasion, true)}
                   disabled={scenarioLoading}
-                  className="h-8 gap-1.5 text-xs text-zinc-300 hover:text-zinc-100"
+                  className="h-8 gap-1.5 text-xs text-foreground/80 hover:text-foreground"
                 >
                   <RefreshCw className={cn('h-3.5 w-3.5', scenarioLoading && 'animate-spin')} />
                   {t.regenerate}

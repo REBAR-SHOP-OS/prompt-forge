@@ -80,6 +80,40 @@ describe('ThemeSwitcher', () => {
     })
   })
 
+  it('sets the neon class for a dynamic theme', async () => {
+    renderSwitcher()
+    fireEvent.click(screen.getByRole('button', { name: /change theme/i }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Neon/ }))
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('neon')).toBe(true)
+    })
+  })
+
+  it('sets the slate class for a dynamic theme', async () => {
+    renderSwitcher()
+    fireEvent.click(screen.getByRole('button', { name: /change theme/i }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Slate/ }))
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('slate')).toBe(true)
+    })
+  })
+
+  it('renders the switcher with semantic tokens, not hardcoded dark colors', async () => {
+    renderSwitcher()
+    const trigger = screen.getByRole('button', { name: /change theme/i })
+    // Trigger must be theme-aware (muted-foreground), never a fixed zinc/white.
+    expect(trigger.className).toContain('text-muted-foreground')
+    expect(trigger.className).not.toMatch(/text-zinc|text-white|bg-black/)
+
+    fireEvent.click(trigger)
+    // Popover surface must use semantic popover tokens, not a fixed dark panel.
+    const popover = (await screen.findByRole('menuitemradio', { name: /Light/ })).closest('[data-radix-popper-content-wrapper]')
+    expect(popover).not.toBeNull()
+    const content = popover!.querySelector('[data-side]') ?? popover!
+    expect(content.className).toContain('bg-popover')
+    expect(content.className).not.toMatch(/bg-\[#0b0c0e\]|text-zinc-200/)
+  })
+
   it('resolves "system" to dark when prefers-color-scheme is dark', async () => {
     setPrefersDark(true)
     renderSwitcher()

@@ -67,7 +67,7 @@ export default function LoginIntro({ onFinish, onDisableForever }: LoginIntroPro
         onClick={toggleMute}
         aria-label={muted ? 'Unmute intro' : 'Mute intro'}
         title={muted ? 'Unmute' : 'Mute'}
-        className="absolute bottom-6 left-6 grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/40 text-white/80 backdrop-blur transition hover:border-white/30 hover:bg-black/60 hover:text-white"
+        className="absolute bottom-6 left-6 grid h-10 w-10 place-items-center rounded-full border border-border bg-black/40 text-white/80 backdrop-blur transition hover:border-border hover:bg-black/60 hover:text-white"
       >
         {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
       </button>
@@ -76,7 +76,7 @@ export default function LoginIntro({ onFinish, onDisableForever }: LoginIntroPro
         type="button"
         onClick={onFinish}
         aria-label="Skip intro"
-        className="absolute right-6 top-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 backdrop-blur transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-100"
+        className="absolute right-6 top-6 inline-flex items-center gap-2 rounded-full border border-border bg-black/40 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/85 backdrop-blur transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-100"
       >
         <span>Skip</span>
         <SkipForward className="h-3.5 w-3.5" aria-hidden="true" />
@@ -86,7 +86,7 @@ export default function LoginIntro({ onFinish, onDisableForever }: LoginIntroPro
         <button
           type="button"
           onClick={onDisableForever}
-          className="absolute bottom-6 right-6 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/60 backdrop-blur transition hover:border-white/30 hover:text-white/90"
+          className="absolute bottom-6 right-6 rounded-full border border-border bg-black/40 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/60 backdrop-blur transition hover:border-border hover:text-white/90"
         >
           Don't show again
         </button>

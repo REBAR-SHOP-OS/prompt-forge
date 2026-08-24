@@ -272,7 +272,7 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   if (!musicUrl && !voiceoverUrl) return null
 
   return (
-    <div className="flex flex-col gap-2 border-t border-white/10 px-4 py-3">
+    <div className="flex flex-col gap-2 border-t border-border px-4 py-3">
       {musicUrl ? (
         <div className="flex items-center gap-2">
           <span

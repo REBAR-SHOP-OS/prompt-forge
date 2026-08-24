@@ -100,7 +100,7 @@ export function TransitionPreview({ id, size = 32, loop = true }: Props) {
 
   return (
     <div
-      className="relative shrink-0 overflow-hidden rounded-[3px] border border-white/15"
+      className="relative shrink-0 overflow-hidden rounded-[3px] border border-border"
       style={{ width: w, height: h, background: '#000' }}
       aria-hidden="true"
     >
