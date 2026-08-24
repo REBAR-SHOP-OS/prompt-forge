@@ -278,7 +278,7 @@ export function StylePickerDialog({
                             aria-label={`Select ${opt.label}`}
                             className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-fuchsia-400"
                           >
-                            <div className="aspect-video bg-zinc-900">
+                            <div className="aspect-video bg-card">
                               {isPreviewing ? (
                                 <video
                                   key={opt.value}
@@ -313,7 +313,7 @@ export function StylePickerDialog({
                               size="sm"
                               onClick={() => setPreviewingValue(isPreviewing ? null : opt.value)}
                               aria-label={isPreviewing ? `Close ${opt.label} preview` : `Preview ${opt.label}`}
-                              className="absolute left-1.5 top-1.5 h-7 gap-1 bg-black/70 px-2 text-[10px] text-white hover:bg-black/85"
+                              className="absolute left-1.5 top-1.5 h-7 gap-1 bg-surface-2/80 px-2 text-[10px] text-foreground hover:bg-surface-2"
                             >
                               {isPreviewing ? <X className="h-3 w-3" /> : <Play className="h-3 w-3 fill-current" />}
                               {isPreviewing ? 'Close' : 'Preview'}

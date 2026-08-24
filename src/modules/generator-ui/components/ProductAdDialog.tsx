@@ -1403,7 +1403,7 @@ export default function ProductAdDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent dir={dir} className="max-w-2xl border-border bg-[#0b0c0e]/95 text-foreground">
+      <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isCharacter ? (
@@ -1431,7 +1431,7 @@ export default function ProductAdDialog({
                     )}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-[28rem] max-w-[92vw] border-border bg-[#0b0c0e] text-foreground">
+                <PopoverContent align="end" className="w-[28rem] max-w-[92vw] border-border bg-card text-foreground">
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
                     {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
                   </div>
@@ -1445,7 +1445,7 @@ export default function ProductAdDialog({
                     rows={10}
                     maxLength={undefined}
                     placeholder={t.businessPlaceholder}
-                    className="max-h-[55vh] min-h-[220px] resize-y border-border bg-black/30 text-sm text-foreground"
+                    className="max-h-[55vh] min-h-[220px] resize-y border-border bg-surface-2 text-sm text-foreground"
                   />
                   <div className="mt-3 mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
                     {t.contactLabel}
@@ -1455,19 +1455,19 @@ export default function ProductAdDialog({
                       value={contactWebsite}
                       onChange={(e) => { setContactWebsite(e.target.value); setBusinessSaved(false) }}
                       placeholder={t.contactWebsite}
-                      className="h-9 border-border bg-black/30 text-sm text-foreground"
+                      className="h-9 border-border bg-surface-2 text-sm text-foreground"
                     />
                     <Input
                       value={contactPhone}
                       onChange={(e) => { setContactPhone(e.target.value); setBusinessSaved(false) }}
                       placeholder={t.contactPhone}
-                      className="h-9 border-border bg-black/30 text-sm text-foreground"
+                      className="h-9 border-border bg-surface-2 text-sm text-foreground"
                     />
                     <Input
                       value={contactAddress}
                       onChange={(e) => { setContactAddress(e.target.value); setBusinessSaved(false) }}
                       placeholder={t.contactAddress}
-                      className="h-9 border-border bg-black/30 text-sm text-foreground"
+                      className="h-9 border-border bg-surface-2 text-sm text-foreground"
                     />
                     <div className="flex items-center gap-2 pt-1">
                       {contactLogo ? (
@@ -1477,11 +1477,11 @@ export default function ProductAdDialog({
                           className="h-10 w-10 rounded-md border border-border bg-accent/50 object-contain p-0.5"
                         />
                       ) : (
-                        <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-border bg-black/30 text-muted-foreground">
+                        <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground">
                           <ImagePlus className="h-4 w-4" aria-hidden="true" />
                         </div>
                       )}
-                      <label className="cursor-pointer rounded-md border border-border bg-black/30 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border">
+                      <label className="cursor-pointer rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border">
                         {contactLogo ? 'Replace' : t.contactLogo}
                         <input
                           type="file"
@@ -1580,7 +1580,7 @@ export default function ProductAdDialog({
                           }}
                         />
                         {previewLoading && (
-                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-surface-2/60">
                             <LoaderCircle className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
                           </div>
                         )}
@@ -1591,7 +1591,7 @@ export default function ProductAdDialog({
                     type="button"
                     onClick={clearImage}
                     aria-label="Remove image"
-                    className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-foreground/90 ring-1 ring-white/20 hover:bg-zinc-800"
+                    className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-foreground/90 ring-1 ring-foreground/20 hover:bg-surface-2"
                   >
                     <X className="h-3 w-3" aria-hidden="true" />
                   </button>
@@ -1603,7 +1603,7 @@ export default function ProductAdDialog({
                   disabled={isUploadingImage}
                   title="Add product photo"
                   aria-label="Add product photo"
-                  className="inline-flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border bg-black/30 text-muted-foreground transition hover:border-amber-300/40 hover:text-amber-100 disabled:opacity-50"
+                  className="inline-flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground transition hover:border-amber-300/40 hover:text-amber-100 disabled:opacity-50"
                 >
                   {isUploadingImage ? (
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -1619,7 +1619,7 @@ export default function ProductAdDialog({
                   type="button"
                   onClick={openProductPicker}
                   title={t.chooseFromProducts}
-                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-black/30 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-amber-300/40 hover:text-amber-100"
+                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-amber-300/40 hover:text-amber-100"
                 >
                   <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
                   <span className="truncate">{t.chooseFromProducts}</span>
@@ -1656,7 +1656,7 @@ export default function ProductAdDialog({
                       type="button"
                       onClick={clearCharacter}
                       aria-label="Remove character"
-                      className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-foreground/90 ring-1 ring-white/20 hover:bg-zinc-800"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-foreground/90 ring-1 ring-foreground/20 hover:bg-surface-2"
                     >
                       <X className="h-3 w-3" aria-hidden="true" />
                     </button>
@@ -1666,7 +1666,7 @@ export default function ProductAdDialog({
                     type="button"
                     onClick={openCharacterPicker}
                     title="Add character"
-                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-black/30 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-amber-300/40 hover:text-amber-100"
+                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-amber-300/40 hover:text-amber-100"
                   >
                     <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
                     <span className="truncate">Add character</span>
@@ -1687,7 +1687,7 @@ export default function ProductAdDialog({
                     if (nameNeedsReview) setNameNeedsReview(false)
                   }}
                   placeholder={t.productNamePlaceholder}
-                  className="border-border bg-black/30 text-foreground"
+                  className="border-border bg-surface-2 text-foreground"
                 />
                 {nameNeedsReview && (
                   <p className="mt-1.5 text-xs text-amber-400" dir="ltr">
@@ -1704,7 +1704,7 @@ export default function ProductAdDialog({
                   onChange={(e) => setProductDescription(e.target.value)}
                   rows={2}
                   placeholder={t.descriptionPlaceholder}
-                  className="min-h-[56px] border-border bg-black/30 text-foreground"
+                  className="min-h-[56px] border-border bg-surface-2 text-foreground"
                 />
               </div>
             </div>
@@ -1720,7 +1720,7 @@ export default function ProductAdDialog({
               onChange={(e) => setUserPrompt(e.target.value)}
               rows={3}
               placeholder={t.yourPromptPlaceholder}
-              className="min-h-[72px] border-border bg-black/30 text-foreground"
+              className="min-h-[72px] border-border bg-surface-2 text-foreground"
             />
           </div>
 
@@ -1946,7 +1946,7 @@ export default function ProductAdDialog({
               onChange={(e) => setCameraMovement(e.target.value)}
               rows={2}
               placeholder={t.cameraNotesPlaceholder}
-              className="min-h-[56px] border-border bg-black/30 text-foreground"
+              className="min-h-[56px] border-border bg-surface-2 text-foreground"
             />
           </div>
 
@@ -1956,7 +1956,7 @@ export default function ProductAdDialog({
           {isSplit ? (
             <div className="space-y-3">
               {scenes.map((text, i) => (
-                <div key={i} className="rounded-md border border-border bg-black/30 p-3">
+                <div key={i} className="rounded-md border border-border bg-surface-2 p-3">
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {t.scene_} {i + 1} ({sceneRange(i)})
@@ -1981,7 +1981,7 @@ export default function ProductAdDialog({
               ))}
             </div>
           ) : scenes.length > 0 ? (
-            <div className="rounded-md border border-border bg-black/30 p-3">
+            <div className="rounded-md border border-border bg-surface-2 p-3">
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t.adScenario} ({duration}s)
               </div>
@@ -2021,7 +2021,7 @@ export default function ProductAdDialog({
                     {t.regenerate}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" dir={dir} className="w-52 border-border bg-[#0b0c0e]/95 p-1">
+                <PopoverContent align="end" dir={dir} className="w-52 border-border bg-card p-1">
                   <button
                     type="button"
                     onClick={() => generate(true)}
@@ -2071,7 +2071,7 @@ export default function ProductAdDialog({
                   {t.generate}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" dir={dir} className="w-52 border-border bg-[#0b0c0e]/95 p-1">
+              <PopoverContent align="end" dir={dir} className="w-52 border-border bg-card p-1">
                 <button
                   type="button"
                   onClick={() => generate(true)}
@@ -2092,7 +2092,7 @@ export default function ProductAdDialog({
         </div>
 
         <Dialog open={productPickerOpen} onOpenChange={(o) => { if (!preparingId) setProductPickerOpen(o) }}>
-          <DialogContent dir={dir} className="max-w-2xl border-border bg-[#0b0c0e]/95 text-foreground">
+          <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
             <button
               type="button"
               onClick={openReframeHistory}
@@ -2151,18 +2151,18 @@ export default function ProductAdDialog({
                         type="button"
                         disabled={!pickedAspect || Boolean(preparingId)}
                         onClick={() => pickProduct(photo)}
-                        className="group relative overflow-hidden rounded-md border border-border bg-black/30 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <img
                           src={photo.url}
                           alt={photo.title ?? 'Product'}
                           loading="lazy"
-                          className="aspect-square w-full bg-black/40 object-cover"
+                          className="aspect-square w-full bg-surface-2/60 object-cover"
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
                         />
                         <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || t.untitled}</div>
                         {busy ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-xs text-foreground">
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-surface-2/80 text-xs text-foreground">
                             <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                             {t.preparing}
                           </div>
@@ -2183,7 +2183,7 @@ export default function ProductAdDialog({
         </Dialog>
 
         <Dialog open={reframeHistoryOpen} onOpenChange={setReframeHistoryOpen}>
-          <DialogContent dir={dir} className="max-w-2xl border-border bg-[#0b0c0e]/95 text-foreground">
+          <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <History className="h-4 w-4" aria-hidden="true" /> {t.reframeHistory}
@@ -2204,16 +2204,16 @@ export default function ProductAdDialog({
                     key={item.id}
                     type="button"
                     onClick={() => reuseReframe(item)}
-                    className="group relative overflow-hidden rounded-md border border-border bg-black/30 text-left transition hover:border-amber-300/40"
+                    className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-amber-300/40"
                   >
                     <img
                       src={item.url}
                       alt={item.title ?? 'Reframed image'}
                       loading="lazy"
-                      className="aspect-square w-full bg-black/40 object-cover"
+                      className="aspect-square w-full bg-surface-2/60 object-cover"
                       onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
                     />
-                    <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                       {item.aspect}
                     </span>
                     <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{item.title || t.untitled}</div>
@@ -2241,7 +2241,7 @@ export default function ProductAdDialog({
         />
 
         <Dialog open={characterPickerOpen} onOpenChange={(o) => { if (!uploadingCharacter) setCharacterPickerOpen(o) }}>
-          <DialogContent dir={dir} className="max-w-2xl border-border bg-[#0b0c0e]/95 text-foreground">
+          <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <UserRound className="h-4 w-4" aria-hidden="true" /> Choose a character
@@ -2282,13 +2282,13 @@ export default function ProductAdDialog({
                       key={photo.id}
                       type="button"
                       onClick={() => pickCharacter(photo)}
-                      className="group relative overflow-hidden rounded-md border border-border bg-black/30 text-left transition hover:border-amber-300/40"
+                      className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-amber-300/40"
                     >
                       <img
                         src={photo.url}
                         alt={photo.title ?? 'Character'}
                         loading="lazy"
-                        className="aspect-square w-full bg-black/40 object-cover"
+                        className="aspect-square w-full bg-surface-2/60 object-cover"
                         onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
                       />
                       <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || t.untitled}</div>
@@ -2308,7 +2308,7 @@ export default function ProductAdDialog({
 
 
         <Dialog open={previewLightboxOpen && Boolean(safeMediaUrl(imagePreviewUrl))} onOpenChange={setPreviewLightboxOpen}>
-          <DialogContent dir={dir} className="max-w-3xl border-border bg-[#0b0c0e]/95 text-foreground">
+          <DialogContent dir={dir} className="max-w-3xl border-border bg-card text-foreground">
             <DialogHeader>
               <DialogTitle className="text-base">{t.viewImage}</DialogTitle>
             </DialogHeader>

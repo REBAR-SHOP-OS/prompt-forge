@@ -216,7 +216,7 @@ export function NarrationReviewPanel({
       className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
       onClick={close}
     >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
+      <div className="absolute inset-0 bg-surface-2/80 backdrop-blur-sm" aria-hidden="true" />
 
       <div
         className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-[#0f1012] p-5 shadow-2xl"

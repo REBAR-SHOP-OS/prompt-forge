@@ -244,7 +244,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
             onClick={onClose}
             aria-label="Close transcript"
             title="Close"
-            className="grid h-8 w-8 place-items-center rounded-full border border-border bg-black/60 text-foreground/90 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+            className="grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>

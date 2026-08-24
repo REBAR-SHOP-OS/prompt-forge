@@ -195,7 +195,7 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
       <div className="space-y-2">
         <div
           ref={containerRef}
-          className="w-full overflow-hidden rounded-md border border-border bg-black/40 px-2 py-2"
+          className="w-full overflow-hidden rounded-md border border-border bg-surface-2/60 px-2 py-2"
           style={{ minHeight: height + 16 }}
         />
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
