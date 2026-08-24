@@ -105,6 +105,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 
 import { ApiError } from '@/core/api/client'
@@ -9333,13 +9334,6 @@ export default function DashboardPage() {
             <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setIsApprovedPanelOpen(true)}>
-            <Library className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>Library</span>
-            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {approvedIds.size}
-            </span>
-          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => { void signOut() }} className="text-red-400 focus:text-red-300">
             <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
             <span>Sign out</span>
@@ -9348,6 +9342,32 @@ export default function DashboardPage() {
       </DropdownMenu>
 
       <div className={`fixed left-14 top-4 flex items-center gap-2 sm:left-16 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Library"
+                title="Library"
+                onClick={() => setIsApprovedPanelOpen((open) => !open)}
+                className={`relative grid h-9 w-9 place-items-center rounded-md border transition ${
+                  isApprovedPanelOpen
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                    : 'border-transparent text-zinc-200/80 hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100'
+                }`}
+              >
+                <Library className="h-[18px] w-[18px]" aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-white/10 bg-[#1a1c1f] px-1 text-[10px] font-semibold leading-none text-zinc-200 tabular-nums">
+                  {approvedIds.size}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Library
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
         {(() => {
           const isAlert = upcomingOccasion !== null
           const occasionLabel = upcomingOccasion
