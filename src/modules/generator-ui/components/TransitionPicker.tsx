@@ -116,7 +116,7 @@ export function TransitionPicker({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border hover:text-foreground"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/95 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border hover:text-foreground"
           title="Transition between these clips"
           aria-label={`Transition: ${TRANSITION_LABEL[value]}`}
         >
@@ -181,7 +181,7 @@ export function TransitionPicker({
                         aria-pressed={selected}
                         className={`flex items-center gap-3 rounded-lg border p-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/50 ${
                           selected
-                            ? 'border-sky-300/50 bg-sky-300/[0.08] shadow-[0_0_0_1px_rgba(125,211,252,0.25)]'
+                            ? 'border-accent-cool/50 bg-sky-300/[0.08] shadow-[0_0_0_1px_rgba(125,211,252,0.25)]'
                             : 'border-border bg-accent/20 hover:border-border hover:bg-accent/50'
                         }`}
                       >
@@ -190,7 +190,7 @@ export function TransitionPicker({
                           <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                             {opt.label}
                             {selected && (
-                              <Check className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                              <Check className="h-3.5 w-3.5 text-accent-cool" aria-hidden="true" />
                             )}
                           </span>
                           <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
@@ -236,7 +236,7 @@ export function TransitionPicker({
                     }}
                     className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
                       clampTransitionDuration(draftMs) === p.ms
-                        ? 'border-sky-300/50 bg-sky-300/10 text-sky-200'
+                        ? 'border-accent-cool/50 bg-sky-300/10 text-accent-cool'
                         : 'border-border bg-accent/20 text-muted-foreground hover:border-border hover:text-foreground/90'
                     }`}
                   >
@@ -251,7 +251,7 @@ export function TransitionPicker({
             <button
               type="button"
               onClick={() => commitAll(value, draftMs)}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-accent/30 px-3 py-2 text-xs font-medium text-foreground/90 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-100"
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-accent/30 px-3 py-2 text-xs font-medium text-foreground/90 transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
             >
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
               Apply to all ({gapCount} gaps)

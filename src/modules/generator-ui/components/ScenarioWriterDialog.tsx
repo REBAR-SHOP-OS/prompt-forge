@@ -45,11 +45,11 @@ function SceneText({ text, narrationLabel, dir }: { text: string; narrationLabel
         {body}
       </p>
       {narration ? (
-        <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
-          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+        <div className="rounded-md border border-accent-warm/30 bg-amber-400/5 px-2.5 py-2">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm/90">
             {narrationLabel}
           </div>
-          <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-amber-50/90">
+          <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-accent-warm/90">
             {narration}
           </p>
         </div>
@@ -368,7 +368,7 @@ export default function ScenarioWriterDialog({
       <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Clapperboard className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            <Clapperboard className="h-5 w-5 text-accent-warm" aria-hidden="true" />
             {t.title}
             <div className="ms-auto flex items-center gap-2">
               <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
@@ -380,7 +380,7 @@ export default function ScenarioWriterDialog({
                     className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
                       businessInfo.trim()
                         ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                        : 'border-accent-warm/40 bg-accent-warm/10 text-accent-warm'
                     }`}
                   >
                     <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -391,7 +391,7 @@ export default function ScenarioWriterDialog({
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-80 border-border bg-card text-foreground">
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
-                    {t.businessLabel} <span className="text-amber-300">{t.businessRequired}</span>
+                    {t.businessLabel} <span className="text-accent-warm">{t.businessRequired}</span>
                   </div>
                   <Textarea
                     value={businessInfo}
@@ -422,10 +422,10 @@ export default function ScenarioWriterDialog({
               </Popover>
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
                 <SelectTrigger
-                  className="h-7 w-auto gap-1.5 rounded-full border-border bg-black/20 px-2.5 text-[11px] font-semibold text-foreground/80"
+                  className="h-7 w-auto gap-1.5 rounded-full border-border bg-muted/60 px-2.5 text-[11px] font-semibold text-foreground/80"
                   aria-label="Language"
                 >
-                  <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                  <Languages className="h-3.5 w-3.5 text-accent-cool" aria-hidden="true" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -451,7 +451,7 @@ export default function ScenarioWriterDialog({
             <div
               role="radiogroup"
               aria-label="Scenario duration"
-              className="inline-flex rounded-full border border-border bg-black/20 p-1 text-xs font-semibold"
+              className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold"
             >
               {DURATIONS.map((sec) => {
                 const active = duration === sec
@@ -489,7 +489,7 @@ export default function ScenarioWriterDialog({
                 <div
                   role="radiogroup"
                   aria-label="Idea mode"
-                  className="inline-flex rounded-full border border-border bg-black/20 p-0.5 text-[11px] font-semibold"
+                  className="inline-flex rounded-full border border-border bg-muted/60 p-0.5 text-[11px] font-semibold"
                 >
                   <button
                     type="button"

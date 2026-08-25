@@ -130,7 +130,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
       <div
         className={
           fallbackClassName ??
-          "grid h-full w-full place-items-center bg-[#15171a] text-muted-foreground"
+          "grid h-full w-full place-items-center bg-surface-2 text-muted-foreground"
         }
         role="presentation"
       >

@@ -82,7 +82,7 @@ export function StylePreviewCard({
             onClick={handleSelect}
             className={`mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
               selected
-                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100 hover:bg-amber-300/25'
+                ? 'border-accent-warm/60 bg-accent-warm/15 text-accent-warm hover:bg-accent-warm/25'
                 : 'border-border bg-accent/60 text-foreground hover:bg-accent'
             }`}
           >

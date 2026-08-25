@@ -520,7 +520,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   dir="auto"
                   className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-foreground"
                 >
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-accent-cool/80">
                     {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
                   </p>
                   {translation}
@@ -623,7 +623,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
           ) : (
             <>
               {lowConfWords.length > 0 ? (
-                <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
+                <p className="flex items-center gap-2 text-[11px] text-accent-warm/90">
                   <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
                   {t('mispronounced')}
                 </p>
@@ -641,8 +641,8 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                             onClick={() => void playPronunciation(w.text, i)}
                             disabled={pronouncing === i}
                             title="Click to hear the correct pronunciation"
-                            className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-amber-400/20 hover:text-amber-200 disabled:cursor-wait ${
-                              playingWord === i ? 'bg-amber-400/25 text-amber-100' : ''
+                            className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-accent-warm underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-accent-warm/20 hover:text-accent-warm disabled:cursor-wait ${
+                              playingWord === i ? 'bg-accent-warm/25 text-accent-warm' : ''
                             }`}
                           >
                             {w.text}
@@ -665,7 +665,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   dir="auto"
                   className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-foreground"
                 >
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-accent-cool/80">
                     {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
                   </p>
                   {transcriptTranslation}
@@ -687,7 +687,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   ? 'border-emerald-400/30 bg-emerald-500/[0.08] text-emerald-100'
                   : check.status === 'none'
                     ? 'border-border bg-accent/30 text-foreground/80'
-                    : 'border-amber-400/30 bg-amber-500/[0.08] text-amber-100'
+                    : 'border-accent-warm/30 bg-accent-warm/[0.08] text-accent-warm'
               }`}
             >
               <div className="flex items-start gap-2">
@@ -699,7 +699,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 <span>{check.message}</span>
               </div>
               {checkMessageTranslation ? (
-                <p dir="auto" className="pl-6 text-[13px] text-sky-200/90">
+                <p dir="auto" className="pl-6 text-[13px] text-accent-cool/90">
                   {checkMessageTranslation}
                 </p>
               ) : null}
@@ -710,7 +710,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-medium">
                   <span className="text-emerald-300">{check.matchPercent}% {t('match')}</span>
-                  <span className="text-amber-300">{check.errorPercent}% {t('different')}</span>
+                  <span className="text-accent-warm">{check.errorPercent}% {t('different')}</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-amber-500/25">
                   <div
@@ -737,7 +737,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                         tok.kind === 'missing'
                           ? 'rounded-sm bg-rose-500/15 px-0.5 text-rose-300 line-through decoration-rose-400/70'
                           : tok.kind === 'extra'
-                            ? 'rounded-sm bg-amber-400/15 px-0.5 text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2'
+                            ? 'rounded-sm bg-amber-400/15 px-0.5 text-accent-warm underline decoration-dotted decoration-amber-400/70 underline-offset-2'
                             : 'text-foreground/90'
                       }
                     >
@@ -752,7 +752,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   </p>
                 ) : null}
                 {check.extraWords.length > 0 ? (
-                  <p dir="auto" className="text-[12px] leading-5 text-amber-300/90">
+                  <p dir="auto" className="text-[12px] leading-5 text-accent-warm/90">
                     {t('extraOnFilm')} {extraWordsTranslation ?? check.extraWords.join(', ')}
                   </p>
                 ) : null}
@@ -760,7 +760,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
             ) : null}
 
             {lowConfWords.length > 0 ? (
-              <p className="text-[12px] leading-5 text-amber-300/90">
+              <p className="text-[12px] leading-5 text-accent-warm/90">
                 {t('pronIssues')} {lowConfWords.map((w) => w.text).join(', ')}
               </p>
             ) : null}

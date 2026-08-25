@@ -247,7 +247,7 @@ function StyleSection({
               type="button"
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
                 active
-                  ? 'border-amber-300 bg-amber-300/15 text-amber-100'
+                  ? 'border-amber-300 bg-accent-warm/15 text-accent-warm'
                   : 'border-border bg-accent/30 text-foreground/80 hover:border-border hover:bg-accent/60'
               }`}
             >
@@ -499,7 +499,7 @@ function UserImageView({
 
   if (broken) {
     return (
-      <div className={`flex flex-col items-center justify-center gap-2 bg-[#0b0d10] text-center ${className ?? ''}`}>
+      <div className={`flex flex-col items-center justify-center gap-2 bg-surface-2 text-center ${className ?? ''}`}>
         <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
         <span className="px-2 text-xs text-muted-foreground">Image unavailable</span>
       </div>
@@ -1026,7 +1026,7 @@ function ProjectAudioTrackRow({
     }
   }, [track.url, signUrl])
 
-  const accentText = accent === 'sky' ? 'text-sky-200' : 'text-amber-200'
+  const accentText = accent === 'sky' ? 'text-accent-cool' : 'text-accent-warm'
 
   return (
     <div className="space-y-1.5">
@@ -9312,7 +9312,7 @@ export default function DashboardPage() {
       })()}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
-          isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
+          isDragging ? 'border-accent-warm/40 bg-amber-300/[0.045]' : 'border-transparent'
         }`}
       />
 
@@ -9363,8 +9363,8 @@ export default function DashboardPage() {
                     : 'border-transparent text-red-500 hover:border-border hover:bg-accent/45 hover:text-red-400'
                 }`}
               >
-                <Library className="h-[23px] w-[23px]" aria-hidden="true" />
-                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-[#1a1c1f] px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
+                <Library className="h-[18px] w-[18px]" aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-surface-2 px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
                   {approvedIds.size}
                 </span>
               </button>
@@ -9405,7 +9405,7 @@ export default function DashboardPage() {
               <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-red-500/70" aria-hidden="true" />
             )}
             <span
-              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-[#0b0c0e] ${
+              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-ring ${
                 isAlert ? 'bg-red-500' : 'bg-emerald-500'
               }`}
               aria-hidden="true"
@@ -9446,18 +9446,18 @@ export default function DashboardPage() {
           }`}
         >
           <Building2
-            className={`h-[18px] w-[18px] ${hasBusinessInfo === false ? 'text-amber-300' : ''}`}
+            className={`h-[18px] w-[18px] ${hasBusinessInfo === false ? 'text-accent-warm' : ''}`}
             aria-hidden="true"
           />
           <span
             className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
-              hasBusinessInfo === false ? 'text-amber-300' : 'text-foreground/80'
+              hasBusinessInfo === false ? 'text-accent-warm' : 'text-foreground/80'
             }`}
           >
             Your business
           </span>
           {hasBusinessInfo === false && (
-            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-ring" aria-hidden="true" />
           )}
         </button>
       </div>
@@ -9493,7 +9493,7 @@ export default function DashboardPage() {
           <DialogHeader className="border-b border-border px-6 py-4">
             <div className="flex items-center justify-between gap-3">
               <div className="inline-flex items-center gap-2">
-                <Database className="h-5 w-5 text-sky-300" aria-hidden="true" />
+                <Database className="h-5 w-5 text-accent-cool" aria-hidden="true" />
                 <DialogTitle className="text-sm font-medium uppercase tracking-[0.18em] text-foreground/80">
                   Storage
                 </DialogTitle>
@@ -9653,7 +9653,7 @@ export default function DashboardPage() {
                         <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
                       ) : null}
                       {captionImportStatus ? (
-                        <p className="mt-1 text-xs text-sky-300">{captionImportStatus}</p>
+                        <p className="mt-1 text-xs text-accent-cool">{captionImportStatus}</p>
                       ) : null}
                     </div>
                     <input
@@ -9680,13 +9680,13 @@ export default function DashboardPage() {
                         maxLength={100}
                         placeholder="Product name (optional)"
                         disabled={isUploadingProductPhoto || !userId}
-                        className="w-44 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none transition focus:border-sky-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="w-44 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none transition focus:border-accent-cool/40 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <button
                         type="button"
                         onClick={handlePickProductPhoto}
                         disabled={isUploadingProductPhoto || !userId}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-accent-cool/30 bg-accent-cool/10 px-3 py-2 text-xs font-semibold text-accent-cool transition hover:bg-accent-cool/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isUploadingProductPhoto ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -9738,7 +9738,7 @@ export default function DashboardPage() {
                             onClick={() => setPreviewImageUrl(img.storage_path)}
                             aria-label="View image"
                             title="Click to view"
-                            className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-[#15171a] transition hover:border-border"
+                            className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-surface-2 transition hover:border-border"
                           >
                             <img
                               src={img.storage_path}
@@ -9771,7 +9771,7 @@ export default function DashboardPage() {
                                   if (e.key === 'Enter') { void renameProductPhoto(img.id) }
                                   if (e.key === 'Escape') cancelRenameProduct()
                                 }}
-                                className="min-w-0 flex-1 rounded-md border border-border bg-accent/50 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-sky-300/40"
+                                className="min-w-0 flex-1 rounded-md border border-border bg-accent/50 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-accent-cool/40"
                               />
                               <button
                                 type="button"
@@ -9814,7 +9814,7 @@ export default function DashboardPage() {
                             maxLength={2000}
                             rows={2}
                             placeholder="Describe for AI — what is this product? (helps the AI build the video correctly)"
-                            className="w-full resize-y rounded-md border border-border bg-accent/40 px-2 py-1 text-[11px] leading-snug text-foreground/90 placeholder:text-muted-foreground outline-none focus:border-sky-300/40"
+                            className="w-full resize-y rounded-md border border-border bg-accent/40 px-2 py-1 text-[11px] leading-snug text-foreground/90 placeholder:text-muted-foreground outline-none focus:border-accent-cool/40"
                           />
                           <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
 
@@ -9825,7 +9825,7 @@ export default function DashboardPage() {
                                 onClick={() => handleUseImageAsStart(img.storage_path)}
                                 aria-label="Use as Start frame"
                                 title="Use as Start frame"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                               >
                                 <ImagePlus className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -10019,7 +10019,7 @@ export default function DashboardPage() {
                         onClick={() => setPreviewImageUrl(img.storage_path)}
                         aria-label="View image"
                         title="Click to view"
-                        className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-[#15171a] transition hover:border-border"
+                        className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-surface-2 transition hover:border-border"
                       >
                         <img
                           src={img.storage_path}
@@ -10047,7 +10047,7 @@ export default function DashboardPage() {
                             onClick={() => handleUseImageAsStart(img.storage_path)}
                             aria-label="Use as Start frame"
                             title="Use as Start frame"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                           >
                             <ImagePlus className="h-3 w-3" aria-hidden="true" />
                           </button>
@@ -10174,7 +10174,7 @@ export default function DashboardPage() {
                   )
                 }
                 return (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-warm/30 bg-accent-warm/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm">
                     <LoaderCircle className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
                     Rendering
                   </span>
@@ -10193,7 +10193,7 @@ export default function DashboardPage() {
                         className={`flex flex-col gap-3 rounded-2xl border bg-accent/35 p-3 ${selectedArchiveIds.has(job.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-border'}`}
                       >
                         <div
-                          className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-border bg-[#15171a] ${video?.storage_path ? 'cursor-pointer' : ''}`}
+                          className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-border bg-surface-2 ${video?.storage_path ? 'cursor-pointer' : ''}`}
                           role={video?.storage_path ? 'button' : undefined}
                           tabIndex={video?.storage_path ? 0 : undefined}
                           onClick={() => {
@@ -10484,7 +10484,7 @@ export default function DashboardPage() {
                   toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
                 }
               }}
-              className="flex h-9 items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/15 px-3 text-xs uppercase tracking-[0.18em] text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-sky-400/40 disabled:hover:bg-sky-400/15"
+              className="flex h-9 items-center gap-1.5 rounded-md border border-accent-cool/40 bg-accent-cool/15 px-3 text-xs uppercase tracking-[0.18em] text-accent-cool transition hover:border-accent-cool/60 hover:bg-accent-cool/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-accent-cool/40 disabled:hover:bg-accent-cool/15"
               aria-label="Schedule to Social Media Manager"
               title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
             >
@@ -10532,7 +10532,7 @@ export default function DashboardPage() {
                       ? 'text-red-300'
                       : scheduleStatus.kind === 'sent'
                         ? 'text-emerald-300'
-                        : 'text-sky-200')
+                        : 'text-accent-cool')
                   }
                 >
                   {scheduleStatus.kind === 'sending'
@@ -11219,7 +11219,7 @@ export default function DashboardPage() {
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
               <div
-                className="overflow-hidden rounded-[22px] border border-border bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+                className="overflow-hidden rounded-[22px] border border-border bg-surface/95 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
                 style={{
                   width: ratioToWidth(aspectRatio),
                   maxWidth: 'calc(100vw - 56rem)',
@@ -11264,7 +11264,7 @@ export default function DashboardPage() {
           ) : (
           <div className="flex w-full justify-center">
             <div
-              className="overflow-hidden rounded-[22px] border border-border bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+              className="overflow-hidden rounded-[22px] border border-border bg-surface/95 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
                 width: 'fit-content',
                 maxWidth: 'calc(100vw - 56rem)',
@@ -11291,7 +11291,7 @@ export default function DashboardPage() {
                           onClick={() => void openTranscript(src)}
                           aria-label="Show transcript"
                           title="Transcript"
-                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
+                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-accent-cool/40 hover:bg-accent-cool/20 hover:text-accent-cool"
                         >
                           <FileText className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -11484,7 +11484,7 @@ export default function DashboardPage() {
                                       strokeWidth="8"
                                       strokeLinecap="round"
                                       strokeDasharray={`${dash} ${circumference}`}
-                                      className="text-amber-300 transition-[stroke-dasharray] duration-500"
+                                      className="text-accent-warm transition-[stroke-dasharray] duration-500"
                                     />
                                   </svg>
                                   <div className="absolute inset-0 grid place-items-center">
@@ -11542,7 +11542,7 @@ export default function DashboardPage() {
           <div className="-translate-y-10 text-center sm:-translate-y-8">
             <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-foreground" aria-hidden="true">
               <Hammer className="h-10 w-10 -rotate-12 stroke-[1.7]" />
-              <Sparkles className="absolute right-0 top-0 h-5 w-5 text-amber-300 stroke-[1.8]" />
+              <Sparkles className="absolute right-0 top-0 h-5 w-5 text-accent-warm stroke-[1.8]" />
             </div>
             <p className="m-0 text-base font-medium text-muted-foreground sm:text-lg">{emptyStateLabel}</p>
           </div>
@@ -11556,7 +11556,7 @@ export default function DashboardPage() {
       >
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="inline-flex items-center gap-2">
-            <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
+            <History className="h-4 w-4 text-accent-warm" aria-hidden="true" />
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Pending</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-border px-2 text-xs font-semibold text-foreground/80">
               {displayedClips.length}
@@ -11639,7 +11639,7 @@ export default function DashboardPage() {
               aria-label="Upload film"
               aria-disabled={isUploadingVideo}
               title="Upload film"
-              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-amber-400/25 bg-amber-400/[0.06] px-3 text-xs font-medium text-amber-200 transition hover:border-amber-300/50 hover:bg-amber-300/15 hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 active:bg-amber-300/20 ${isUploadingVideo ? 'pointer-events-none opacity-40' : ''}`}
+              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-accent-warm/25 bg-accent-warm/[0.06] px-3 text-xs font-medium text-accent-warm transition hover:border-accent-warm/50 hover:bg-accent-warm/15 hover:text-accent-warm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 active:bg-accent-warm/20 ${isUploadingVideo ? 'pointer-events-none opacity-40' : ''}`}
             >
               {isUploadingVideo ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -11664,11 +11664,11 @@ export default function DashboardPage() {
           {currentCover ? (
             <div className="mb-3">
               <article
-                className="w-full min-w-0 rounded-2xl border border-amber-300/30 bg-amber-300/[0.04] p-3 shadow-[0_8px_30px_rgba(252,211,77,0.08)]"
+                className="w-full min-w-0 rounded-2xl border border-accent-warm/30 bg-amber-300/[0.04] p-3 shadow-[0_8px_30px_rgba(252,211,77,0.08)]"
                 aria-label="Film cover"
               >
                 <div
-                  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-amber-300/20 bg-[#15171a]"
+                  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-accent-warm/20 bg-surface-2"
                   style={{ aspectRatio: (lockedProjectRatio ?? aspectRatio) === '9:16' ? '9 / 16' : (lockedProjectRatio ?? aspectRatio) === '16:9' ? '16 / 9' : '1 / 1' }}
                 >
                   <img
@@ -11682,14 +11682,14 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-amber-100">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-accent-warm">
                     Film cover
                   </p>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
-                      className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-2 px-2 text-[11px] font-medium text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+                      className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-2 px-2 text-[11px] font-medium text-foreground/90 transition hover:border-accent-warm/40 hover:bg-accent-warm/10 hover:text-accent-warm"
                       aria-label="Regenerate cover"
                       title="Regenerate cover"
                     >
@@ -11715,7 +11715,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-amber-300/15 pt-3">
-                  <label className="text-[11px] font-medium text-amber-100/80" htmlFor="cover-duration">
+                  <label className="text-[11px] font-medium text-accent-warm/80" htmlFor="cover-duration">
                     Cover duration (seconds at start of film)
                   </label>
                   <div className="flex shrink-0 items-center gap-1">
@@ -11726,7 +11726,7 @@ export default function DashboardPage() {
                         const nextVal = Math.max(1, currentCoverDuration - 1)
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-accent-warm/40 hover:bg-accent-warm/10"
                       aria-label="Decrease cover duration"
                     >
                       −
@@ -11742,7 +11742,7 @@ export default function DashboardPage() {
                         const v = Math.max(1, Math.min(10, Math.round(Number(e.target.value) || DEFAULT_COVER_DURATION)))
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: v }; persistCoverDurations(n); return n })
                       }}
-                      className="h-7 w-12 rounded-md border border-border bg-surface-2 text-center text-[12px] font-semibold text-amber-100 outline-none focus:border-amber-300/40"
+                      className="h-7 w-12 rounded-md border border-border bg-surface-2 text-center text-[12px] font-semibold text-accent-warm outline-none focus:border-accent-warm/40"
                     />
                     <button
                       type="button"
@@ -11751,7 +11751,7 @@ export default function DashboardPage() {
                         const nextVal = Math.min(10, currentCoverDuration + 1)
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-accent-warm/40 hover:bg-accent-warm/10"
                       aria-label="Increase cover duration"
                     >
                       +
@@ -11796,7 +11796,7 @@ export default function DashboardPage() {
                         }}
                       >
                         <div
-                          className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-[#15171a]"
+                          className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2"
                           style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
                           <UserImageView
@@ -11834,7 +11834,7 @@ export default function DashboardPage() {
                               }}
                               aria-label="Use as Start frame"
                               title="Use as Start frame"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                             >
                               <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
@@ -11859,7 +11859,7 @@ export default function DashboardPage() {
                         >
                           <div className="inline-flex items-center gap-2">
                             <label htmlFor={`img-dur-${img.id}`}>Duration</label>
-                            <div className="inline-flex items-center gap-1 rounded-full border border-border bg-black/20 px-2 py-1 text-[11px] font-semibold text-foreground/90">
+                            <div className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2 py-1 text-[11px] font-semibold text-foreground/90">
                               <ImageDurationInput
                                 id={`img-dur-${img.id}`}
                                 value={img.still_duration_seconds || 3}
@@ -11935,7 +11935,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <div
-                      className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-[#15171a]"
+                      className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2"
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
@@ -12016,7 +12016,7 @@ export default function DashboardPage() {
                           >
                             <MessageSquareQuote className="h-3.5 w-3.5" aria-hidden="true" />
                             {hasNarration ? (
-                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-ring" aria-hidden="true" />
                             ) : null}
                           </button>
                         )
@@ -12032,7 +12032,7 @@ export default function DashboardPage() {
                           <GripVertical className="h-4 w-4" aria-hidden="true" />
                         </span>
                         {status === 'processing' ? (
-                          <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
+                          <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-accent-warm" aria-hidden="true" />
                         ) : status === 'completed' && video.video?.storage_path ? (
                           (() => {
                             const isApproved = approvedIds.has(video.id)
@@ -12089,7 +12089,7 @@ export default function DashboardPage() {
                                     onClick={(event) => event.stopPropagation()}
                                     aria-label="Regenerate this card"
                                     title="Regenerate this card — choose provider"
-                                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     <RefreshCw
                                       className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-spin' : ''}`}
@@ -12142,7 +12142,7 @@ export default function DashboardPage() {
                             }}
                             aria-label="Trim clip"
                             title="Trim clip"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-warm/40 hover:bg-accent-warm/10 hover:text-accent-warm"
                           >
                             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -12183,7 +12183,7 @@ export default function DashboardPage() {
                         {formatStatusLabel(video.status)}
                         {(status === 'processing' || status === 'pending') ? (
                           <LiveJobProgress job={video}>
-                            {(pct) => (pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null)}
+                            {(pct) => (pct !== null ? <span className="tabular-nums text-accent-warm">{pct}%</span> : null)}
                           </LiveJobProgress>
                         ) : null}
                       </span>
@@ -12321,7 +12321,7 @@ export default function DashboardPage() {
                 variant === 'draft'
                   ? {
                       base: 'border-amber-300/25 bg-amber-300/[0.05]',
-                      hover: 'hover:border-amber-300/40 hover:bg-amber-300/[0.09]',
+                      hover: 'hover:border-accent-warm/40 hover:bg-amber-300/[0.09]',
                     }
                   : {
                       base: 'border-emerald-300/25 bg-emerald-300/[0.05]',
@@ -12362,7 +12362,7 @@ export default function DashboardPage() {
                       {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
                     </button>
                   ) : null}
-                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-[#15171a]">
+                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-surface-2">
                     {display?.storage_path ? (
                       <PlayableVideo
                         thumbnail
@@ -12453,7 +12453,7 @@ export default function DashboardPage() {
                                   title="Music & voiceover"
                                   className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                                     hasAny
-                                      ? 'border-sky-300/20 text-sky-300/70 hover:border-sky-300/50 hover:bg-sky-300/10 hover:text-sky-200'
+                                      ? 'border-accent-cool/20 text-accent-cool/70 hover:border-accent-cool/50 hover:bg-accent-cool/10 hover:text-accent-cool'
                                       : 'border-border text-muted-foreground hover:border-border hover:text-muted-foreground'
                                   }`}
                                 >
@@ -12513,7 +12513,7 @@ export default function DashboardPage() {
                             : verdict === 'rejected'
                               ? { border: 'border-rose-300/40 bg-rose-300/10 text-rose-300', Icon: ShieldX, label: 'Content check: Rejected' }
                               : verdict === 'caution'
-                                ? { border: 'border-amber-300/40 bg-amber-300/10 text-amber-300', Icon: ShieldAlert, label: 'Content check: Needs review' }
+                                ? { border: 'border-accent-warm/40 bg-accent-warm/10 text-accent-warm', Icon: ShieldAlert, label: 'Content check: Needs review' }
                                 : { border: 'border-violet-300/20 text-violet-300/70 hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
                           const Icon = tone.Icon
                           return (
@@ -12553,7 +12553,7 @@ export default function DashboardPage() {
                             }}
                             aria-label="Reopen for editing"
                             title="Reopen for editing"
-                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/20 text-amber-300/70 transition hover:border-amber-300/50 hover:bg-amber-300/10 hover:text-amber-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/20 text-accent-warm/70 transition hover:border-accent-warm/50 hover:bg-accent-warm/10 hover:text-accent-warm"
                           >
                             <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>
@@ -12599,7 +12599,7 @@ export default function DashboardPage() {
                       ) : (() => {
                         const clipCount = (draftSourceJobs[video.id]?.length ?? 0) + (draftSourceImages[video.id]?.length ?? 0)
                         return (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-warm/30 bg-accent-warm/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm">
                             Draft{clipCount > 0 ? ` · ${clipCount} clip${clipCount === 1 ? '' : 's'}` : ''}
                           </span>
                         )
@@ -12767,7 +12767,7 @@ export default function DashboardPage() {
       {!isReadOnlyProject && (
       <form
         ref={composerRef}
-        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-border bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(100rem,calc(100vw-8rem))] sm:p-4"
+        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-border bg-surface/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(100rem,calc(100vw-8rem))] sm:p-4"
         onSubmit={(e) => {
           e.preventDefault()
           if (isSubmitting || hasUploadingFiles || isEnhancingPrompt) return
@@ -12780,7 +12780,7 @@ export default function DashboardPage() {
         }}
       >
         <div className="flex flex-wrap items-center gap-2" aria-label="Generation mode">
-          <div role="tablist" aria-label="Choose generation mode" className="inline-flex rounded-full border border-border bg-black/20 p-1 text-xs font-semibold">
+          <div role="tablist" aria-label="Choose generation mode" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
             <button
               type="button"
               role="tab"
@@ -12806,7 +12806,7 @@ export default function DashboardPage() {
               Image to Video
             </button>
           </div>
-          <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-border bg-black/20 p-1 text-xs font-semibold">
+          <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
             {([5, 10, 15, 30, 45, 135] as const).map((sec) => {
               const active = durationSeconds === sec
               // Local RTX models (Wan 2.1 / LTX) only support 5/10/15s clips.
@@ -12828,7 +12828,7 @@ export default function DashboardPage() {
             })}
           </div>
 
-          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-border bg-black/20 p-1 text-xs font-semibold">
+          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
             {([
               { value: '9:16', label: '9:16', hint: 'Reels', icon: RectangleVertical },
               { value: '1:1', label: '1:1', hint: 'Post', icon: Square },
@@ -12913,7 +12913,7 @@ export default function DashboardPage() {
         {!isTextToVideo ? (
           <div id="composer-start-frame" className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
             <button
-              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-foreground/70 transition hover:border-border hover:bg-accent/45 sm:h-12 sm:min-w-[3.25rem]"
+              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-xs font-semibold text-foreground/70 transition hover:border-border hover:bg-accent/45 sm:h-12 sm:min-w-[3.25rem]"
               type="button"
               onClick={() => openFileUpload('Start')}
             >
@@ -12928,7 +12928,7 @@ export default function DashboardPage() {
             </button>
             <ChevronsRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <button
-              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-foreground/70 transition hover:border-border hover:bg-accent/45 sm:h-12 sm:min-w-[3.25rem]"
+              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-xs font-semibold text-foreground/70 transition hover:border-border hover:bg-accent/45 sm:h-12 sm:min-w-[3.25rem]"
               type="button"
               onClick={() => openFileUpload('End')}
             >
@@ -13011,7 +13011,7 @@ export default function DashboardPage() {
           <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
             <span
               title={`Estimated cost for ${durationSeconds}s on ${selectedModel.label}${costEstimate.clips > 1 ? ` (${costEstimate.clips} × ${costEstimate.perClipSec}s clips)` : ''}`}
-              className="hidden sm:inline-flex h-10 items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-3 text-[11px] font-semibold text-amber-200/90"
+              className="hidden sm:inline-flex h-10 items-center gap-1.5 rounded-full border border-accent-warm/20 bg-amber-300/[0.06] px-3 text-[11px] font-semibold text-accent-warm/90"
             >
               ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} cr
             </span>
@@ -13021,7 +13021,7 @@ export default function DashboardPage() {
                   type="button"
                   aria-label="Choose video model"
                   title={`Model: ${selectedModel.label}`}
-                  className="inline-flex h-10 max-w-[14rem] items-center justify-center gap-2 truncate rounded-full border border-[#2a2d32] bg-black/20 px-3 text-xs font-semibold text-foreground/80 transition hover:border-amber-300/60 hover:bg-accent/50 hover:text-amber-200"
+                  className="inline-flex h-10 max-w-[14rem] items-center justify-center gap-2 truncate rounded-full border border-border bg-muted/60 px-3 text-xs font-semibold text-foreground/80 transition hover:border-accent-warm/60 hover:bg-accent/50 hover:text-accent-warm"
                 >
                   <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <span className="truncate">{selectedModel.label}</span>
@@ -13058,9 +13058,9 @@ export default function DashboardPage() {
                               key={badge.kind}
                               className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
                                 badge.kind === 'recommended'
-                                  ? 'bg-amber-400/20 text-amber-300'
+                                  ? 'bg-accent-warm/20 text-accent-warm'
                                   : badge.kind === 'fast'
-                                    ? 'bg-sky-400/15 text-sky-300'
+                                    ? 'bg-accent-cool/15 text-accent-cool'
                                     : badge.kind === 'best-quality'
                                       ? 'bg-violet-400/15 text-violet-300'
                                       : 'bg-emerald-400/15 text-emerald-300'
@@ -13086,7 +13086,7 @@ export default function DashboardPage() {
                         ? 'border-border bg-accent/30 text-muted-foreground'
                         : localStatus?.status === 'configured'
                           ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                          : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                          : 'border-accent-warm/30 bg-accent-warm/10 text-accent-warm'
                     }`}
                   >
                     {localStatusLoading
@@ -13113,7 +13113,7 @@ export default function DashboardPage() {
                               active ? 'bg-accent/50' : ''
                             }`}
                           >
-                            <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-black/20 text-[10px] font-bold text-foreground/90">
+                            <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-muted/60 text-[10px] font-bold text-foreground/90">
                               {active ? '•' : '·'}
                             </span>
                             <span className="min-w-0 flex-1">
@@ -13585,7 +13585,7 @@ export default function DashboardPage() {
                   title="Pin the product so it stays identical in every card"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     selectedProduct
-                      ? 'border-amber-400/60 bg-amber-500/10 text-amber-100'
+                      ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm'
                       : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
                   }`}
                 >
@@ -13615,7 +13615,7 @@ export default function DashboardPage() {
                             setSelectedProduct(null)
                           }
                         }}
-                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-amber-200/80 transition hover:bg-amber-500/20 hover:text-amber-50"
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-accent-warm/80 transition hover:bg-accent-warm/20 hover:text-accent-warm"
                       >
                         <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </span>
@@ -13702,7 +13702,7 @@ export default function DashboardPage() {
                   type="button"
                   disabled={isEnhancingPrompt || isSubmitting}
                   aria-label="Enhance prompt with AI"
-                  className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-foreground/80 transition hover:border-amber-300/60 hover:bg-accent/50 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-foreground/80"
+                  className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-border bg-muted/60 px-4 text-sm font-semibold text-foreground/80 transition hover:border-accent-warm/60 hover:bg-accent/50 hover:text-accent-warm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-muted/60 disabled:hover:text-foreground/80"
                 >
                   {isEnhancingPrompt ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -13742,7 +13742,7 @@ export default function DashboardPage() {
                     narratorMode === 'input' ? 'bg-accent/40' : ''
                   }`}
                 >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
                     <Mic className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -13765,7 +13765,7 @@ export default function DashboardPage() {
                       rows={4}
                       maxLength={1500}
                       placeholder="Type the exact words the narrator should say…"
-                      className="w-full rounded-md border border-border bg-surface-2/60 px-3 py-2 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus:border-amber-300/40"
+                      className="w-full rounded-md border border-border bg-surface-2/60 px-3 py-2 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus:border-accent-warm/40"
                     />
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] text-muted-foreground">{narratorScript.length}/1500</span>
@@ -13794,7 +13794,7 @@ export default function DashboardPage() {
                     scenarioMode === 'input' ? 'bg-accent/40' : ''
                   }`}
                 >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
                     {selectedProduct ? (
                       <img src={selectedProduct.url} alt="" className="h-full w-full object-cover" />
                     ) : (
@@ -13896,7 +13896,7 @@ export default function DashboardPage() {
                     styleMode === 'input' ? 'bg-accent/40' : ''
                   }`}
                 >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
                     <Wand2 className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -13999,7 +13999,7 @@ export default function DashboardPage() {
 
 
       {isReadOnlyProject && (
-        <div className="fixed bottom-4 left-1/2 z-30 flex w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-center gap-2 rounded-[22px] border border-border bg-[#111214]/95 p-4 text-center text-xs text-muted-foreground shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))]">
+        <div className="fixed bottom-4 left-1/2 z-30 flex w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-center gap-2 rounded-[22px] border border-border bg-surface/95 p-4 text-center text-xs text-muted-foreground shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))]">
           <Lock className="h-3.5 w-3.5" aria-hidden="true" />
           <span>This final video is read-only. Use Start over to create a new project.</span>
         </div>
@@ -14053,7 +14053,7 @@ export default function DashboardPage() {
             value={editPromptText}
             onChange={(e) => setEditPromptText(e.target.value)}
             rows={8}
-            className="w-full resize-y rounded-lg border border-border bg-surface-2/60 p-3 text-sm leading-6 text-foreground outline-none focus:border-sky-300/40"
+            className="w-full resize-y rounded-lg border border-border bg-surface-2/60 p-3 text-sm leading-6 text-foreground outline-none focus:border-accent-cool/40"
             placeholder="Describe what you want to generate…"
           />
           <DialogFooter>
@@ -14161,7 +14161,7 @@ export default function DashboardPage() {
                     ? { text: 'text-rose-300', bg: 'bg-rose-300/10 border-rose-300/30', Icon: ShieldX, label: 'Rejected' }
                     : status === 'not_provided'
                       ? { text: 'text-muted-foreground', bg: 'bg-accent/50 border-border', Icon: Shield, label: 'Not provided' }
-                      : { text: 'text-amber-300', bg: 'bg-amber-300/10 border-amber-300/30', Icon: ShieldAlert, label: 'Caution' }
+                      : { text: 'text-accent-warm', bg: 'bg-accent-warm/10 border-accent-warm/30', Icon: ShieldAlert, label: 'Caution' }
               const Section = ({ title, section }: { title: string; section?: CopyrightSection }) => {
                 const t = tone(section?.status)
                 return (
@@ -14241,7 +14241,7 @@ export default function DashboardPage() {
             </div>
             <div className="mt-1 flex items-center justify-between border-t border-border pt-2.5">
               <span className="text-foreground/80">Estimated total</span>
-              <span className="text-base font-bold text-amber-300">
+              <span className="text-base font-bold text-accent-warm">
                 ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} credits
               </span>
             </div>

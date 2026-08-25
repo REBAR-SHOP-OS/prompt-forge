@@ -244,7 +244,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
       <DialogContent className={cn('border-border bg-card p-0 text-foreground', todayOnly ? 'max-w-4xl' : 'max-w-7xl')}>
         <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
-            <CalendarDays className="h-4 w-4 text-amber-300" />
+            <CalendarDays className="h-4 w-4 text-accent-warm" />
             <span>{todayOnly ? "Today's Occasions" : 'Calendar'}</span>
           </DialogTitle>
         </DialogHeader>
@@ -298,7 +298,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                           )}
                           dir="auto"
                         >
-                          <span className="text-sm font-medium text-amber-300">{occ.title}</span>
+                          <span className="text-sm font-medium text-accent-warm">{occ.title}</span>
                           <ChevronDown
                             className={cn(
                               'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
@@ -414,10 +414,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-border">
             <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
               <div className="flex items-center gap-2">
-                <Clapperboard className="h-4 w-4 text-amber-300" />
+                <Clapperboard className="h-4 w-4 text-accent-warm" />
                 <div className="text-sm font-medium text-foreground/90">{t.scenarioTitle}</div>
               </div>
-              <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+              <span className="rounded-full border border-accent-warm/30 bg-accent-warm/10 px-2 py-0.5 text-[10px] font-semibold text-accent-warm">
                 {t.badge10s}
               </span>
             </div>
@@ -427,7 +427,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
               )}
               {selectedOccasion && (
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-amber-300" dir="auto">{selectedOccasion.title}</div>
+                  <div className="text-sm font-medium text-accent-warm" dir="auto">{selectedOccasion.title}</div>
                   {scenarioLoading && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <LoaderCircle className="h-4 w-4 animate-spin" />

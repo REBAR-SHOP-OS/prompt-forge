@@ -175,7 +175,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
 
           <div>
             <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">Target aspect ratio</div>
-            <div role="radiogroup" className="inline-flex rounded-full border border-border bg-black/20 p-1 text-xs font-semibold">
+            <div role="radiogroup" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
               {RATIOS.map((opt) => {
                 const active = ratio === opt.value
                 return (
