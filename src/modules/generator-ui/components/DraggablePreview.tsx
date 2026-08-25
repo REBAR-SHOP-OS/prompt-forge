@@ -22,7 +22,7 @@ export function DraggablePreview({ position, frameRef, children }: Props) {
       ref={frameRef}
       className="relative"
       style={{
-        transform: `translate(${offset.x}px, ${offset.y}px)`,
+        transform: disabled ? 'none' : `translate(${offset.x}px, ${offset.y}px)`,
         transition: dragging ? 'none' : 'transform 120ms ease-out',
         willChange: 'transform',
       }}

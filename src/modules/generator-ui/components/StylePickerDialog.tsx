@@ -172,7 +172,7 @@ export function StylePickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-4xl border-border bg-zinc-950/95 text-foreground flex flex-col p-0 gap-0 sm:w-full">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] max-w-4xl border-border bg-card text-foreground flex flex-col p-0 gap-0 sm:w-full">
         {/* Header */}
         <DialogHeader className="px-4 pt-5 pb-4 border-b border-border flex-shrink-0 sm:px-6 sm:pt-6">
           <div className="flex items-center justify-between">
