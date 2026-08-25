@@ -249,6 +249,26 @@ All colors MUST be HSL.
     --accent-warm: 38 92% 50%;
     --accent-cool: 199 89% 48%;
   }
+
+  /* Dark-oriented themes share one bright action palette (preserves the
+     previous look across dark / midnight / neon / slate). */
+  .dark,
+  .midnight,
+  .neon,
+  .slate {
+    --action-cyan: 187 92% 69%;
+    --action-cyan-strong: 186 94% 82%;
+    --action-violet: 258 90% 66%;
+    --action-violet-strong: 256 92% 76%;
+    --action-orange: 27 96% 61%;
+    --action-orange-strong: 31 97% 72%;
+    --action-emerald: 160 84% 39%;
+    --action-emerald-strong: 152 69% 72%;
+    --action-yellow: 45 93% 47%;
+    --action-yellow-strong: 53 98% 77%;
+    --action-rose: 350 89% 60%;
+    --action-rose-strong: 351 96% 82%;
+  }
 }
 
 @layer base {
