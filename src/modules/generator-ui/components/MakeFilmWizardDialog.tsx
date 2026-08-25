@@ -865,7 +865,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => (working ? undefined : onOpenChange(v))}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-border bg-zinc-950/95 text-foreground flex flex-col">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-border bg-card text-foreground flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <div className="flex items-center justify-between gap-2 pr-10">
               <DialogTitle className="flex items-center gap-2 text-foreground text-lg">
@@ -1461,7 +1461,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
       {/* Scenario Review Dialog */}
       <Dialog open={scenarioReviewOpen} onOpenChange={setScenarioReviewOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] border-border bg-zinc-950/95 text-foreground flex flex-col">
+        <DialogContent className="max-w-2xl max-h-[85vh] border-border bg-card text-foreground flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <div className="flex items-center justify-between gap-2 pr-10">
               <DialogTitle className="flex items-center gap-2 text-base text-foreground">
@@ -1560,7 +1560,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           productPickerControllerRef.current = new AbortController()
         }
       }}>
-        <DialogContent className="max-w-lg border-border bg-zinc-950/95 text-foreground">
+        <DialogContent className="max-w-lg border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a product</DialogTitle>
             <DialogDescription>
@@ -1599,7 +1599,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
       {/* Character Picker Dialog */}
       <Dialog open={characterPickerOpen} onOpenChange={setCharacterPickerOpen}>
-        <DialogContent className="max-w-lg border-border bg-zinc-950/95 text-foreground">
+        <DialogContent className="max-w-lg border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a character</DialogTitle>
             <DialogDescription>
@@ -1668,7 +1668,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
       {/* Lightbox for zoom */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="max-w-4xl border-border bg-zinc-950/95 text-foreground">
+        <DialogContent className="max-w-4xl border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle className="text-base">Preview</DialogTitle>
             <DialogDescription>

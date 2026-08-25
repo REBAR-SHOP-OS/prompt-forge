@@ -219,7 +219,7 @@ export function NarrationReviewPanel({
       <div className="absolute inset-0 bg-surface-2/80 backdrop-blur-sm" aria-hidden="true" />
 
       <div
-        className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-[#0f1012] p-5 shadow-2xl"
+        className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-center gap-2.5">
