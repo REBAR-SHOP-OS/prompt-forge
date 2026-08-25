@@ -10433,10 +10433,6 @@ export default function DashboardPage() {
               dispatchAutoFilmPreview({ type: 'clear-active' })
               setPreviewDismissed(false)
             }}
-            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-accent-cyan/20 disabled:cursor-not-allowed disabled:opacity-50 ${
-              hasReadyClips
-                ? 'border-accent-cyan/45 bg-accent-cyan/10 text-accent-cyan hover:border-accent-cyan/65 hover:bg-accent-cyan/15 hover:text-accent-cyan'
-                : 'border-accent-cyan/20 bg-accent-cyan/[0.04] text-accent-cyan/60 hover:border-accent-cyan/30 hover:bg-accent-cyan/[0.07] hover:text-accent-cyan/75'
             className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-cyan/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-cyan/20 disabled:cursor-not-allowed disabled:opacity-50 ${
               hasReadyClips
                 ? 'border-action-cyan/45 bg-action-cyan/10 text-action-cyan hover:border-action-cyan-strong/65 hover:bg-action-cyan/15 hover:text-action-cyan-strong'
