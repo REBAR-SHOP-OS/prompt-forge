@@ -10450,6 +10450,7 @@ export default function DashboardPage() {
 
         <AlertDialogTrigger asChild>
           <button
+            className="flex h-9 items-center gap-1.5 rounded-md border border-accent-violet/40 bg-accent-violet/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-accent-violet transition hover:border-accent-violet/60 hover:bg-accent-violet/[0.15] hover:text-accent-violet focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-violet/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-accent-violet/20"
             className="flex h-9 items-center gap-1.5 rounded-md border border-action-violet/40 bg-action-violet/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-violet transition hover:border-action-violet-strong/60 hover:bg-action-violet/[0.15] hover:text-action-violet-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-violet/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-violet/20"
             type="button"
             aria-label="Start over"
@@ -10599,6 +10600,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsMakeFilmWizardOpen(true)}
+        className="flex h-9 items-center gap-1.5 rounded-md border border-accent-orange/40 bg-accent-orange/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-accent-orange transition hover:border-accent-orange/60 hover:bg-accent-orange/[0.15] hover:text-accent-orange focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-orange/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-accent-orange/20 disabled:cursor-not-allowed disabled:border-accent-orange/15 disabled:bg-accent-orange/[0.03] disabled:text-accent-orange/45 disabled:opacity-100 disabled:hover:border-accent-orange/15 disabled:hover:bg-accent-orange/[0.03] disabled:hover:text-accent-orange/45"
         className="flex h-9 items-center gap-1.5 rounded-md border border-action-orange/40 bg-action-orange/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-orange transition hover:border-action-orange-strong/60 hover:bg-action-orange/[0.15] hover:text-action-orange-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-orange/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-orange/20 disabled:cursor-not-allowed disabled:border-action-orange/15 disabled:bg-action-orange/[0.03] disabled:text-action-orange/45 disabled:opacity-100 disabled:hover:border-action-orange/15 disabled:hover:bg-action-orange/[0.03] disabled:hover:text-action-orange/45"
         aria-label="Open the Make Full Film review wizard"
         title="Make full film: review the scenario and preview images before rendering"
@@ -10633,6 +10635,7 @@ export default function DashboardPage() {
           type="button"
           onClick={handleMergeAllVideos}
           disabled={(Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
+          className="flex h-9 items-center gap-1.5 rounded-md border border-accent-emerald/40 bg-accent-emerald/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-accent-emerald transition hover:border-accent-emerald/60 hover:bg-accent-emerald/[0.15] hover:text-accent-emerald focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-emerald/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-accent-emerald/20 disabled:cursor-not-allowed disabled:border-accent-emerald/15 disabled:bg-accent-emerald/[0.03] disabled:text-accent-emerald/45 disabled:opacity-100 disabled:hover:border-accent-emerald/15 disabled:hover:bg-accent-emerald/[0.03] disabled:hover:text-accent-emerald/45"
           className="flex h-9 items-center gap-1.5 rounded-md border border-action-emerald/40 bg-action-emerald/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-emerald transition hover:border-action-emerald-strong/60 hover:bg-action-emerald/[0.15] hover:text-action-emerald-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-emerald/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-emerald/20 disabled:cursor-not-allowed disabled:border-action-emerald/15 disabled:bg-action-emerald/[0.03] disabled:text-action-emerald/45 disabled:opacity-100 disabled:hover:border-action-emerald/15 disabled:hover:bg-action-emerald/[0.03] disabled:hover:text-action-emerald/45"
           aria-label="Save cards as a final film"
           title={(() => {
@@ -10666,6 +10669,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={handleMusicButtonClick}
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-accent-yellow/40 bg-accent-yellow/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-accent-yellow transition hover:border-accent-yellow/60 hover:bg-accent-yellow/[0.15] hover:text-accent-yellow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-yellow/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-accent-yellow/20"
           className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-action-yellow/40 bg-action-yellow/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-yellow transition hover:border-action-yellow-strong/60 hover:bg-action-yellow/[0.15] hover:text-action-yellow-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-yellow/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-yellow/20"
           aria-label="Edit soundtrack"
           title="Edit soundtrack"
@@ -10689,6 +10693,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={() => musicFileInputRef.current?.click()}
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-accent-yellow/40 bg-accent-yellow/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-accent-yellow transition hover:border-accent-yellow/60 hover:bg-accent-yellow/[0.15] hover:text-accent-yellow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-yellow/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-accent-yellow/20"
           className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-action-yellow/40 bg-action-yellow/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-yellow transition hover:border-action-yellow-strong/60 hover:bg-action-yellow/[0.15] hover:text-action-yellow-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-yellow/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-yellow/20"
           aria-label="Add soundtrack"
           title="Upload a music file as soundtrack for the Final Film"
@@ -10701,6 +10706,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsVoiceoverOpen(true)}
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-accent-rose/40 bg-accent-rose/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-accent-rose transition hover:border-accent-rose/60 hover:bg-accent-rose/[0.15] hover:text-accent-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-rose/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-accent-rose/20"
         className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-action-rose/40 bg-action-rose/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-rose transition hover:border-action-rose-strong/60 hover:bg-action-rose/[0.15] hover:text-action-rose-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-rose/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-rose/20"
         aria-label={voiceoverUrl ? 'Replace voiceover' : 'Generate AI voiceover'}
         title={voiceoverUrl ? 'Replace AI voiceover' : 'Generate an AI voiceover from text (Gemini)'}

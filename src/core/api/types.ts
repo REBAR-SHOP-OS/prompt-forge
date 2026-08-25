@@ -5,5 +5,8 @@ export interface Me {
   role: "user" | "admin";
   credits_balance: number;
   created_at: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  avatar_url?: string | null;
   requestId?: string;
 }
