@@ -1645,6 +1645,17 @@ export default function DashboardPage() {
       setTranscriptResolving(false)
     }
   }, [signStorageUrl])
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
+    if (typeof window === 'undefined') return '16:9'
+    try {
+      const v = window.localStorage.getItem('generator:aspectRatio')
+      if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    } catch { /* ignore */ }
+    return '16:9'
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
+  }, [aspectRatio])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const previewPosition = usePreviewPosition(userId, {
     workspace: previewWorkspaceRef,
@@ -1857,17 +1868,6 @@ export default function DashboardPage() {
   // Continuity Mode — automatic per-chain card-to-card continuity for multi-card
   // durations. State is persisted per generation chain (see continuityChainKey).
   const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
-  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
-    if (typeof window === 'undefined') return '16:9'
-    try {
-      const v = window.localStorage.getItem('generator:aspectRatio')
-      if (v === '9:16' || v === '1:1' || v === '16:9') return v
-    } catch { /* ignore */ }
-    return '16:9'
-  })
-  useEffect(() => {
-    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
-  }, [aspectRatio])
   // Per-job aspect ratio map so the preview chrome matches the clip exactly,
   // even before the asset row carries `aspect_ratio`. Persisted in localStorage.
   type Ratio = '9:16' | '1:1' | '16:9'
