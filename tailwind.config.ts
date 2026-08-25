@@ -63,6 +63,14 @@ export default {
           2: "hsl(var(--surface-2) / <alpha-value>)",
           3: "hsl(var(--surface-3) / <alpha-value>)",
         },
+        "accent-warm": {
+          DEFAULT: "hsl(var(--accent-warm) / <alpha-value>)",
+          foreground: "hsl(var(--accent-warm) / <alpha-value>)",
+        },
+        "accent-cool": {
+          DEFAULT: "hsl(var(--accent-cool) / <alpha-value>)",
+          foreground: "hsl(var(--accent-cool) / <alpha-value>)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

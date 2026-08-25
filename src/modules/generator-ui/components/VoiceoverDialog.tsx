@@ -844,7 +844,7 @@ export function VoiceoverDialog({
                                   : 'border-border bg-accent/30 hover:border-border'
                               }`}
                             >
-                              <span className="relative block aspect-square w-full overflow-hidden rounded-md border border-border bg-[#15171a]">
+                              <span className="relative block aspect-square w-full overflow-hidden rounded-md border border-border bg-surface-2">
                                 {p.imageUrl ? (
                                   <img
                                     src={p.imageUrl}
@@ -937,7 +937,7 @@ export function VoiceoverDialog({
                     disabled={isTranslating || !text.trim()}
                     title="Translate narration"
                     aria-label="Translate narration"
-                    className="grid h-7 w-7 place-items-center rounded-full border border-border bg-accent/40 text-foreground/80 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:opacity-50"
+                    className="grid h-7 w-7 place-items-center rounded-full border border-border bg-accent/40 text-foreground/80 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-accent-cool disabled:opacity-50"
                   >
                     {isTranslating ? (
                       <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -1176,7 +1176,7 @@ export function VoiceoverDialog({
                           checkResult?.status === 'error'
                             ? 'text-red-500 hover:bg-red-500/10 hover:text-red-400'
                             : checkResult?.status === 'warn'
-                              ? 'text-amber-400 hover:bg-amber-400/10 hover:text-amber-300'
+                              ? 'text-amber-400 hover:bg-amber-400/10 hover:text-accent-warm'
                               : checkResult?.status === 'ok'
                                 ? 'text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300'
                                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -1199,7 +1199,7 @@ export function VoiceoverDialog({
                                 checkResult.status === 'error'
                                   ? 'text-red-400'
                                   : checkResult.status === 'warn'
-                                    ? 'text-amber-300'
+                                    ? 'text-accent-warm'
                                     : 'text-emerald-300'
                               }`}
                             >

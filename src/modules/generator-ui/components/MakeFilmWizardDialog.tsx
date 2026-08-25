@@ -1617,7 +1617,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               {characterPhotos.map((photo) => (
                 <div
                   key={photo.id}
-                  className="group relative overflow-hidden rounded-md border border-border bg-surface-2 transition hover:border-amber-300/40"
+                  className="group relative overflow-hidden rounded-md border border-border bg-surface-2 transition hover:border-accent-warm/40"
                 >
                   <button
                     type="button"

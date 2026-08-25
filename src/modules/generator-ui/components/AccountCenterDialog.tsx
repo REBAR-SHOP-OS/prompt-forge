@@ -56,7 +56,7 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
       <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Gauge className="h-4 w-4 text-amber-300" />
+            <Gauge className="h-4 w-4 text-accent-warm" />
             Account Center
           </DialogTitle>
           <DialogDescription className="sr-only">
@@ -101,7 +101,7 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
           ) : (
             <>
               {lowCredits ? (
-                <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                <div className="flex items-start gap-2 rounded-md border border-accent-warm/30 bg-accent-warm/10 px-3 py-2 text-xs text-accent-warm">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
                     Your credit balance is low ({stats.creditsBalance.toLocaleString()} credits).
@@ -138,7 +138,7 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Used this month / monthly limit</div>
                   </div>
                   <div className="rounded-md border border-border bg-accent/20 p-3">
-                    <Coins className="mb-1 h-4 w-4 text-amber-300" />
+                    <Coins className="mb-1 h-4 w-4 text-accent-warm" />
                     <div className="text-lg font-semibold tabular-nums">{stats.lifetimeSpend.toLocaleString()}</div>
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Lifetime credits spent</div>
                   </div>
@@ -262,7 +262,7 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
                                   heatBg(credits),
                                 ].join(' ')}
                               >
-                                <div className={isToday ? 'text-amber-200' : 'text-foreground/80'}>
+                                <div className={isToday ? 'text-accent-warm' : 'text-foreground/80'}>
                                   {cell.date.getDate()}
                                 </div>
                                 {credits > 0 ? (

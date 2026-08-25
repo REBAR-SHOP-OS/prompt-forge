@@ -157,8 +157,8 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
         </div>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-amber-300" aria-hidden="true" />
-            About your business <span className="text-amber-300 text-sm font-normal">(required)</span>
+            <Building2 className="h-5 w-5 text-accent-warm" aria-hidden="true" />
+            About your business <span className="text-accent-warm text-sm font-normal">(required)</span>
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Tell us about your business and how the narration should sound. This is used to keep every
@@ -169,7 +169,7 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
         <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
-              About your business <span className="text-amber-300">(required)</span>
+              About your business <span className="text-accent-warm">(required)</span>
             </div>
             <Textarea
               value={businessInfo}

@@ -260,20 +260,20 @@ export function NarrationReviewPanel({
         ) : null}
 
         {!loading && !error && result?.status === 'no-video' ? (
-          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
-            <p className="text-xs leading-5 text-amber-200">This card does not have a film file to transcribe.</p>
+          <div className="flex items-start gap-2.5 rounded-xl border border-accent-warm/20 bg-amber-300/[0.06] p-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-accent-warm" aria-hidden="true" />
+            <p className="text-xs leading-5 text-accent-warm">This card does not have a film file to transcribe.</p>
           </div>
         ) : null}
 
         {!loading && !error && result?.status === 'no-speech' ? (
-          <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3">
-            <FileAudio className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+          <div className="flex items-start gap-2.5 rounded-xl border border-accent-warm/20 bg-amber-300/[0.06] p-3">
+            <FileAudio className="mt-0.5 h-4 w-4 shrink-0 text-accent-warm" aria-hidden="true" />
             <div>
-              <p className="text-xs font-semibold text-amber-200">
+              <p className="text-xs font-semibold text-accent-warm">
                 {expectedNarration?.trim() ? 'Expected narration was not detected.' : 'No speech was detected in this film.'}
               </p>
-              <p className="mt-1 text-[11px] leading-5 text-amber-300/80">
+              <p className="mt-1 text-[11px] leading-5 text-accent-warm/80">
                 {expectedNarration?.trim()
                   ? 'The film may be silent, contain music only, or the narration was not spoken.'
                   : 'The film may be silent, contain music only, or have no supported speech audio track.'}
@@ -298,7 +298,7 @@ export function NarrationReviewPanel({
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
                     isPass
                       ? 'border-emerald-300/30 bg-emerald-300/10 text-emerald-200'
-                      : 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                      : 'border-accent-warm/30 bg-accent-warm/10 text-accent-warm'
                   }`}
                 >
                   {isPass ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -327,8 +327,8 @@ export function NarrationReviewPanel({
                             issue.kind === 'missing'
                               ? 'bg-rose-300/10 text-rose-200'
                               : issue.kind === 'extra'
-                                ? 'bg-sky-300/10 text-sky-200'
-                                : 'bg-amber-300/10 text-amber-200'
+                                ? 'bg-sky-300/10 text-accent-cool'
+                                : 'bg-accent-warm/10 text-accent-warm'
                           }`}
                         >
                           {issue.kind === 'missing' ? 'Missing' : issue.kind === 'extra' ? 'Extra' : 'Changed'}

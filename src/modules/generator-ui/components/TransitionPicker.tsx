@@ -116,7 +116,7 @@ export function TransitionPicker({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border hover:text-foreground"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/95 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border hover:text-foreground"
           title="Transition between these clips"
           aria-label={`Transition: ${TRANSITION_LABEL[value]}`}
         >
@@ -236,7 +236,7 @@ export function TransitionPicker({
                     }}
                     className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
                       clampTransitionDuration(draftMs) === p.ms
-                        ? 'border-sky-300/50 bg-sky-300/10 text-sky-200'
+                        ? 'border-sky-300/50 bg-sky-300/10 text-accent-cool'
                         : 'border-border bg-accent/20 text-muted-foreground hover:border-border hover:text-foreground/90'
                     }`}
                   >

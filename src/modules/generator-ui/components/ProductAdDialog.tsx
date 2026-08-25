@@ -328,10 +328,10 @@ function SceneText({ text, narrationLabel }: { text: string; narrationLabel: str
       </p>
       {narration ? (
         <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
-          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm/90">
             {narrationLabel}
           </div>
-          <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-amber-50/90">
+          <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-accent-warm/90">
             {narration}
           </p>
         </div>
@@ -1407,9 +1407,9 @@ export default function ProductAdDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isCharacter ? (
-              <Drama className="h-5 w-5 text-amber-300" aria-hidden="true" />
+              <Drama className="h-5 w-5 text-accent-warm" aria-hidden="true" />
             ) : (
-              <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+              <Package className="h-5 w-5 text-accent-warm" aria-hidden="true" />
             )}
             {t.title}
             <div className="ms-auto flex items-center gap-2">
@@ -1422,7 +1422,7 @@ export default function ProductAdDialog({
                     className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
                       businessInfo.trim()
                         ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                        : 'border-accent-warm/40 bg-accent-warm/10 text-accent-warm'
                     }`}
                   >
                     <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1433,7 +1433,7 @@ export default function ProductAdDialog({
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-[28rem] max-w-[92vw] border-border bg-card text-foreground">
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
-                    {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
+                    {t.businessLabel} <span className="text-accent-warm">{t.businessRequiredTag}</span>
                   </div>
                   <Textarea
                     value={businessInfo}
@@ -1519,7 +1519,7 @@ export default function ProductAdDialog({
               </Popover>
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
                 <SelectTrigger
-                  className="h-7 w-auto gap-1.5 rounded-full border-border bg-black/20 px-2.5 text-[11px] font-semibold text-foreground/80"
+                  className="h-7 w-auto gap-1.5 rounded-full border-border bg-muted/60 px-2.5 text-[11px] font-semibold text-foreground/80"
                   aria-label="Language"
                 >
                   <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
@@ -1603,7 +1603,7 @@ export default function ProductAdDialog({
                   disabled={isUploadingImage}
                   title="Add product photo"
                   aria-label="Add product photo"
-                  className="inline-flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground transition hover:border-amber-300/40 hover:text-amber-100 disabled:opacity-50"
+                  className="inline-flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground transition hover:border-accent-warm/40 hover:text-accent-warm disabled:opacity-50"
                 >
                   {isUploadingImage ? (
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -1619,7 +1619,7 @@ export default function ProductAdDialog({
                   type="button"
                   onClick={openProductPicker}
                   title={t.chooseFromProducts}
-                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-amber-300/40 hover:text-amber-100"
+                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-accent-warm/40 hover:text-accent-warm"
                 >
                   <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
                   <span className="truncate">{t.chooseFromProducts}</span>
@@ -1629,7 +1629,7 @@ export default function ProductAdDialog({
                 type="button"
                 onClick={() => setAiImageOpen(true)}
                 title={t.generateWithAi}
-                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-amber-300/30 bg-amber-300/10 px-1 py-1 text-[10px] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20"
+                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-accent-warm/30 bg-accent-warm/10 px-1 py-1 text-[10px] text-amber-100 transition hover:border-accent-warm/60 hover:bg-amber-300/20"
               >
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="truncate">{t.generateWithAi}</span>
@@ -1641,7 +1641,7 @@ export default function ProductAdDialog({
                       type="button"
                       onClick={openCharacterPicker}
                       title="Change character"
-                      className="block w-20 overflow-hidden rounded-md border border-amber-300/50 bg-amber-300/10"
+                      className="block w-20 overflow-hidden rounded-md border border-amber-300/50 bg-accent-warm/10"
                     >
                       <img
                         src={characterRefDisplayUrl}
@@ -1666,7 +1666,7 @@ export default function ProductAdDialog({
                     type="button"
                     onClick={openCharacterPicker}
                     title="Add character"
-                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-amber-300/40 hover:text-amber-100"
+                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-accent-warm/40 hover:text-accent-warm"
                   >
                     <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
                     <span className="truncate">Add character</span>
@@ -1732,7 +1732,7 @@ export default function ProductAdDialog({
             <div
               role="radiogroup"
               aria-label="Ad duration"
-              className="inline-flex rounded-full border border-border bg-black/20 p-1 text-xs font-semibold"
+              className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold"
             >
               {DURATIONS.map((sec) => {
                 const active = duration === sec
@@ -1785,8 +1785,8 @@ export default function ProductAdDialog({
                       aria-checked={active}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
-                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                          : 'border-border bg-black/20 text-muted-foreground hover:text-foreground/90'
+                          ? 'border-amber-300/60 bg-accent-warm/15 text-amber-100'
+                          : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                       }`}
                     >
                       <span className="text-sm leading-none">{style.icon}</span>
@@ -1824,8 +1824,8 @@ export default function ProductAdDialog({
                       aria-checked={active}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
-                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                          : 'border-border bg-black/20 text-muted-foreground hover:text-foreground/90'
+                          ? 'border-amber-300/60 bg-accent-warm/15 text-amber-100'
+                          : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                       }`}
                     >
                       <span className="text-sm leading-none">{g.icon}</span>
@@ -1869,8 +1869,8 @@ export default function ProductAdDialog({
                             aria-checked={active}
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               active
-                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                                : 'border-border bg-black/20 text-muted-foreground hover:text-foreground/90'
+                                ? 'border-amber-300/60 bg-accent-warm/15 text-amber-100'
+                                : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                             }`}
                           >
                             <span className="text-sm leading-none">{s.icon}</span>
@@ -1916,8 +1916,8 @@ export default function ProductAdDialog({
                             aria-pressed={active}
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               active
-                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                                : 'border-border bg-black/20 text-muted-foreground hover:text-foreground/90'
+                                ? 'border-amber-300/60 bg-accent-warm/15 text-amber-100'
+                                : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                             }`}
                           >
                             <span className="text-sm leading-none">{v.icon}</span>
@@ -2098,7 +2098,7 @@ export default function ProductAdDialog({
               onClick={openReframeHistory}
               title={t.reframeHistory}
               aria-label={t.reframeHistory}
-              className="absolute right-12 top-4 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-accent/50 text-foreground/80 transition hover:border-amber-300/40 hover:text-amber-200"
+              className="absolute right-12 top-4 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-accent/50 text-foreground/80 transition hover:border-accent-warm/40 hover:text-accent-warm"
             >
               <History className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -2113,7 +2113,7 @@ export default function ProductAdDialog({
             {/* Step 1: aspect ratio */}
             <div>
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.pickAspect}</div>
-              <div role="radiogroup" className="inline-flex rounded-full border border-border bg-black/20 p-1 text-xs font-semibold">
+              <div role="radiogroup" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
                 {PRODUCT_ASPECTS.map((opt) => {
                   const active = pickedAspect === opt.value
                   return (
@@ -2151,7 +2151,7 @@ export default function ProductAdDialog({
                         type="button"
                         disabled={!pickedAspect || Boolean(preparingId)}
                         onClick={() => pickProduct(photo)}
-                        className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-accent-warm/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <img
                           src={photo.url}
@@ -2204,7 +2204,7 @@ export default function ProductAdDialog({
                     key={item.id}
                     type="button"
                     onClick={() => reuseReframe(item)}
-                    className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-amber-300/40"
+                    className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-accent-warm/40"
                   >
                     <img
                       src={item.url}
@@ -2256,7 +2256,7 @@ export default function ProductAdDialog({
                 type="button"
                 onClick={() => characterFileInputRef.current?.click()}
                 disabled={uploadingCharacter}
-                className="inline-flex items-center gap-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md border border-accent-warm/30 bg-accent-warm/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-accent-warm/60 hover:bg-amber-300/20 disabled:opacity-50"
               >
                 {uploadingCharacter ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -2282,7 +2282,7 @@ export default function ProductAdDialog({
                       key={photo.id}
                       type="button"
                       onClick={() => pickCharacter(photo)}
-                      className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-amber-300/40"
+                      className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-accent-warm/40"
                     >
                       <img
                         src={photo.url}

@@ -8,56 +8,61 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 213 36% 96%;
-    --foreground: 214 35% 15%;
+    /* Warm ivory/cream Light Theme — no pure white, no cold blue-grey. */
+    --background: 43 37% 95%;
+    --foreground: 220 20% 18%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 214 35% 15%;
+    --card: 45 67% 99%;
+    --card-foreground: 220 20% 18%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 214 35% 15%;
+    --popover: 45 67% 99%;
+    --popover-foreground: 220 20% 18%;
 
-    --primary: 214 35% 15%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 220 20% 18%;
+    --primary-foreground: 45 67% 99%;
 
-    --secondary: 214 41% 94%;
-    --secondary-foreground: 214 35% 15%;
+    --secondary: 39 37% 91%;
+    --secondary-foreground: 220 20% 18%;
 
-    --muted: 214 41% 94%;
-    --muted-foreground: 213 12% 41%;
+    --muted: 39 33% 90%;
+    --muted-foreground: 220 10% 42%;
 
-    --accent: 214 41% 94%;
-    --accent-foreground: 214 35% 15%;
+    --accent: 39 33% 88%;
+    --accent-foreground: 220 20% 18%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 215 25% 84%;
-    --input: 215 25% 84%;
-    --ring: 214 35% 15%;
+    --border: 40 20% 80%;
+    --input: 40 20% 80%;
+    --ring: 220 20% 18%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 214 41% 94%;
+    /* Theme-aware warm/cool accent text — dark amber on light, bright amber on dark. */
+    --accent-warm: 32 85% 38%;
+    --accent-cool: 205 80% 35%;
 
-    --sidebar-foreground: 215 25% 27%;
+    --sidebar-background: 39 37% 91%;
 
-    --sidebar-primary: 214 35% 15%;
+    --sidebar-foreground: 220 16% 27%;
 
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary: 220 20% 18%;
 
-    --sidebar-accent: 214 41% 90%;
+    --sidebar-primary-foreground: 45 67% 99%;
 
-    --sidebar-accent-foreground: 214 35% 15%;
+    --sidebar-accent: 39 33% 88%;
 
-    --sidebar-border: 215 25% 84%;
+    --sidebar-accent-foreground: 220 20% 18%;
 
-    --sidebar-ring: 215 25% 27%;
+    --sidebar-border: 40 20% 80%;
+
+    --sidebar-ring: 220 16% 27%;
 
     /* Semantic surface tokens (UI-only; palette swaps, never layout). */
-    --surface: 0 0% 100%;
-    --surface-2: 214 41% 94%;
-    --surface-3: 213 36% 96%;
+    --surface: 45 67% 99%;
+    --surface-2: 39 37% 91%;
+    --surface-3: 43 37% 95%;
   }
 
   .dark {
@@ -101,6 +106,9 @@ All colors MUST be HSL.
     --surface: 220 12% 5%;
     --surface-2: 220 10% 9%;
     --surface-3: 220 12% 3%;
+
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
   }
 
   /* Dynamic themes — palette-only overrides of the dark base. */
@@ -135,6 +143,8 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 226 30% 18%;
     --sidebar-ring: 226 70% 60%;
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
   }
 
   .neon {
@@ -168,6 +178,8 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: 240 12% 16%;
     --sidebar-ring: 190 100% 50%;
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
   }
 
   .slate {
@@ -201,6 +213,8 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 215 18% 20%;
     --sidebar-ring: 217 33% 60%;
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
   }
 }
 

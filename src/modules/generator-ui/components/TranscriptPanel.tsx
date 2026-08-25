@@ -278,7 +278,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
                 </div>
               ) : null}
               {hasLowConfidence ? (
-                <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
+                <p className="flex items-center gap-2 text-[11px] text-accent-warm/90">
                   <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
                   Highlighted words may be mispronounced — click one to hear the correct pronunciation.
                 </p>
@@ -296,7 +296,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
                             onClick={() => void playPronunciation(w.text, i)}
                             disabled={pronouncing === i}
                             title="Click to hear the correct pronunciation"
-                            className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-amber-400/20 hover:text-amber-200 disabled:cursor-wait ${
+                            className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-accent-warm underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-accent-warm/20 hover:text-accent-warm disabled:cursor-wait ${
                               playingWord === i ? 'bg-amber-400/25 text-amber-100' : ''
                             }`}
                           >
