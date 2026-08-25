@@ -203,3 +203,79 @@ describe('CharacterSheetDialog thumbnails', () => {
     expect(imgs).toHaveLength(0)
   })
 })
+
+describe('CharacterSheetDialog upload', () => {
+  function makeFile(name = 'photo.png', type = 'image/png') {
+    return new File(['x'], name, { type })
+  }
+
+  // Build a supabase mock whose storage.upload resolves and whose
+  // from('generator_user_images').insert() rejects with a PostgREST-style
+  // plain-object error (NOT an Error instance).
+  function mockInsertFailure(message: string) {
+    const insert = vi.fn(() => ({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({ data: null, error: { message, code: '42703', details: 'column image_type does not exist' } })),
+      })),
+    }))
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'generator_user_images') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                is: vi.fn(() => ({
+                  order: vi.fn(async () => ({ data: [], error: null })),
+                })),
+              })),
+            })),
+          })),
+          insert,
+        }
+      }
+      return { select: vi.fn(() => ({ eq: vi.fn(() => ({ is: vi.fn(() => ({ order: vi.fn(async () => ({ data: [], error: null })) })) })) })) }
+    })
+    return insert
+  }
+
+  it('surfaces the real PostgREST message instead of a generic upload failed', async () => {
+    const upload = vi.fn(async () => ({ data: { path: 'user-1/u.png' }, error: null }))
+    const remove = vi.fn(async () => ({ data: null, error: null }))
+    mockStorage.from.mockImplementation(() => ({
+      upload,
+      remove,
+      getPublicUrl: vi.fn(() => ({ data: { publicUrl: 'https://x.supabase.co/storage/v1/object/public/user-images/user-1/u.png' } })),
+      createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
+    }))
+    mockInsertFailure('column image_type does not exist')
+
+    renderDialog()
+    const input = document.querySelector('input[type="file"][accept="image/*"]') as HTMLInputElement
+    expect(input).not.toBeNull()
+    fireEvent.change(input, { target: { files: [makeFile()] } })
+
+    await waitFor(() => expect(screen.getByText(/column image_type does not exist/)).toBeInTheDocument())
+    expect(screen.queryByText(/photo.png: upload failed/)).not.toBeInTheDocument()
+  })
+
+  it('removes the orphaned storage object when the DB insert fails', async () => {
+    const upload = vi.fn(async () => ({ data: { path: 'user-1/u.png' }, error: null }))
+    const remove = vi.fn(async () => ({ data: null, error: null }))
+    mockStorage.from.mockImplementation(() => ({
+      upload,
+      remove,
+      getPublicUrl: vi.fn(() => ({ data: { publicUrl: 'https://x.supabase.co/storage/v1/object/public/user-images/user-1/u.png' } })),
+      createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
+    }))
+    mockInsertFailure('column image_type does not exist')
+
+    renderDialog()
+    const input = document.querySelector('input[type="file"][accept="image/*"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [makeFile()] } })
+
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1))
+    const removedPath = remove.mock.calls[0][0] as string[]
+    expect(removedPath).toHaveLength(1)
+    expect(removedPath[0]).toMatch(/^user-1\/[0-9a-f-]+\.png$/)
+  })
+})
