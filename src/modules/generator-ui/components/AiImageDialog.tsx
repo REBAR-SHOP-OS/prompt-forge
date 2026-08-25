@@ -987,7 +987,7 @@ export default function AiImageDialog({
                       onClick={() => setAspect(opt.value)}
                       className={`rounded-xl border px-3 py-3 text-left transition ${
                         active
-                          ? 'border-amber-300/60 bg-accent-warm/10 text-amber-100'
+                          ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm'
                           : 'border-border bg-accent/30 text-foreground/80 hover:border-border hover:bg-accent/60'
                       }`}
                     >
@@ -1092,7 +1092,7 @@ export default function AiImageDialog({
                       disabled={isLoading}
                       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         selectedTheme
-                          ? 'border-amber-300/60 bg-accent-warm/10 text-amber-100 hover:bg-amber-300/20'
+                          ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm hover:bg-accent-warm/20'
                           : 'border-border bg-surface-2/60 text-foreground/90 hover:border-border hover:bg-accent/80 hover:text-foreground'
                       }`}
                       title="Pick a visual theme"
@@ -1155,7 +1155,7 @@ export default function AiImageDialog({
                               ) : null}
                               <span
                                 className={`absolute inset-x-0 bottom-0 truncate px-2.5 pb-2 pt-6 text-xs font-semibold tracking-tight ${
-                                  active ? 'text-amber-100' : 'text-white'
+                                  active ? 'text-accent-warm' : 'text-white'
                                 }`}
                               >
                                 {t.enLabel}
@@ -1261,7 +1261,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading || isWritingPrompt}
-                      className="inline-flex items-center gap-2 rounded-full border border-accent-warm/40 bg-accent-warm/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-accent-warm/40 bg-accent-warm/10 px-3 py-1.5 text-xs font-medium text-accent-warm transition hover:border-accent-warm/70 hover:bg-accent-warm/20 disabled:cursor-not-allowed disabled:opacity-50"
                       title="Write a professional prompt from your references & theme"
                     >
                       {isWritingPrompt ? (
@@ -1568,7 +1568,7 @@ export default function AiImageDialog({
 
             {inspection ? (
               <div className="space-y-3 rounded-xl border border-amber-300/25 bg-amber-300/[0.04] p-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-100">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-warm">
                   <ShieldCheck className="h-4 w-4" />
                   Cover text guardian
                 </div>
@@ -1590,7 +1590,7 @@ export default function AiImageDialog({
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                           inspection.isAdSuitable
                             ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/30'
-                            : 'bg-amber-500/15 text-accent-warm border border-amber-400/30'
+                            : 'bg-amber-500/15 text-accent-warm border border-accent-warm/30'
                         }`}
                       >
                         {inspection.isAdSuitable ? 'Ad / cover suitable' : 'Not cover-suitable'}

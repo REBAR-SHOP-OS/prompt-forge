@@ -45,7 +45,7 @@ function SceneText({ text, narrationLabel, dir }: { text: string; narrationLabel
         {body}
       </p>
       {narration ? (
-        <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
+        <div className="rounded-md border border-accent-warm/30 bg-amber-400/5 px-2.5 py-2">
           <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm/90">
             {narrationLabel}
           </div>
@@ -425,7 +425,7 @@ export default function ScenarioWriterDialog({
                   className="h-7 w-auto gap-1.5 rounded-full border-border bg-muted/60 px-2.5 text-[11px] font-semibold text-foreground/80"
                   aria-label="Language"
                 >
-                  <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                  <Languages className="h-3.5 w-3.5 text-accent-cool" aria-hidden="true" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

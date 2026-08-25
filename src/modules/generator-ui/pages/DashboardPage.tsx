@@ -247,7 +247,7 @@ function StyleSection({
               type="button"
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
                 active
-                  ? 'border-amber-300 bg-accent-warm/15 text-amber-100'
+                  ? 'border-amber-300 bg-accent-warm/15 text-accent-warm'
                   : 'border-border bg-accent/30 text-foreground/80 hover:border-border hover:bg-accent/60'
               }`}
             >
@@ -9405,7 +9405,7 @@ export default function DashboardPage() {
               <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-red-500/70" aria-hidden="true" />
             )}
             <span
-              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-[#0b0c0e] ${
+              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-ring ${
                 isAlert ? 'bg-red-500' : 'bg-emerald-500'
               }`}
               aria-hidden="true"
@@ -9457,7 +9457,7 @@ export default function DashboardPage() {
             Your business
           </span>
           {hasBusinessInfo === false && (
-            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-ring" aria-hidden="true" />
           )}
         </button>
       </div>
@@ -9493,7 +9493,7 @@ export default function DashboardPage() {
           <DialogHeader className="border-b border-border px-6 py-4">
             <div className="flex items-center justify-between gap-3">
               <div className="inline-flex items-center gap-2">
-                <Database className="h-5 w-5 text-sky-300" aria-hidden="true" />
+                <Database className="h-5 w-5 text-accent-cool" aria-hidden="true" />
                 <DialogTitle className="text-sm font-medium uppercase tracking-[0.18em] text-foreground/80">
                   Storage
                 </DialogTitle>
@@ -9653,7 +9653,7 @@ export default function DashboardPage() {
                         <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
                       ) : null}
                       {captionImportStatus ? (
-                        <p className="mt-1 text-xs text-sky-300">{captionImportStatus}</p>
+                        <p className="mt-1 text-xs text-accent-cool">{captionImportStatus}</p>
                       ) : null}
                     </div>
                     <input
@@ -9680,13 +9680,13 @@ export default function DashboardPage() {
                         maxLength={100}
                         placeholder="Product name (optional)"
                         disabled={isUploadingProductPhoto || !userId}
-                        className="w-44 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none transition focus:border-sky-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="w-44 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none transition focus:border-accent-cool/40 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <button
                         type="button"
                         onClick={handlePickProductPhoto}
                         disabled={isUploadingProductPhoto || !userId}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-accent-cool/30 bg-accent-cool/10 px-3 py-2 text-xs font-semibold text-accent-cool transition hover:bg-accent-cool/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isUploadingProductPhoto ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -9771,7 +9771,7 @@ export default function DashboardPage() {
                                   if (e.key === 'Enter') { void renameProductPhoto(img.id) }
                                   if (e.key === 'Escape') cancelRenameProduct()
                                 }}
-                                className="min-w-0 flex-1 rounded-md border border-border bg-accent/50 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-sky-300/40"
+                                className="min-w-0 flex-1 rounded-md border border-border bg-accent/50 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-accent-cool/40"
                               />
                               <button
                                 type="button"
@@ -9814,7 +9814,7 @@ export default function DashboardPage() {
                             maxLength={2000}
                             rows={2}
                             placeholder="Describe for AI — what is this product? (helps the AI build the video correctly)"
-                            className="w-full resize-y rounded-md border border-border bg-accent/40 px-2 py-1 text-[11px] leading-snug text-foreground/90 placeholder:text-muted-foreground outline-none focus:border-sky-300/40"
+                            className="w-full resize-y rounded-md border border-border bg-accent/40 px-2 py-1 text-[11px] leading-snug text-foreground/90 placeholder:text-muted-foreground outline-none focus:border-accent-cool/40"
                           />
                           <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
 
@@ -9825,7 +9825,7 @@ export default function DashboardPage() {
                                 onClick={() => handleUseImageAsStart(img.storage_path)}
                                 aria-label="Use as Start frame"
                                 title="Use as Start frame"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-accent-cool"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                               >
                                 <ImagePlus className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -10047,7 +10047,7 @@ export default function DashboardPage() {
                             onClick={() => handleUseImageAsStart(img.storage_path)}
                             aria-label="Use as Start frame"
                             title="Use as Start frame"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-accent-cool"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                           >
                             <ImagePlus className="h-3 w-3" aria-hidden="true" />
                           </button>
@@ -10484,7 +10484,7 @@ export default function DashboardPage() {
                   toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
                 }
               }}
-              className="flex h-9 items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/15 px-3 text-xs uppercase tracking-[0.18em] text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-sky-400/40 disabled:hover:bg-sky-400/15"
+              className="flex h-9 items-center gap-1.5 rounded-md border border-accent-cool/40 bg-accent-cool/15 px-3 text-xs uppercase tracking-[0.18em] text-accent-cool transition hover:border-accent-cool/60 hover:bg-accent-cool/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-accent-cool/40 disabled:hover:bg-accent-cool/15"
               aria-label="Schedule to Social Media Manager"
               title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
             >
@@ -11291,7 +11291,7 @@ export default function DashboardPage() {
                           onClick={() => void openTranscript(src)}
                           aria-label="Show transcript"
                           title="Transcript"
-                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
+                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-accent-cool/40 hover:bg-accent-cool/20 hover:text-accent-cool"
                         >
                           <FileText className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -11682,7 +11682,7 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-amber-100">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-accent-warm">
                     Film cover
                   </p>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -11715,7 +11715,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-amber-300/15 pt-3">
-                  <label className="text-[11px] font-medium text-amber-100/80" htmlFor="cover-duration">
+                  <label className="text-[11px] font-medium text-accent-warm/80" htmlFor="cover-duration">
                     Cover duration (seconds at start of film)
                   </label>
                   <div className="flex shrink-0 items-center gap-1">
@@ -11742,7 +11742,7 @@ export default function DashboardPage() {
                         const v = Math.max(1, Math.min(10, Math.round(Number(e.target.value) || DEFAULT_COVER_DURATION)))
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: v }; persistCoverDurations(n); return n })
                       }}
-                      className="h-7 w-12 rounded-md border border-border bg-surface-2 text-center text-[12px] font-semibold text-amber-100 outline-none focus:border-accent-warm/40"
+                      className="h-7 w-12 rounded-md border border-border bg-surface-2 text-center text-[12px] font-semibold text-accent-warm outline-none focus:border-accent-warm/40"
                     />
                     <button
                       type="button"
@@ -11834,7 +11834,7 @@ export default function DashboardPage() {
                               }}
                               aria-label="Use as Start frame"
                               title="Use as Start frame"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-accent-cool"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                             >
                               <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
@@ -12016,7 +12016,7 @@ export default function DashboardPage() {
                           >
                             <MessageSquareQuote className="h-3.5 w-3.5" aria-hidden="true" />
                             {hasNarration ? (
-                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-ring" aria-hidden="true" />
                             ) : null}
                           </button>
                         )
@@ -12089,7 +12089,7 @@ export default function DashboardPage() {
                                     onClick={(event) => event.stopPropagation()}
                                     aria-label="Regenerate this card"
                                     title="Regenerate this card — choose provider"
-                                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-accent-cool disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     <RefreshCw
                                       className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-spin' : ''}`}
@@ -12453,7 +12453,7 @@ export default function DashboardPage() {
                                   title="Music & voiceover"
                                   className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                                     hasAny
-                                      ? 'border-sky-300/20 text-sky-300/70 hover:border-sky-300/50 hover:bg-sky-300/10 hover:text-accent-cool'
+                                      ? 'border-accent-cool/20 text-accent-cool/70 hover:border-accent-cool/50 hover:bg-accent-cool/10 hover:text-accent-cool'
                                       : 'border-border text-muted-foreground hover:border-border hover:text-muted-foreground'
                                   }`}
                                 >
@@ -13060,7 +13060,7 @@ export default function DashboardPage() {
                                 badge.kind === 'recommended'
                                   ? 'bg-accent-warm/20 text-accent-warm'
                                   : badge.kind === 'fast'
-                                    ? 'bg-sky-400/15 text-sky-300'
+                                    ? 'bg-accent-cool/15 text-accent-cool'
                                     : badge.kind === 'best-quality'
                                       ? 'bg-violet-400/15 text-violet-300'
                                       : 'bg-emerald-400/15 text-emerald-300'
@@ -13585,7 +13585,7 @@ export default function DashboardPage() {
                   title="Pin the product so it stays identical in every card"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     selectedProduct
-                      ? 'border-amber-400/60 bg-accent-warm/10 text-amber-100'
+                      ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm'
                       : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
                   }`}
                 >
@@ -14053,7 +14053,7 @@ export default function DashboardPage() {
             value={editPromptText}
             onChange={(e) => setEditPromptText(e.target.value)}
             rows={8}
-            className="w-full resize-y rounded-lg border border-border bg-surface-2/60 p-3 text-sm leading-6 text-foreground outline-none focus:border-sky-300/40"
+            className="w-full resize-y rounded-lg border border-border bg-surface-2/60 p-3 text-sm leading-6 text-foreground outline-none focus:border-accent-cool/40"
             placeholder="Describe what you want to generate…"
           />
           <DialogFooter>

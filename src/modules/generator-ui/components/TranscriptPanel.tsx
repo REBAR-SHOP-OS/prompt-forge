@@ -297,7 +297,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
                             disabled={pronouncing === i}
                             title="Click to hear the correct pronunciation"
                             className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-accent-warm underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-accent-warm/20 hover:text-accent-warm disabled:cursor-wait ${
-                              playingWord === i ? 'bg-amber-400/25 text-amber-100' : ''
+                              playingWord === i ? 'bg-accent-warm/25 text-accent-warm' : ''
                             }`}
                           >
                             {w.text}

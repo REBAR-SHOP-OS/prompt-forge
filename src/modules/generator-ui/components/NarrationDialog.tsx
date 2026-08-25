@@ -520,7 +520,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   dir="auto"
                   className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-foreground"
                 >
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-accent-cool/80">
                     {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
                   </p>
                   {translation}
@@ -642,7 +642,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                             disabled={pronouncing === i}
                             title="Click to hear the correct pronunciation"
                             className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-accent-warm underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-accent-warm/20 hover:text-accent-warm disabled:cursor-wait ${
-                              playingWord === i ? 'bg-amber-400/25 text-amber-100' : ''
+                              playingWord === i ? 'bg-accent-warm/25 text-accent-warm' : ''
                             }`}
                           >
                             {w.text}
@@ -665,7 +665,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   dir="auto"
                   className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-foreground"
                 >
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-accent-cool/80">
                     {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
                   </p>
                   {transcriptTranslation}
@@ -687,7 +687,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   ? 'border-emerald-400/30 bg-emerald-500/[0.08] text-emerald-100'
                   : check.status === 'none'
                     ? 'border-border bg-accent/30 text-foreground/80'
-                    : 'border-amber-400/30 bg-amber-500/[0.08] text-amber-100'
+                    : 'border-accent-warm/30 bg-accent-warm/[0.08] text-accent-warm'
               }`}
             >
               <div className="flex items-start gap-2">

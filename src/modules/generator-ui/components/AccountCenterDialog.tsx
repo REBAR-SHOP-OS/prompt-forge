@@ -258,7 +258,7 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
                               <div
                                 className={[
                                   'flex aspect-square flex-col items-center justify-center rounded-[4px] border text-[9px] leading-none',
-                                  isToday ? 'border-amber-300/60' : 'border-border/50',
+                                  isToday ? 'border-accent-warm/60' : 'border-border/50',
                                   heatBg(credits),
                                 ].join(' ')}
                               >
