@@ -43,6 +43,22 @@ All colors MUST be HSL.
     --accent-warm: 32 85% 38%;
     --accent-cool: 205 80% 35%;
 
+    /* Semantic action colors for toolbar controls — dark, high-contrast tones
+       on the warm ivory light theme. All hold WCAG AA (>= 4.5:1) against the
+       light card/background surfaces (#F7F4EC / #FFFDF8). */
+    --action-cyan: 187 92% 27%;
+    --action-cyan-strong: 187 95% 25%;
+    --action-violet: 258 80% 42%;
+    --action-violet-strong: 258 85% 33%;
+    --action-orange: 27 90% 34%;
+    --action-orange-strong: 27 90% 26%;
+    --action-emerald: 160 85% 27%;
+    --action-emerald-strong: 160 90% 21%;
+    --action-yellow: 45 90% 25%;
+    --action-yellow-strong: 45 90% 24%;
+    --action-rose: 350 85% 36%;
+    --action-rose-strong: 350 88% 28%;
+
     --sidebar-background: 39 37% 91%;
 
     --sidebar-foreground: 220 16% 27%;
