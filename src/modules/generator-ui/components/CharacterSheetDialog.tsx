@@ -25,6 +25,24 @@ import { signUrl } from '@/modules/generator-ui/lib/characterSheetUrl'
 const USER_IMAGES_BUCKET = 'user-images'
 const CHARACTER_CATEGORY = 'character'
 
+/**
+ * Supabase (PostgREST/Storage) errors are plain objects, not `Error`
+ * instances, so `err instanceof Error` is always false for them and the UI
+ * would fall back to a useless generic message. This extracts the most
+ * specific human-readable detail available across both shapes.
+ */
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message
+  if (err && typeof err === 'object') {
+    const e = err as { message?: string; error_description?: string; details?: string; hint?: string }
+    if (e.message) return e.message
+    if (e.error_description) return e.error_description
+    if (e.details) return e.details
+    if (e.hint) return e.hint
+  }
+  return fallback
+}
+
 type SheetModel = 'fast' | 'quality' | 'detailed'
 
 const SHEET_MODELS: { key: SheetModel; label: string; hint: string }[] = [
@@ -232,14 +250,24 @@ export default function CharacterSheetDialog({
             })
             .select('id, storage_path, created_at, title, image_type')
             .single()
-          if (insErr) throw insErr
+          if (insErr) {
+            // Storage upload succeeded but the DB row was not written. Remove the
+            // now-orphaned object so the user's folder does not accumulate dead
+            // files on every failed upload.
+            try {
+              await supabase.storage.from(USER_IMAGES_BUCKET).remove([path])
+            } catch {
+              /* best-effort cleanup; the insert error is the real problem */
+            }
+            throw insErr
+          }
           const signed = {
             ...(row as CharacterImage),
             signedUrl: await signUrl((row as CharacterImage).storage_path),
           }
           setImages((prev) => [signed, ...prev])
         } catch (err) {
-          errors.push(`${file.name}: ${err instanceof Error ? err.message : 'upload failed'}`)
+          errors.push(`${file.name}: ${errorMessage(err, 'upload failed')}`)
         }
       }
       if (errors.length > 0) setError(errors.join(' · '))
