@@ -50,10 +50,11 @@ const MOBILE_BREAKPOINT = 768
  * Draggable central Preview position.
  *
  * The preview stays in its normal grid-centered flow; this hook only manages a
- * `translate(x, y)` offset that is clamped to the safe workspace (central area
- * minus the right/left sidebars, the bottom composer, and the top header). The
- * offset is persisted per-user in localStorage and restored on mount. On small
- * viewports dragging is disabled and the preview keeps its centered behavior.
+ * `translate(x, y)` offset that is clamped to the safe area (full viewport
+ * minus the right/left sidebars, the bottom composer, and the top header).
+ * The offset is persisted per-user in localStorage and restored on mount. On
+ * small viewports dragging is disabled and the preview keeps its centered
+ * behavior.
  *
  * @param deps Extra dependency values that trigger a re-clamp when they change
  *             (e.g. aspectRatio, previewMaxHeightPx, sidebar open state).
@@ -103,8 +104,11 @@ export function usePreviewPosition(
     if (disabled) return
     const frame = rectOf(refs.frame.current)
     if (!frame) return
+    // Use the full viewport as the base rect so the preview can roam the
+    // entire visible area, not just the central <main> workspace.
+    const viewport: Rect = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
     const safe = computeSafeRect(
-      rectOf(refs.workspace.current) ?? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight },
+      viewport,
       rectOf(refs.rightSidebar.current),
       rectOf(refs.leftSidebar.current),
       rectOf(refs.composer.current),
@@ -132,8 +136,7 @@ export function usePreviewPosition(
     (e: React.PointerEvent<HTMLElement>) => {
       if (disabled) return
       const frame = rectOf(refs.frame.current)
-      const workspace = rectOf(refs.workspace.current)
-      if (!frame || !workspace) return
+      if (!frame) return
       e.preventDefault()
       e.stopPropagation()
       const target = e.currentTarget
@@ -148,8 +151,9 @@ export function usePreviewPosition(
       const startOffset = offset
 
       const apply = (clientX: number, clientY: number) => {
+        const viewport: Rect = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
         const safe = computeSafeRect(
-          workspace,
+          viewport,
           rectOf(refs.rightSidebar.current),
           rectOf(refs.leftSidebar.current),
           rectOf(refs.composer.current),
