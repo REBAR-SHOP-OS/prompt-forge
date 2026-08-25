@@ -1645,6 +1645,17 @@ export default function DashboardPage() {
       setTranscriptResolving(false)
     }
   }, [signStorageUrl])
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
+    if (typeof window === 'undefined') return '16:9'
+    try {
+      const v = window.localStorage.getItem('generator:aspectRatio')
+      if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    } catch { /* ignore */ }
+    return '16:9'
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
+  }, [aspectRatio])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
@@ -1849,17 +1860,6 @@ export default function DashboardPage() {
   // Continuity Mode — automatic per-chain card-to-card continuity for multi-card
   // durations. State is persisted per generation chain (see continuityChainKey).
   const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
-  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
-    if (typeof window === 'undefined') return '16:9'
-    try {
-      const v = window.localStorage.getItem('generator:aspectRatio')
-      if (v === '9:16' || v === '1:1' || v === '16:9') return v
-    } catch { /* ignore */ }
-    return '16:9'
-  })
-  useEffect(() => {
-    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
-  }, [aspectRatio])
   // Draggable preview position — must be called AFTER aspectRatio and
   // previewMaxHeightPx are declared to avoid temporal dead zone violations.
   const previewPosition = usePreviewPosition(userId, {
@@ -9359,12 +9359,14 @@ export default function DashboardPage() {
                 onClick={() => setIsApprovedPanelOpen((open) => !open)}
                 className={`relative grid h-9 w-9 place-items-center rounded-md border transition ${
                   isApprovedPanelOpen
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                    : 'border-transparent text-foreground/80 hover:border-border hover:bg-accent/45 hover:text-foreground'
+                    ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                    : 'border-transparent text-red-500 hover:border-border hover:bg-accent/45 hover:text-red-400'
                 }`}
               >
                 <Library className="h-[18px] w-[18px]" aria-hidden="true" />
                 <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-surface-2 px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
+                <Library className="h-[23px] w-[23px]" aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-[#1a1c1f] px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
                   {approvedIds.size}
                 </span>
               </button>

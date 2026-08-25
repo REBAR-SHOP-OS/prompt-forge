@@ -27,7 +27,7 @@ describe('DashboardPage Library header icon', () => {
 
   it('gives the header icon a clear active state when the panel is open', () => {
     expect(source).toContain('isApprovedPanelOpen')
-    expect(source).toContain('border-emerald-500/40 bg-emerald-500/10 text-emerald-300')
+    expect(source).toContain('border-red-500/40 bg-red-500/10 text-red-400')
   })
 
   it('removes the Library item from the profile/email dropdown', () => {
