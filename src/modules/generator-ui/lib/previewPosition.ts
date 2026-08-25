@@ -2,9 +2,9 @@
 //
 // The preview frame is kept in its normal grid-centered flow and moved with a
 // CSS `translate(x, y)` offset. `clampOffset` keeps that offset inside the safe
-// workspace (the central area minus the fixed right/left sidebars and the
-// bottom composer). Everything here is side-effect free so it can be unit
-// tested without a DOM.
+// area (the full viewport minus the fixed right/left sidebars, the bottom
+// composer, and the top header). Everything here is side-effect free so it can
+// be unit tested without a DOM.
 
 export type PreviewOffset = { x: number; y: number }
 
@@ -18,9 +18,12 @@ export interface Rect {
 export const ZERO_OFFSET: PreviewOffset = { x: 0, y: 0 }
 export const DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 24 }
 
+/** Small safety margin (px) kept between the preview frame and the viewport edge. */
+export const SAFE_MARGIN = 8
+
 /**
  * Clamp a translate offset so the preview frame (given its *untranslated*
- * centered rect) stays fully inside the safe workspace rect.
+ * centered rect) stays fully inside the safe rect.
  *
  * When the safe area is narrower/shorter than the frame on an axis, the frame
  * cannot move on that axis and the offset is forced back to 0 (centered).
@@ -36,24 +39,27 @@ export function clampOffset(offset: PreviewOffset, frame: Rect, safe: Rect): Pre
 }
 
 /**
- * Compute the safe workspace rect from the central workspace area and the
- * fixed overlays. Any overlay that is absent (null) is ignored.
+ * Compute the safe rect for the preview frame, starting from the full
+ * viewport (not just the central workspace element) and subtracting the
+ * fixed overlays — header, right sidebar, left sidebar, and bottom composer.
+ * A small `SAFE_MARGIN` is kept from each edge so the preview never touches
+ * the viewport boundary. Any overlay that is absent (null) is ignored.
  */
 export function computeSafeRect(
-  workspace: Rect,
+  viewport: Rect,
   rightSidebar: Rect | null,
   leftSidebar: Rect | null,
   composer: Rect | null,
   header: Rect | null = null,
 ): Rect {
-  let left = workspace.left
-  let right = workspace.right
-  let top = workspace.top
-  let bottom = workspace.bottom
-  if (rightSidebar) right = Math.min(right, rightSidebar.left)
-  if (leftSidebar) left = Math.max(left, leftSidebar.right)
-  if (composer) bottom = Math.min(bottom, composer.top)
-  if (header) top = Math.max(top, header.bottom)
+  let left = viewport.left + SAFE_MARGIN
+  let right = viewport.right - SAFE_MARGIN
+  let top = viewport.top + SAFE_MARGIN
+  let bottom = viewport.bottom - SAFE_MARGIN
+  if (rightSidebar) right = Math.min(right, rightSidebar.left - SAFE_MARGIN)
+  if (leftSidebar) left = Math.max(left, leftSidebar.right + SAFE_MARGIN)
+  if (composer) bottom = Math.min(bottom, composer.top - SAFE_MARGIN)
+  if (header) top = Math.max(top, header.bottom + SAFE_MARGIN)
   return { left, top, right, bottom }
 }
 
