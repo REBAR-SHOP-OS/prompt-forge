@@ -9359,11 +9359,11 @@ export default function DashboardPage() {
                 onClick={() => setIsApprovedPanelOpen((open) => !open)}
                 className={`relative grid h-9 w-9 place-items-center rounded-md border transition ${
                   isApprovedPanelOpen
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                    : 'border-transparent text-foreground/80 hover:border-border hover:bg-accent/45 hover:text-foreground'
+                    ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                    : 'border-transparent text-red-500 hover:border-border hover:bg-accent/45 hover:text-red-400'
                 }`}
               >
-                <Library className="h-[18px] w-[18px]" aria-hidden="true" />
+                <Library className="h-[23px] w-[23px]" aria-hidden="true" />
                 <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-[#1a1c1f] px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
                   {approvedIds.size}
                 </span>
