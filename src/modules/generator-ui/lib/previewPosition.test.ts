@@ -113,6 +113,113 @@ describe('computeSafeRect', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// New tests: viewport-based safe area vs old workspace-based behaviour
+// ---------------------------------------------------------------------------
+
+describe('computeSafeRect: viewport vs workspace base', () => {
+  // Scenario: workspace <main> is 1000px wide, but viewport is 1200px.
+  // With the OLD workspace-based logic the safe right edge was 1000.
+  // With the NEW viewport-based logic it should be 1200 - SAFE_MARGIN.
+  const wideViewport: Rect = { left: 0, top: 0, right: 1200, bottom: 800 }
+  const oldWorkspace: Rect = { left: 0, top: 0, right: 1000, bottom: 800 }
+
+  it('safe rect extends to viewport width when no overlays block', () => {
+    const safe = computeSafeRect(wideViewport, null, null, null)
+    expect(safe.right).toBe(1200 - SAFE_MARGIN)
+    expect(safe.right).toBeGreaterThan(oldWorkspace.right)
+  })
+
+  it('safe rect extends to viewport height when no overlays block', () => {
+    const tallViewport: Rect = { left: 0, top: 0, right: 1200, bottom: 900 }
+    const safe = computeSafeRect(tallViewport, null, null, null)
+    expect(safe.bottom).toBe(900 - SAFE_MARGIN)
+  })
+
+  it('frame can move beyond old workspace right edge with no overlays', () => {
+    // frame is at [400, 200, 600, 500]; workspace right was 1000.
+    // Old maxX = 1000 - 600 = 400.  New maxX = (1200 - 8) - 600 = 592.
+    const safe = computeSafeRect(wideViewport, null, null, null)
+    // 500 is within new bounds (maxX=592), so it stays unchanged.
+    // Under the OLD workspace-based logic maxX was 400, so 500 would have
+    // been clamped to 400.
+    const clamped = clampOffset({ x: 500, y: 0 }, frame, safe)
+    expect(clamped.x).toBe(500)
+    expect(clamped.x).toBeGreaterThan(400) // would have been clamped to 400 under old logic
+    // Also verify the boundary itself is beyond the old limit
+    const clampedFar = clampOffset({ x: 999, y: 0 }, frame, safe)
+    expect(clampedFar.x).toBe(1200 - SAFE_MARGIN - 600)
+    expect(clampedFar.x).toBeGreaterThan(400)
+  })
+})
+
+describe('computeSafeRect: overlay exclusion with margin', () => {
+  const vp: Rect = { left: 0, top: 0, right: 1200, bottom: 800 }
+
+  it('frame clamped before header zone', () => {
+    const header: Rect = { left: 0, top: 0, right: 1200, bottom: 60 }
+    const safe = computeSafeRect(vp, null, null, null, header)
+    // safe.top = 60 + SAFE_MARGIN = 68
+    // minY = 68 - 200 = -132
+    const clamped = clampOffset({ x: 0, y: -999 }, frame, safe)
+    expect(clamped.y).toBe(60 + SAFE_MARGIN - 200)
+    // Verify frame.top + offset never enters header zone
+    const frameTopAfter = 200 + clamped.y // 68
+    expect(frameTopAfter).toBeGreaterThanOrEqual(60 + SAFE_MARGIN)
+  })
+
+  it('frame clamped before right sidebar zone', () => {
+    const rightBar: Rect = { left: 900, top: 0, right: 1200, bottom: 800 }
+    const safe = computeSafeRect(vp, rightBar, null, null)
+    // safe.right = 900 - SAFE_MARGIN = 892
+    // maxX = 892 - 600 = 292
+    const clamped = clampOffset({ x: 999, y: 0 }, frame, safe)
+    expect(clamped.x).toBe(900 - SAFE_MARGIN - 600)
+    // Verify frame.right + offset never enters right sidebar zone
+    const frameRightAfter = 600 + clamped.x // 892
+    expect(frameRightAfter).toBeLessThanOrEqual(900 - SAFE_MARGIN)
+  })
+
+  it('frame clamped before left sidebar zone', () => {
+    const leftBar: Rect = { left: 0, top: 0, right: 300, bottom: 800 }
+    const safe = computeSafeRect(vp, null, leftBar, null)
+    // safe.left = 300 + SAFE_MARGIN = 308
+    // minX = 308 - 400 = -92
+    const clamped = clampOffset({ x: -999, y: 0 }, frame, safe)
+    expect(clamped.x).toBe(300 + SAFE_MARGIN - 400)
+    // Verify frame.left + offset never enters left sidebar zone
+    const frameLeftAfter = 400 + clamped.x // 308
+    expect(frameLeftAfter).toBeGreaterThanOrEqual(300 + SAFE_MARGIN)
+  })
+
+  it('frame clamped before composer zone', () => {
+    const composer: Rect = { left: 0, top: 650, right: 1200, bottom: 800 }
+    const safe = computeSafeRect(vp, null, null, composer)
+    // safe.bottom = 650 - SAFE_MARGIN = 642
+    // maxY = 642 - 500 = 142
+    const clamped = clampOffset({ x: 0, y: 999 }, frame, safe)
+    expect(clamped.y).toBe(650 - SAFE_MARGIN - 500)
+    // Verify frame.bottom + offset never enters composer zone
+    const frameBottomAfter = 500 + clamped.y // 642
+    expect(frameBottomAfter).toBeLessThanOrEqual(650 - SAFE_MARGIN)
+  })
+
+  it('all overlays combined keep frame fully inside safe zone', () => {
+    const header: Rect = { left: 0, top: 0, right: 1200, bottom: 60 }
+    const rightBar: Rect = { left: 900, top: 0, right: 1200, bottom: 800 }
+    const leftBar: Rect = { left: 0, top: 0, right: 300, bottom: 800 }
+    const composer: Rect = { left: 0, top: 650, right: 1200, bottom: 800 }
+    const safe = computeSafeRect(vp, rightBar, leftBar, composer, header)
+    // Try to escape in all four directions
+    const clamped = clampOffset({ x: 9999, y: 9999 }, frame, safe)
+    expect(clamped.x).toBe(900 - SAFE_MARGIN - 600)
+    expect(clamped.y).toBe(650 - SAFE_MARGIN - 500)
+    const clampedNeg = clampOffset({ x: -9999, y: -9999 }, frame, safe)
+    expect(clampedNeg.x).toBe(300 + SAFE_MARGIN - 400)
+    expect(clampedNeg.y).toBe(60 + SAFE_MARGIN - 200)
+  })
+})
+
 describe('DEFAULT_OFFSET', () => {
   it('has a y value of 24', () => {
     expect(DEFAULT_OFFSET).toEqual({ x: 0, y: 24 })
