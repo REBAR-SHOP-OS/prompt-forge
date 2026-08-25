@@ -43,6 +43,14 @@ All colors MUST be HSL.
     --accent-warm: 32 85% 38%;
     --accent-cool: 205 80% 35%;
 
+    /* Semantic action colors (toolbar buttons) — dark on light, bright on dark. */
+    --accent-cyan: 192 82% 30%;
+    --accent-violet: 260 70% 45%;
+    --accent-orange: 25 90% 40%;
+    --accent-emerald: 160 84% 24%;
+    --accent-yellow: 40 95% 35%;
+    --accent-rose: 350 85% 45%;
+
     --sidebar-background: 39 37% 91%;
 
     --sidebar-foreground: 220 16% 27%;
@@ -109,6 +117,13 @@ All colors MUST be HSL.
 
     --accent-warm: 38 92% 50%;
     --accent-cool: 199 89% 48%;
+
+    --accent-cyan: 187 92% 72%;
+    --accent-violet: 255 90% 80%;
+    --accent-orange: 32 95% 74%;
+    --accent-emerald: 158 84% 74%;
+    --accent-yellow: 48 96% 70%;
+    --accent-rose: 350 94% 80%;
   }
 
   /* Dynamic themes — palette-only overrides of the dark base. */
@@ -135,6 +150,12 @@ All colors MUST be HSL.
     --surface: 226 35% 9%;
     --surface-2: 226 30% 13%;
     --surface-3: 226 40% 4%;
+    --accent-cyan: 187 92% 72%;
+    --accent-violet: 255 90% 80%;
+    --accent-orange: 32 95% 74%;
+    --accent-emerald: 158 84% 74%;
+    --accent-yellow: 48 96% 70%;
+    --accent-rose: 350 94% 80%;
     --sidebar-background: 226 35% 8%;
     --sidebar-foreground: 210 40% 98%;
     --sidebar-primary: 226 70% 60%;
@@ -170,6 +191,12 @@ All colors MUST be HSL.
     --surface: 240 15% 6%;
     --surface-2: 240 12% 10%;
     --surface-3: 240 20% 2%;
+    --accent-cyan: 187 92% 72%;
+    --accent-violet: 255 90% 80%;
+    --accent-orange: 32 95% 74%;
+    --accent-emerald: 158 84% 74%;
+    --accent-yellow: 48 96% 70%;
+    --accent-rose: 350 94% 80%;
     --sidebar-background: 240 15% 5%;
     --sidebar-foreground: 0 0% 98%;
     --sidebar-primary: 190 100% 50%;
@@ -205,6 +232,12 @@ All colors MUST be HSL.
     --surface: 215 20% 13%;
     --surface-2: 215 18% 17%;
     --surface-3: 215 25% 7%;
+    --accent-cyan: 187 92% 72%;
+    --accent-violet: 255 90% 80%;
+    --accent-orange: 32 95% 74%;
+    --accent-emerald: 158 84% 74%;
+    --accent-yellow: 48 96% 70%;
+    --accent-rose: 350 94% 80%;
     --sidebar-background: 215 20% 11%;
     --sidebar-foreground: 210 40% 98%;
     --sidebar-primary: 217 33% 60%;

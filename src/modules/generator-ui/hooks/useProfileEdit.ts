@@ -19,6 +19,15 @@ export interface ProfileEditState {
 
 export type SaveStatus = 'idle' | 'saving' | 'success' | 'error'
 
+/** Extract a human-readable message from a Supabase error (a plain object) or a thrown Error. */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
+    return (err as { message: string }).message
+  }
+  return 'Unknown error'
+}
+
 export function useProfileEdit() {
   const { user, profile, refreshProfile } = useAuth()
 
@@ -40,11 +49,12 @@ export function useProfileEdit() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
 
-  // Re-sync when profile data loads/changes
+  // Re-sync when profile data loads/changes. A null DB value means "not set",
+  // so fall back to auth metadata exactly like the initial-state seed above.
   useEffect(() => {
-    if (dbFirstName !== undefined) setFirstName(dbFirstName)
+    if (dbFirstName != null) setFirstName(dbFirstName)
     else if (metaFirst) setFirstName(metaFirst)
-    if (dbLastName !== undefined) setLastName(dbLastName)
+    if (dbLastName != null) setLastName(dbLastName)
     else if (metaLast) setLastName(metaLast)
     setAvatarUrl(dbAvatarUrl ?? null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,18 +73,13 @@ export function useProfileEdit() {
 
     setUploading(true)
     setSaveError(null)
+
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png'
+    const path = `${user.id}/avatar-${Date.now()}.${ext}`
+
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'png'
-      const path = `${user.id}/avatar-${Date.now()}.${ext}`
-
-      // Remove old avatar if it exists
-      if (avatarUrl) {
-        const oldPath = avatarUrl.split('/avatars/')[1]
-        if (oldPath) {
-          await supabase.storage.from(AVATARS_BUCKET).remove([oldPath]).catch(() => {})
-        }
-      }
-
+      // 1) Upload the new file first. The old avatar stays untouched until the
+      //    new one is fully persisted, so a failure here never deletes anything.
       const { error: upErr } = await supabase.storage
         .from(AVATARS_BUCKET)
         .upload(path, file, { contentType: file.type, upsert: false })
@@ -84,25 +89,40 @@ export function useProfileEdit() {
       const { data: pub } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(path)
       const publicUrl = pub.publicUrl
 
-      // Persist avatar_url to profile row
+      // 2) Persist avatar_url to profile (source of truth).
       const { error: dbErr } = await supabase
         .from('core_user_profiles')
         .update({ avatar_url: publicUrl })
         .eq('id', user.id)
 
-      if (dbErr) throw dbErr
+      if (dbErr) {
+        // Persist failed: clean up the just-uploaded file, keep the old avatar.
+        await supabase.storage.from(AVATARS_BUCKET).remove([path]).catch(() => {})
+        throw dbErr
+      }
 
-      // Update auth user_metadata for display
-      await supabase.auth.updateUser({
+      // 3) Update auth user_metadata for display. This is display-only and must
+      //    not roll back a successful DB persist, so a failure here is non-fatal.
+      const { error: authErr } = await supabase.auth.updateUser({
         data: { ...meta, avatar_url: publicUrl },
       })
+      if (authErr) {
+        console.warn('useProfileEdit: auth.updateUser metadata failed', authErr.message)
+      }
+
+      // 4) Only now, after the new avatar is fully persisted, delete the old one.
+      if (avatarUrl) {
+        const oldPath = avatarUrl.split('/avatars/')[1]
+        if (oldPath) {
+          await supabase.storage.from(AVATARS_BUCKET).remove([oldPath]).catch(() => {})
+        }
+      }
 
       setAvatarUrl(publicUrl)
       void refreshProfile()
       return publicUrl
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to upload image.'
-      setSaveError(msg)
+      setSaveError(errorMessage(err))
       return null
     } finally {
       setUploading(false)
@@ -114,14 +134,11 @@ export function useProfileEdit() {
     if (!user?.id) return false
     setUploading(true)
     setSaveError(null)
-    try {
-      if (avatarUrl) {
-        const oldPath = avatarUrl.split('/avatars/')[1]
-        if (oldPath) {
-          await supabase.storage.from(AVATARS_BUCKET).remove([oldPath]).catch(() => {})
-        }
-      }
 
+    const oldPath = avatarUrl ? avatarUrl.split('/avatars/')[1] : null
+
+    try {
+      // 1) Persist avatar_url = null first (source of truth).
       const { error: dbErr } = await supabase
         .from('core_user_profiles')
         .update({ avatar_url: null })
@@ -129,16 +146,24 @@ export function useProfileEdit() {
 
       if (dbErr) throw dbErr
 
-      await supabase.auth.updateUser({
+      // 2) Update auth metadata (display-only; non-fatal).
+      const { error: authErr } = await supabase.auth.updateUser({
         data: { ...meta, avatar_url: null },
       })
+      if (authErr) {
+        console.warn('useProfileEdit: auth.updateUser removal metadata failed', authErr.message)
+      }
+
+      // 3) Delete the old file only after the DB row is updated (best-effort).
+      if (oldPath) {
+        await supabase.storage.from(AVATARS_BUCKET).remove([oldPath]).catch(() => {})
+      }
 
       setAvatarUrl(null)
       void refreshProfile()
       return true
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to remove image.'
-      setSaveError(msg)
+      setSaveError(errorMessage(err))
       return false
     } finally {
       setUploading(false)
@@ -164,17 +189,19 @@ export function useProfileEdit() {
 
       if (dbErr) throw dbErr
 
-      // 2) Update auth user_metadata for display name
-      await supabase.auth.updateUser({
+      // 2) Update auth user_metadata for display name (display-only; non-fatal).
+      const { error: authErr } = await supabase.auth.updateUser({
         data: { ...meta, full_name: fullName, name: fullName },
       })
+      if (authErr) {
+        console.warn('useProfileEdit: auth.updateUser name metadata failed', authErr.message)
+      }
 
       setSaveStatus('success')
       void refreshProfile()
       return true
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to save profile.'
-      setSaveError(msg)
+      setSaveError(errorMessage(err))
       setSaveStatus('error')
       return false
     }

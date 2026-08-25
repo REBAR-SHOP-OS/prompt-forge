@@ -71,6 +71,12 @@ export default {
           DEFAULT: "hsl(var(--accent-cool) / <alpha-value>)",
           foreground: "hsl(var(--accent-cool) / <alpha-value>)",
         },
+        "accent-cyan": "hsl(var(--accent-cyan) / <alpha-value>)",
+        "accent-violet": "hsl(var(--accent-violet) / <alpha-value>)",
+        "accent-orange": "hsl(var(--accent-orange) / <alpha-value>)",
+        "accent-emerald": "hsl(var(--accent-emerald) / <alpha-value>)",
+        "accent-yellow": "hsl(var(--accent-yellow) / <alpha-value>)",
+        "accent-rose": "hsl(var(--accent-rose) / <alpha-value>)",
       },
       borderRadius: {
         lg: "var(--radius)",
