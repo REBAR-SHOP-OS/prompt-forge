@@ -39,7 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
@@ -187,6 +187,11 @@ export function MakeFilmWizardDialog({
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeError, setOptimizeError] = useState<string | null>(null)
   const [promptBeforeOptimize, setPromptBeforeOptimize] = useState<string | null>(null)
+  // Auto-prompt generation. Kept in its own state so that "Optimize prompt"
+  // keeps exactly the behaviour it had before.
+  const [generatingPrompt, setGeneratingPrompt] = useState(false)
+  const [generateError, setGenerateError] = useState<string | null>(null)
+  const [promptBeforeGenerate, setPromptBeforeGenerate] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
   const [duration, setDuration] = useState<FilmDuration>(defaultDuration)
   const [aspect, setAspect] = useState<FilmAspect>(defaultAspect)
@@ -239,6 +244,9 @@ export function MakeFilmWizardDialog({
       setOptimizing(false)
       setOptimizeError(null)
       setPromptBeforeOptimize(null)
+      setGeneratingPrompt(false)
+      setGenerateError(null)
+      setPromptBeforeGenerate(null)
       setProgress(null)
       setDuration(defaultDuration)
       setAspect(defaultAspect)
@@ -596,7 +604,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   async function handleOptimizePrompt() {
     const current = prompt.trim()
     if (!current) return
-    if (optimizing) return
+    if (optimizing || generatingPrompt) return
     setOptimizing(true)
     setOptimizeError(null)
     setPromptBeforeOptimize(prompt)
@@ -646,6 +654,83 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     } finally {
       setOptimizing(false)
     }
+  }
+
+  /**
+   * Writes a prompt from the pack the user has already assembled, so Step 1
+   * can start from an empty box. Optimize rewrites what is typed; this
+   * produces something to type in the first place. Neither touches the other.
+   */
+  async function handleGeneratePrompt() {
+    if (generatingPrompt || optimizing) return
+    setGeneratingPrompt(true)
+    setGenerateError(null)
+    const previous = prompt
+    try {
+      let characterDescriptionText = ''
+      if (selectedCharacter) {
+        const { data: descData, error: descError } = await supabase.functions.invoke('describe-character', {
+          body: { imageUrl: selectedCharacter.url },
+        })
+        if (descError) {
+          throw new Error('Could not describe the selected character. Nothing was changed.')
+        }
+        characterDescriptionText = (descData as { description?: string } | null)?.description?.trim() ?? ''
+      }
+
+      const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
+      const theme = THEMES.find((t) => t.value === selectedTheme)
+      const seed = buildAutoPromptSeed({
+        productName: currentProductName(),
+        characterDescription: characterDescriptionText,
+        filmType: selectedFilmType,
+        durationSeconds: duration,
+        aspect,
+        cameraAngle: cameraAngle?.prompt ?? null,
+        visualTheme: theme?.prompt ?? null,
+        withNarration,
+        noTextOnImages,
+      })
+
+      const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
+        body: {
+          prompt: seed,
+          mode: 'film',
+          filmType: selectedFilmType || undefined,
+          productName: currentProductName() || undefined,
+          characterDescription: characterDescriptionText || undefined,
+          duration,
+          aspectRatio: aspect,
+          cameraAngle: cameraAngle?.prompt || undefined,
+          visualTheme: theme?.prompt || undefined,
+          withNarration,
+          noTextOnImages,
+        },
+      })
+      if (fnError) throw fnError
+      const generated = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+      if (!generated) {
+        throw new Error('The AI returned an empty prompt. Nothing was changed.')
+      }
+      setPromptBeforeGenerate(previous)
+      setPrompt(generated)
+    } catch (err) {
+      setPromptBeforeGenerate(null)
+      setGenerateError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not generate a prompt. Nothing was changed.',
+      )
+    } finally {
+      setGeneratingPrompt(false)
+    }
+  }
+
+  function handleUndoGenerate() {
+    if (promptBeforeGenerate === null) return
+    setPrompt(promptBeforeGenerate)
+    setPromptBeforeGenerate(null)
+    setGenerateError(null)
   }
 
   function handleUndoOptimize() {
@@ -1216,16 +1301,39 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       }}
                       placeholder="Describe the film you want (any language)…"
                       rows={5}
-                      className="resize-none border-border bg-accent/30 pr-10 text-sm text-foreground"
+                      className="resize-none border-border bg-accent/30 pr-[4.25rem] text-sm text-foreground"
                     />
                     <TooltipProvider delayDuration={150}>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
                             type="button"
+                            aria-label="Generate prompt"
+                            aria-disabled={generatingPrompt || optimizing}
+                            disabled={generatingPrompt || optimizing}
+                            onClick={handleGeneratePrompt}
+                            className="absolute bottom-2 right-11 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {generatingPrompt ? (
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-4 w-4" />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {generatingPrompt ? 'Writing a prompt…' : 'Generate a prompt from your selections'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
                             aria-label="Optimize prompt"
-                            aria-disabled={optimizing || prompt.trim().length === 0}
-                            disabled={optimizing || prompt.trim().length === 0}
+                            aria-disabled={optimizing || generatingPrompt || prompt.trim().length === 0}
+                            disabled={optimizing || generatingPrompt || prompt.trim().length === 0}
                             onClick={handleOptimizePrompt}
                             className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                           >
@@ -1245,19 +1353,33 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   {optimizeError && (
                     <p className="text-[11px] text-red-400">{optimizeError}</p>
                   )}
+                  {generateError && (
+                    <p className="text-[11px] text-red-400">{generateError}</p>
+                  )}
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] text-muted-foreground">
                       AI will auto-adjust scene count based on {duration}s duration.
                     </p>
-                    {promptBeforeOptimize !== null && !optimizing && (
-                      <button
-                        type="button"
-                        onClick={handleUndoOptimize}
-                        className="text-[11px] font-medium text-fuchsia-300/90 hover:text-fuchsia-200"
-                      >
-                        Undo optimization
-                      </button>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {promptBeforeGenerate !== null && !generatingPrompt && (
+                        <button
+                          type="button"
+                          onClick={handleUndoGenerate}
+                          className="text-[11px] font-medium text-fuchsia-300/90 hover:text-fuchsia-200"
+                        >
+                          Undo generation
+                        </button>
+                      )}
+                      {promptBeforeOptimize !== null && !optimizing && (
+                        <button
+                          type="button"
+                          onClick={handleUndoOptimize}
+                          className="text-[11px] font-medium text-fuchsia-300/90 hover:text-fuchsia-200"
+                        >
+                          Undo optimization
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
