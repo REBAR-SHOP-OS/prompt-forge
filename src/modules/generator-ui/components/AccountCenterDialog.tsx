@@ -25,27 +25,11 @@ import {
   useUsageStats, fmtUsd, monthLabel, PER_CLIP_USD,
 } from '@/modules/generator-ui/hooks/useUsageStats'
 import { useProfileEdit } from '@/modules/generator-ui/hooks/useProfileEdit'
+import { initialsFor, initialsForName } from '@/modules/generator-ui/lib/initials'
 
 interface AccountCenterDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-function initialsFor(email: string | undefined | null): string {
-  const raw = (email ?? '').trim()
-  if (!raw) return '?'
-  const local = raw.split('@')[0] ?? ''
-  const parts = local.split(/[._-]+/).filter(Boolean)
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
-  return (local[0] ?? '?').toUpperCase()
-}
-
-function initialsForName(first: string, last: string, email: string): string {
-  const f = first.trim()[0] ?? ''
-  const l = last.trim()[0] ?? ''
-  if (f && l) return (f + l).toUpperCase()
-  if (f) return f.toUpperCase()
-  return initialsFor(email)
 }
 
 export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogProps) {
@@ -74,7 +58,14 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
       <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Gauge className="h-4 w-4 text-accent-warm" />
+            <Avatar className="h-6 w-6 ring-1 ring-border">
+              {profileEdit.avatarUrl ? (
+                <AvatarImage src={profileEdit.avatarUrl} alt="Profile avatar" />
+              ) : null}
+              <AvatarFallback className="bg-accent text-[10px] font-semibold text-foreground/90">
+                {initialsForName(profileEdit.firstName, profileEdit.lastName, email)}
+              </AvatarFallback>
+            </Avatar>
             Account Center
           </DialogTitle>
           <DialogDescription className="sr-only">

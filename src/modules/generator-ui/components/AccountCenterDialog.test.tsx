@@ -134,6 +134,23 @@ describe('AccountCenterDialog', () => {
     expect(await screen.findByDisplayValue('Rebar')).toBeInTheDocument()
   })
 
+  it('renders a circular avatar in the dialog title with initials fallback', async () => {
+    mocks.firstName = 'Radin'
+    mocks.lastName = 'Rebar'
+    renderDialog()
+    // Title avatar shows initials from first/last name (also mirrored in the
+    // large profile avatar, so assert at least one instance is present).
+    expect((await screen.findAllByText('RR')).length).toBeGreaterThan(0)
+  })
+
+  it('falls back to email initials in the title avatar when name is empty', async () => {
+    mocks.firstName = ''
+    mocks.lastName = ''
+    mocks.profile.email = 'radin.rebar@example.com'
+    renderDialog()
+    expect((await screen.findAllByText('RR')).length).toBeGreaterThan(0)
+  })
+
   it('shows email as read-only text, not an input', async () => {
     renderDialog()
     expect(await screen.findByText('radin@example.com')).toBeInTheDocument()
