@@ -774,11 +774,11 @@ function getStatusDotClassName(status: string) {
   const normalizedStatus = normalizeStatus(status)
 
   if (normalizedStatus === 'completed') {
-    return 'bg-emerald-300'
+    return 'bg-action-emerald'
   }
 
   if (normalizedStatus === 'failed' || normalizedStatus === 'cancelled') {
-    return 'bg-rose-300'
+    return 'bg-action-rose'
   }
 
   return 'bg-amber-300'
@@ -1043,7 +1043,7 @@ function ProjectAudioTrackRow({
           }}
           aria-label={`Download ${label.toLowerCase()}`}
           title={`Download ${label.toLowerCase()}`}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
         >
           {downloading ? (
             <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -1056,7 +1056,7 @@ function ProjectAudioTrackRow({
       {signed ? (
         <audio controls preload="metadata" src={signed} className="h-8 w-full" />
       ) : failed ? (
-        <p className="text-[11px] text-rose-300">Unable to load audio.</p>
+        <p className="text-[11px] text-action-rose">Unable to load audio.</p>
       ) : (
         <p className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" /> Preparing…
@@ -9341,7 +9341,7 @@ export default function DashboardPage() {
             <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => { void signOut() }} className="text-red-400 focus:text-red-300">
+          <DropdownMenuItem onSelect={() => { void signOut() }} className="text-danger focus:text-danger">
             <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
             <span>Sign out</span>
           </DropdownMenuItem>
@@ -9359,8 +9359,8 @@ export default function DashboardPage() {
                 onClick={() => setIsApprovedPanelOpen((open) => !open)}
                 className={`relative grid h-9 w-9 place-items-center rounded-md border transition ${
                   isApprovedPanelOpen
-                    ? 'border-red-500/40 bg-red-500/10 text-red-400'
-                    : 'border-transparent text-red-500 hover:border-border hover:bg-accent/45 hover:text-red-400'
+                    ? 'border-red-500/40 bg-red-500/10 text-danger'
+                    : 'border-transparent text-danger hover:border-border hover:bg-accent/45 hover:text-danger'
                 }`}
               >
                 <Library className="h-[18px] w-[18px]" aria-hidden="true" />
@@ -9398,7 +9398,7 @@ export default function DashboardPage() {
         >
           <span className="relative grid place-items-center">
             <CalendarDays
-              className={`h-[20px] w-[20px] ${isAlert ? 'text-red-300' : 'text-emerald-300'}`}
+              className={`h-[20px] w-[20px] ${isAlert ? 'text-danger' : 'text-action-emerald'}`}
               aria-hidden="true"
             />
             {isAlert && (
@@ -9413,7 +9413,7 @@ export default function DashboardPage() {
           </span>
           <span
             className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
-              isAlert ? 'text-red-300' : 'text-emerald-300'
+              isAlert ? 'text-danger' : 'text-action-emerald'
             }`}
           >
             {occasionLabel}
@@ -9609,7 +9609,7 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           disabled={selectedCount === 0 || isBulkDeleting}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-action-rose/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-action-rose transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {isBulkDeleting ? (
                             <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -9650,7 +9650,7 @@ export default function DashboardPage() {
                       <p className="mt-0.5 text-xs text-muted-foreground">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">Or bulk-import captions: upload <span className="text-foreground/80">.txt</span> files named like the photos (e.g. <span className="text-foreground/80">circular_tie_001.txt</span> → <span className="text-foreground/80">circular_tie_001</span>) to attach each text to its matching image.</p>
                       {productUploadError ? (
-                        <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
+                        <p className="mt-1 text-xs text-action-rose">{productUploadError}</p>
                       ) : null}
                       {captionImportStatus ? (
                         <p className="mt-1 text-xs text-accent-cool">{captionImportStatus}</p>
@@ -9778,7 +9778,7 @@ export default function DashboardPage() {
                                 onClick={() => { void renameProductPhoto(img.id) }}
                                 aria-label="Save name"
                                 title="Save"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald"
                               >
                                 <Check className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -9787,7 +9787,7 @@ export default function DashboardPage() {
                                 onClick={cancelRenameProduct}
                                 aria-label="Cancel"
                                 title="Cancel"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                               >
                                 <X className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -9835,7 +9835,7 @@ export default function DashboardPage() {
                                 onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                                 aria-label="Download image"
                                 title="Download image"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                               >
                                 {downloadingId === img.id ? (
                                   <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -9849,7 +9849,7 @@ export default function DashboardPage() {
                                     type="button"
                                     aria-label="Delete image permanently"
                                     title="Delete permanently"
-                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                                   >
                                     <Trash2 className="h-3 w-3" aria-hidden="true" />
                                   </button>
@@ -9915,7 +9915,7 @@ export default function DashboardPage() {
                           aria-label="Select audio"
                           className="mt-0.5 h-4 w-4 shrink-0"
                         />
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-accent/40 text-emerald-200">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-accent/40 text-action-emerald">
                           {a.kind === 'voiceover'
                             ? <Mic className="h-4 w-4" aria-hidden="true" />
                             : <Music2 className="h-4 w-4" aria-hidden="true" />}
@@ -9943,7 +9943,7 @@ export default function DashboardPage() {
                             onClick={() => { void downloadAudioFile(a.id, a.url, a.name) }}
                             aria-label="Download audio"
                             title="Download audio"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                           >
                             {downloadingId === a.id ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -9957,7 +9957,7 @@ export default function DashboardPage() {
                                 type="button"
                                 aria-label="Delete audio permanently"
                                 title="Delete permanently"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                               >
                                 <Trash2 className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -10057,7 +10057,7 @@ export default function DashboardPage() {
                             onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                             aria-label="Download image"
                             title="Download image"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                           >
                             {downloadingId === img.id ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -10071,7 +10071,7 @@ export default function DashboardPage() {
                                 type="button"
                                 aria-label="Delete image permanently"
                                 title="Delete permanently"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                               >
                                 <Trash2 className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -10161,14 +10161,14 @@ export default function DashboardPage() {
               const statusBadge = (status: string) => {
                 if (status === 'completed') {
                   return (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 bg-emerald-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-action-emerald/30 bg-action-emerald/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-action-emerald">
                       Ready
                     </span>
                   )
                 }
                 if (status === 'failed' || status === 'cancelled') {
                   return (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300/30 bg-rose-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-200">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-action-rose/30 bg-action-rose/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-action-rose">
                       Failed
                     </span>
                   )
@@ -10278,11 +10278,11 @@ export default function DashboardPage() {
                                        onClick={(event) => event.stopPropagation()}
                                        aria-label="Download video"
                                        title="Download"
-                                       className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-border px-1 text-muted-foreground transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                       className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-border px-1 text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                                      >
                                        {downloadingId === job.id ? (
                                          downloadProgress !== null ? (
-                                           <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
+                                           <span className="text-[9px] font-semibold tabular-nums text-action-emerald">{downloadProgress}%</span>
                                          ) : (
                                            <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                          )
@@ -10324,7 +10324,7 @@ export default function DashboardPage() {
                                     onClick={(event) => event.stopPropagation()}
                                     aria-label="Delete video permanently"
                                     title="Delete permanently"
-                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200 disabled:opacity-60"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose disabled:opacity-60"
                                   >
                                     {deletingArchiveId === job.id ? (
                                       <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -10529,9 +10529,9 @@ export default function DashboardPage() {
                   className={
                     'text-xs ' +
                     (scheduleStatus.kind === 'error'
-                      ? 'text-red-300'
+                      ? 'text-danger'
                       : scheduleStatus.kind === 'sent'
-                        ? 'text-emerald-300'
+                        ? 'text-action-emerald'
                         : 'text-accent-cool')
                   }
                 >
@@ -10551,13 +10551,13 @@ export default function DashboardPage() {
                   <p>isInIframe: {String(scheduleDebug.isInIframe)}</p>
                   <p>
                     videoUrl exists:{' '}
-                    <span className={scheduleDebug.videoUrlExists ? 'text-emerald-300' : 'text-red-300'}>
+                    <span className={scheduleDebug.videoUrlExists ? 'text-action-emerald' : 'text-danger'}>
                       {String(scheduleDebug.videoUrlExists)}
                     </span>
                   </p>
                   <p className="break-all">videoUrl source: {scheduleDebug.videoUrlSource || '—'}</p>
                   {!scheduleDebug.videoUrlExists && (
-                    <p className="text-red-300">Final video URL is missing</p>
+                    <p className="text-danger">Final video URL is missing</p>
                   )}
                   <p className="break-all">scheduledAt: {scheduleDebug.scheduledAt || '—'}</p>
                   <p className="break-all">detectedParentOrigin: {scheduleDebug.detectedParentOrigin || '— (none detected)'}</p>
@@ -10578,7 +10578,7 @@ export default function DashboardPage() {
                     <p>postMessage → parent/top: not sent</p>
                   )}
                   {scheduleDebug.error && (
-                    <p className="break-all text-red-300">error: {scheduleDebug.error}</p>
+                    <p className="break-all text-danger">error: {scheduleDebug.error}</p>
                   )}
                 </div>
               )}
@@ -10621,7 +10621,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => { mergeAbortRef.current?.abort(new MergeCancelledError()) }}
-            className="ml-1 grid h-6 w-6 place-items-center rounded text-foreground/80 transition hover:bg-red-500/20 hover:text-red-200"
+            className="ml-1 grid h-6 w-6 place-items-center rounded text-foreground/80 transition hover:bg-red-500/20 hover:text-danger"
             aria-label="Cancel rendering"
             title="Cancel rendering"
           >
@@ -11109,7 +11109,7 @@ export default function DashboardPage() {
             <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
               <div className="flex items-center">
                 <div
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-500/60 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-emerald-200"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-500/60 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-action-emerald"
                 >
                   <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
                   <span>Mix audio</span>
@@ -11245,7 +11245,7 @@ export default function DashboardPage() {
                     onClick={closePreview}
                     aria-label="Close preview"
                     title="Close preview"
-                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-action-rose/40 hover:bg-rose-500/20 hover:text-action-rose-strong"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -11282,7 +11282,7 @@ export default function DashboardPage() {
                           onClick={closePreview}
                           aria-label="Close preview"
                           title="Close preview"
-                          className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                          className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-action-rose/40 hover:bg-rose-500/20 hover:text-action-rose-strong"
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -11440,7 +11440,7 @@ export default function DashboardPage() {
                     onClick={closePreview}
                     aria-label="Close preview"
                     title="Close preview"
-                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-action-rose/40 hover:bg-rose-500/20 hover:text-action-rose-strong"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -11517,7 +11517,7 @@ export default function DashboardPage() {
                                   void deleteCard(previewItem.job.id)
                                 }
                               }}
-                              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-accent/40 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-foreground/80 transition hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200"
+                              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-accent/40 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-foreground/80 transition hover:border-red-400/40 hover:bg-red-500/10 hover:text-danger"
                             >
                               <X className="h-3.5 w-3.5" aria-hidden="true" />
                               <span>Cancel rendering</span>
@@ -11565,9 +11565,9 @@ export default function DashboardPage() {
         </div>
 
         {selectedProjectId ? (
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.05] px-3 py-2">
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-action-emerald/20 bg-action-emerald/[0.05] px-3 py-2">
             <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-emerald-200/70">Showing project</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-action-emerald/70">Showing project</p>
               <p className="truncate text-xs font-medium text-foreground">
                 {visibleVideos.find((v) => v.id === selectedProjectId)?.input_prompt ?? 'Project'}
               </p>
@@ -11655,7 +11655,7 @@ export default function DashboardPage() {
         </div>
 
         {videoColumnMessage ? (
-          <div className="mt-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-100">
+          <div className="mt-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-action-rose-strong">
             {videoColumnMessage}
           </div>
         ) : null}
@@ -11706,7 +11706,7 @@ export default function DashboardPage() {
                           return next
                         })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                       aria-label="Remove cover"
                       title="Remove cover"
                     >
@@ -11846,7 +11846,7 @@ export default function DashboardPage() {
                               }}
                               aria-label="Delete image"
                               title="Delete image"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                             >
                               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
@@ -12010,7 +12010,7 @@ export default function DashboardPage() {
                             title={hasNarration ? 'Narration for this card' : 'No narration detected in this card'}
                             className={`relative grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
                               hasNarration
-                                ? 'border-violet-400/40 bg-violet-500/10 text-violet-200 hover:border-violet-300/60 hover:bg-violet-500/20 hover:text-violet-100'
+                                ? 'border-violet-400/40 bg-violet-500/10 text-action-violet hover:border-action-violet/60 hover:bg-violet-500/20 hover:text-action-violet-strong'
                                 : 'border-border bg-accent/30 text-muted-foreground hover:border-border hover:text-foreground/80'
                             }`}
                           >
@@ -12048,7 +12048,7 @@ export default function DashboardPage() {
                                 title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
                                 className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
                                   isApproved
-                                    ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
+                                    ? 'border-action-emerald/40 bg-action-emerald/10 text-action-emerald hover:bg-action-emerald/15'
                                     : 'border-border bg-accent/30 text-muted-foreground hover:border-border hover:text-foreground'
                                 }`}
                               >
@@ -12069,7 +12069,7 @@ export default function DashboardPage() {
                           }}
                           aria-label="Edit prompt and regenerate"
                           title="Edit prompt and regenerate"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald"
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
@@ -12120,7 +12120,7 @@ export default function DashboardPage() {
                                           <span className="text-sm">
                                             {choice.label}
                                             {isCurrent ? (
-                                              <span className="ml-1 text-[10px] text-emerald-300">(Current)</span>
+                                              <span className="ml-1 text-[10px] text-action-emerald">(Current)</span>
                                             ) : null}
                                           </span>
                                           <span className="text-[11px] text-muted-foreground">{choice.description}</span>
@@ -12156,7 +12156,7 @@ export default function DashboardPage() {
                             }}
                             aria-label="Video-to-Video Editing"
                             title="Video-to-Video Editing (AI prompt)"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-rose-400/40 bg-rose-500/15 text-rose-300 transition hover:border-rose-300/60 hover:bg-rose-500/30 hover:text-rose-100"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-rose-400/40 bg-rose-500/15 text-action-rose transition hover:border-action-rose/60 hover:bg-rose-500/30 hover:text-action-rose-strong"
                           >
                             <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -12169,7 +12169,7 @@ export default function DashboardPage() {
                           }}
                           aria-label="Delete card"
                           title="Delete card"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                         >
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
@@ -12279,7 +12279,7 @@ export default function DashboardPage() {
       >
         <div className="flex items-center justify-between gap-2 border-b border-border pb-3 pt-12 sm:pt-14">
           <div className="inline-flex items-center gap-2">
-            <Library className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+            <Library className="h-4 w-4 text-action-emerald" aria-hidden="true" />
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Library</p>
             <span className="grid h-5 min-w-5 place-items-center rounded-full border border-border bg-accent/40 px-1.5 text-[11px] font-semibold text-foreground/80">
               {libraryItems.length}
@@ -12324,16 +12324,16 @@ export default function DashboardPage() {
                       hover: 'hover:border-accent-warm/40 hover:bg-amber-300/[0.09]',
                     }
                   : {
-                      base: 'border-emerald-300/25 bg-emerald-300/[0.05]',
-                      hover: 'hover:border-emerald-300/40 hover:bg-emerald-300/[0.09]',
+                      base: 'border-action-emerald/25 bg-action-emerald/[0.05]',
+                      hover: 'hover:border-action-emerald/40 hover:bg-action-emerald/[0.09]',
                     }
               return (
                 <article
                   key={video.id}
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition ${variantTheme.hover} ${
                     selectMode && isChecked
-                      ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : variantTheme.base
+                      ? 'border-action-rose/40 bg-action-rose/[0.06]'
+                      : isPreviewSelected ? 'border-action-emerald/30 bg-action-emerald/[0.04]' : variantTheme.base
                   }`}
                   role="button"
                   tabIndex={0}
@@ -12356,7 +12356,7 @@ export default function DashboardPage() {
                       onClick={(event) => { event.stopPropagation(); toggleSelectId(variant, video.id) }}
                       aria-label={isChecked ? 'Deselect' : 'Select'}
                       className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${
-                        isChecked ? 'border-rose-300/60 bg-rose-300/20 text-rose-200' : 'border-border text-muted-foreground'
+                        isChecked ? 'border-action-rose/60 bg-action-rose/20 text-action-rose' : 'border-border text-muted-foreground'
                       }`}
                     >
                       {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
@@ -12404,11 +12404,11 @@ export default function DashboardPage() {
                                  onClick={(event) => event.stopPropagation()}
                                  aria-label="Download video"
                                  title="Download"
-                                 className="grid h-8 min-w-8 shrink-0 place-items-center rounded-full border border-emerald-300/20 px-1.5 text-emerald-300/70 transition hover:border-emerald-300/50 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                 className="grid h-8 min-w-8 shrink-0 place-items-center rounded-full border border-action-emerald/20 px-1.5 text-action-emerald/70 transition hover:border-action-emerald/50 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                                >
                                  {downloadingId === video.id ? (
                                    downloadProgress !== null ? (
-                                     <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
+                                     <span className="text-[9px] font-semibold tabular-nums text-action-emerald">{downloadProgress}%</span>
                                    ) : (
                                      <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                                    )
@@ -12509,12 +12509,12 @@ export default function DashboardPage() {
                           const checking = copyrightChecking.has(video.id)
                           const verdict = review?.verdict
                           const tone = verdict === 'approved'
-                            ? { border: 'border-emerald-300/40 bg-emerald-300/10 text-emerald-300', Icon: ShieldCheck, label: 'Content check: Approved' }
+                            ? { border: 'border-action-emerald/40 bg-action-emerald/10 text-action-emerald', Icon: ShieldCheck, label: 'Content check: Approved' }
                             : verdict === 'rejected'
-                              ? { border: 'border-rose-300/40 bg-rose-300/10 text-rose-300', Icon: ShieldX, label: 'Content check: Rejected' }
+                              ? { border: 'border-action-rose/40 bg-action-rose/10 text-action-rose', Icon: ShieldX, label: 'Content check: Rejected' }
                               : verdict === 'caution'
                                 ? { border: 'border-accent-warm/40 bg-accent-warm/10 text-accent-warm', Icon: ShieldAlert, label: 'Content check: Needs review' }
-                                : { border: 'border-violet-300/20 text-violet-300/70 hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
+                                : { border: 'border-action-violet/20 text-action-violet/70 hover:border-action-violet/50 hover:bg-action-violet/10 hover:text-action-violet', Icon: Shield, label: 'Run content check' }
                           const Icon = tone.Icon
                           return (
                             <button
@@ -12571,7 +12571,7 @@ export default function DashboardPage() {
                             }}
                             aria-label="Transcribe film audio"
                             title="Transcribe speech from this film"
-                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-violet-300/20 text-violet-300/70 transition hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-action-violet/20 text-action-violet/70 transition hover:border-action-violet/50 hover:bg-action-violet/10 hover:text-action-violet"
                           >
                             <ScanText className="h-4 w-4" aria-hidden="true" />
                           </button>
@@ -12584,7 +12584,7 @@ export default function DashboardPage() {
                           }}
                           aria-label="Delete card"
                           title="Delete card"
-                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-rose-300/20 text-rose-300/70 transition hover:border-rose-300/50 hover:bg-rose-300/10 hover:text-rose-200"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-action-rose/20 text-action-rose/70 transition hover:border-action-rose/50 hover:bg-action-rose/10 hover:text-action-rose"
                         >
                           <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -12593,7 +12593,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                       {variant === 'final' ? (
                         <span className="inline-flex items-center gap-1.5">
-                          <BookmarkCheck className="h-3 w-3 text-emerald-300" aria-hidden="true" />
+                          <BookmarkCheck className="h-3 w-3 text-action-emerald" aria-hidden="true" />
                           Saved
                         </span>
                       ) : (() => {
@@ -12656,7 +12656,7 @@ export default function DashboardPage() {
                               type="button"
                               disabled={selectedFinalIds.size === 0}
                               onClick={() => void bulkDeleteSelected('final')}
-                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                              className="inline-flex items-center gap-1 rounded-full border border-action-rose/30 bg-action-rose/10 px-2 py-1 text-[10px] font-semibold text-action-rose transition hover:bg-action-rose/20 disabled:opacity-40"
                             >
                               <Trash2 className="h-3 w-3" aria-hidden="true" />
                               Delete ({selectedFinalIds.size})
@@ -12716,7 +12716,7 @@ export default function DashboardPage() {
                               type="button"
                               disabled={selectedDraftIds.size === 0}
                               onClick={() => void bulkDeleteSelected('draft')}
-                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                              className="inline-flex items-center gap-1 rounded-full border border-action-rose/30 bg-action-rose/10 px-2 py-1 text-[10px] font-semibold text-action-rose transition hover:bg-action-rose/20 disabled:opacity-40"
                             >
                               <Trash2 className="h-3 w-3" aria-hidden="true" />
                               Delete ({selectedDraftIds.size})
@@ -13002,7 +13002,7 @@ export default function DashboardPage() {
             ) : null}
 
             {composerError ? (
-              <p className="text-xs leading-5 text-rose-300">{composerError}</p>
+              <p className="text-xs leading-5 text-action-rose">{composerError}</p>
             ) : blockedReason && hasComposerInput ? (
               <p className="text-xs leading-5 text-muted-foreground">{blockedReason}</p>
             ) : null}
@@ -13062,8 +13062,8 @@ export default function DashboardPage() {
                                   : badge.kind === 'fast'
                                     ? 'bg-accent-cool/15 text-accent-cool'
                                     : badge.kind === 'best-quality'
-                                      ? 'bg-violet-400/15 text-violet-300'
-                                      : 'bg-emerald-400/15 text-emerald-300'
+                                      ? 'bg-violet-400/15 text-action-violet'
+                                      : 'bg-emerald-400/15 text-action-emerald'
                               }`}
                             >
                               {badge.label}
@@ -13085,7 +13085,7 @@ export default function DashboardPage() {
                       localStatusLoading
                         ? 'border-border bg-accent/30 text-muted-foreground'
                         : localStatus?.status === 'configured'
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-action-emerald'
                           : 'border-accent-warm/30 bg-accent-warm/10 text-accent-warm'
                     }`}
                   >
@@ -13160,7 +13160,7 @@ export default function DashboardPage() {
                   title="Add company contact info (address, phone, website) as an overlay on the film"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     contactActive
-                      ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                      ? 'border-emerald-400/60 bg-emerald-500/10 text-action-emerald-strong'
                       : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
                   }`}
                 >
@@ -13174,7 +13174,7 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => updateContact({ website: '', phone: '', address: '' })}
-                    className="text-[11px] text-muted-foreground hover:text-rose-300"
+                    className="text-[11px] text-muted-foreground hover:text-action-rose"
                   >
                     Clear
                   </button>
@@ -13190,7 +13190,7 @@ export default function DashboardPage() {
                         type="button"
                         onClick={() => updateContact({ websiteEnabled: !contactOverlay.websiteEnabled })}
                         title={contactOverlay.websiteEnabled ? 'Hide on video' : 'Show on video'}
-                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.websiteEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-muted-foreground hover:text-muted-foreground'}`}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.websiteEnabled ? 'text-action-emerald hover:text-action-emerald' : 'text-muted-foreground hover:text-muted-foreground'}`}
                       >
                         {contactOverlay.websiteEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                       </button>
@@ -13209,7 +13209,7 @@ export default function DashboardPage() {
                         type="button"
                         onClick={() => updateContact({ phoneEnabled: !contactOverlay.phoneEnabled })}
                         title={contactOverlay.phoneEnabled ? 'Hide on video' : 'Show on video'}
-                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.phoneEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-muted-foreground hover:text-muted-foreground'}`}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.phoneEnabled ? 'text-action-emerald hover:text-action-emerald' : 'text-muted-foreground hover:text-muted-foreground'}`}
                       >
                         {contactOverlay.phoneEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                       </button>
@@ -13228,7 +13228,7 @@ export default function DashboardPage() {
                         type="button"
                         onClick={() => updateContact({ addressEnabled: !contactOverlay.addressEnabled })}
                         title={contactOverlay.addressEnabled ? 'Hide on video' : 'Show on video'}
-                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.addressEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-muted-foreground hover:text-muted-foreground'}`}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.addressEnabled ? 'text-action-emerald hover:text-action-emerald' : 'text-muted-foreground hover:text-muted-foreground'}`}
                       >
                         {contactOverlay.addressEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                       </button>
@@ -13265,7 +13265,7 @@ export default function DashboardPage() {
                           })}
                           className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
                             active
-                              ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                              ? 'border-emerald-400/60 bg-emerald-500/10 text-action-emerald-strong'
                               : 'border-border bg-accent/30 text-foreground/80 hover:border-border'
                           }`}
                           style={{ fontFamily: theme.fontFamily }}
@@ -13309,7 +13309,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         onClick={() => updateContactLogo('')}
-                        className="text-[11px] text-muted-foreground hover:text-rose-300"
+                        className="text-[11px] text-muted-foreground hover:text-action-rose"
                       >
                         Remove
                       </button>
@@ -13340,7 +13340,7 @@ export default function DashboardPage() {
                       onClick={() => updateContact({ position: pos, offset: null })}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
                         !contactOverlay.offset && contactOverlay.position === pos
-                          ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                          ? 'border-emerald-400/60 bg-emerald-500/10 text-action-emerald-strong'
                           : 'border-border bg-accent/30 text-foreground/80 hover:border-border'
                       }`}
                     >
@@ -13457,7 +13457,7 @@ export default function DashboardPage() {
                   title="Add a character as a reference for this project"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     selectedCharacter
-                      ? 'border-fuchsia-400/60 bg-fuchsia-500/10 text-fuchsia-100'
+                      ? 'border-action-violet/60 bg-fuchsia-500/10 text-action-violet-strong'
                       : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
                   }`}
                 >
@@ -13488,7 +13488,7 @@ export default function DashboardPage() {
                             updateContinuity({ characterRef: null })
                           }
                         }}
-                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-action-violet/80 transition hover:bg-fuchsia-500/20 hover:text-action-violet-strong"
                       >
                         <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </span>
@@ -13508,7 +13508,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       onClick={() => { setSelectedCharacter(null); updateContinuity({ characterRef: null }); setCharacterMenuOpen(false) }}
-                      className="text-[11px] text-muted-foreground hover:text-rose-300"
+                      className="text-[11px] text-muted-foreground hover:text-action-rose"
                     >
                       Remove
                     </button>
@@ -13531,7 +13531,7 @@ export default function DashboardPage() {
                         onClick={() => { setSelectedCharacter(c); updateContinuity({ characterRef: c }); setCharacterMenuOpen(false) }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
                           selectedCharacter?.id === c.id
-                            ? 'border-fuchsia-400'
+                            ? 'border-action-violet'
                             : 'border-border hover:border-border'
                         }`}
                         title={c.title ?? 'Character'}
@@ -13554,7 +13554,7 @@ export default function DashboardPage() {
                           onClick={() => setCharacterView(v)}
                           className={`rounded-md border px-1.5 py-1 text-[11px] capitalize transition ${
                             characterView === v
-                              ? 'border-fuchsia-400/70 bg-fuchsia-500/10 text-fuchsia-200'
+                              ? 'border-action-violet/70 bg-fuchsia-500/10 text-action-violet'
                               : 'border-border bg-accent/30 text-foreground/80 hover:border-border'
                           }`}
                         >
@@ -13635,7 +13635,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       onClick={() => { setSelectedProduct(null); setProductMenuOpen(false) }}
-                      className="text-[11px] text-muted-foreground hover:text-rose-300"
+                      className="text-[11px] text-muted-foreground hover:text-action-rose"
                     >
                       Remove
                     </button>
@@ -14102,7 +14102,7 @@ export default function DashboardPage() {
         <DialogContent className="max-w-lg border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-violet-300" aria-hidden="true" />
+              <Shield className="h-4 w-4 text-action-violet" aria-hidden="true" />
               Copyright check
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
@@ -14113,7 +14113,7 @@ export default function DashboardPage() {
           {copyrightResult && !copyrightLoading && !copyrightError ? (
             <div className="flex items-center justify-end gap-2 pb-1">
               {copyrightTranslating ? (
-                <LoaderCircle className="h-3.5 w-3.5 animate-spin text-violet-300" aria-hidden="true" />
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin text-action-violet" aria-hidden="true" />
               ) : null}
               <Languages className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               <select
@@ -14124,7 +14124,7 @@ export default function DashboardPage() {
                   if (next) void translateCopyrightResult(next)
                 }}
                 disabled={copyrightTranslating}
-                className="h-8 rounded-md border border-border bg-accent/40 px-2 text-xs text-foreground/90 outline-none focus:border-violet-300/40"
+                className="h-8 rounded-md border border-border bg-accent/40 px-2 text-xs text-foreground/90 outline-none focus:border-action-violet/40"
               >
                 {COPYRIGHT_LANGS.map((l) => (
                   <option key={l.value} value={l.value} className="bg-card">
@@ -14137,13 +14137,13 @@ export default function DashboardPage() {
 
           {copyrightLoading ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <LoaderCircle className="h-7 w-7 animate-spin text-violet-300" aria-hidden="true" />
+              <LoaderCircle className="h-7 w-7 animate-spin text-action-violet" aria-hidden="true" />
               <p className="text-sm text-foreground/80">Analyzing video and music…</p>
               <p className="text-xs text-muted-foreground">This can take up to a minute.</p>
             </div>
           ) : copyrightError ? (
             <div className="space-y-3 py-2">
-              <p className="text-sm text-rose-300">{copyrightError}</p>
+              <p className="text-sm text-action-rose">{copyrightError}</p>
               <Button
                 variant="outline"
                 className="border-border"
@@ -14156,9 +14156,9 @@ export default function DashboardPage() {
             (() => {
               const tone = (status: string | undefined) =>
                 status === 'approved'
-                  ? { text: 'text-emerald-300', bg: 'bg-emerald-300/10 border-emerald-300/30', Icon: ShieldCheck, label: 'Approved' }
+                  ? { text: 'text-action-emerald', bg: 'bg-action-emerald/10 border-action-emerald/30', Icon: ShieldCheck, label: 'Approved' }
                   : status === 'rejected'
-                    ? { text: 'text-rose-300', bg: 'bg-rose-300/10 border-rose-300/30', Icon: ShieldX, label: 'Rejected' }
+                    ? { text: 'text-action-rose', bg: 'bg-action-rose/10 border-action-rose/30', Icon: ShieldX, label: 'Rejected' }
                     : status === 'not_provided'
                       ? { text: 'text-muted-foreground', bg: 'bg-accent/50 border-border', Icon: Shield, label: 'Not provided' }
                       : { text: 'text-accent-warm', bg: 'bg-accent-warm/10 border-accent-warm/30', Icon: ShieldAlert, label: 'Caution' }

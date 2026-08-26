@@ -83,6 +83,7 @@ export default {
         "action-yellow-strong": "hsl(var(--action-yellow-strong) / <alpha-value>)",
         "action-rose": "hsl(var(--action-rose) / <alpha-value>)",
         "action-rose-strong": "hsl(var(--action-rose-strong) / <alpha-value>)",
+        danger: "hsl(var(--danger) / <alpha-value>)",
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -44,6 +44,21 @@ All colors MUST be HSL.
     --accent-cool: 205 80% 35%;
 
     /* Semantic action colors (toolbar buttons) — dark on light, bright on dark. */
+    --action-cyan: 190 80% 32%;
+    --action-cyan-strong: 190 85% 24%;
+    --action-violet: 258 60% 42%;
+    --action-violet-strong: 258 65% 32%;
+    --action-orange: 27 90% 38%;
+    --action-orange-strong: 27 95% 30%;
+    --action-emerald: 160 70% 26%;
+    --action-emerald-strong: 160 75% 20%;
+    --action-yellow: 45 90% 32%;
+    --action-yellow-strong: 45 95% 26%;
+    --action-rose: 350 80% 42%;
+    --action-rose-strong: 350 85% 34%;
+
+    /* Semantic danger/error text — dark red on light, bright red on dark. */
+    --danger: 0 72% 45%;
 
     --sidebar-background: 39 37% 91%;
 
@@ -238,6 +253,7 @@ All colors MUST be HSL.
     --action-yellow-strong: 53 98% 77%;
     --action-rose: 350 89% 60%;
     --action-rose-strong: 351 96% 82%;
+    --danger: 0 84% 60%;
   }
 }
 
