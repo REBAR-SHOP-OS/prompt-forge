@@ -16,7 +16,15 @@ export interface Rect {
 }
 
 export const ZERO_OFFSET: PreviewOffset = { x: 0, y: 0 }
-export const DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 24 }
+export const DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 40 }
+
+/**
+ * The previous default offset. Users who never moved the preview have this
+ * exact value persisted; we migrate it to the new default so they pick up the
+ * corrected position, while any other stored value (a real custom position)
+ * is preserved untouched.
+ */
+export const LEGACY_DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 24 }
 
 /** Small safety margin (px) kept between the preview frame and the viewport edge. */
 export const SAFE_MARGIN = 8
@@ -75,6 +83,8 @@ export function loadPreviewOffset(userId: string | null): PreviewOffset {
     const parsed = JSON.parse(raw) as Partial<PreviewOffset>
     const x = typeof parsed.x === 'number' && Number.isFinite(parsed.x) ? parsed.x : 0
     const y = typeof parsed.y === 'number' && Number.isFinite(parsed.y) ? parsed.y : 0
+    // Migrate the old default to the new default; preserve any real custom position.
+    if (x === LEGACY_DEFAULT_OFFSET.x && y === LEGACY_DEFAULT_OFFSET.y) return DEFAULT_OFFSET
     return { x, y }
   } catch {
     return DEFAULT_OFFSET

@@ -221,8 +221,8 @@ describe('computeSafeRect: overlay exclusion with margin', () => {
 })
 
 describe('DEFAULT_OFFSET', () => {
-  it('has a y value of 24', () => {
-    expect(DEFAULT_OFFSET).toEqual({ x: 0, y: 24 })
+  it('has a y value of 40', () => {
+    expect(DEFAULT_OFFSET).toEqual({ x: 0, y: 40 })
   })
 
   it('is distinct from ZERO_OFFSET', () => {
@@ -256,5 +256,15 @@ describe('persistence', () => {
   it('sanitizes non-numeric stored values to zeros', () => {
     window.localStorage.setItem(previewOffsetStorageKey('user-nan'), JSON.stringify({ x: 'a', y: null }))
     expect(loadPreviewOffset('user-nan')).toEqual({ x: 0, y: 0 })
+  })
+
+  it('migrates the legacy default offset to the new default', () => {
+    window.localStorage.setItem(previewOffsetStorageKey('user-legacy'), JSON.stringify({ x: 0, y: 24 }))
+    expect(loadPreviewOffset('user-legacy')).toEqual(DEFAULT_OFFSET)
+  })
+
+  it('preserves a custom position that happens to share the legacy x', () => {
+    window.localStorage.setItem(previewOffsetStorageKey('user-custom'), JSON.stringify({ x: 0, y: -34 }))
+    expect(loadPreviewOffset('user-custom')).toEqual({ x: 0, y: -34 })
   })
 })
