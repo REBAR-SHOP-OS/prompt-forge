@@ -155,7 +155,6 @@ import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
-import { NarrationReviewPanel } from '@/modules/generator-ui/components/NarrationReviewPanel'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
@@ -1076,7 +1075,7 @@ export default function DashboardPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
-  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string; narrationText: string | null } | null>(null)
+  const [libraryTranscript, setLibraryTranscript] = useState<{ cardId: string; videoUrl: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -12563,10 +12562,12 @@ export default function DashboardPage() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              setNarrationReview({
-                                cardId: video.id,
-                                storagePath: video.video?.storage_path ?? '',
-                                narrationText: (video as { narration_text?: string | null }).narration_text ?? null,
+                              const storagePath = video.video?.storage_path ?? ''
+                              setLibraryTranscript({ cardId: video.id, videoUrl: null })
+                              void signStorageUrl(storagePath).then((signed) => {
+                                setLibraryTranscript((prev) =>
+                                  prev?.cardId === video.id ? { cardId: video.id, videoUrl: signed ?? storagePath } : prev,
+                                )
                               })
                             }}
                             aria-label="Transcribe film audio"
@@ -12607,13 +12608,13 @@ export default function DashboardPage() {
                       <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
                     </div>
                   </div>
-                  {variant === 'final' ? (
-                    <NarrationReviewPanel
-                      open={narrationReview?.cardId === video.id}
-                      onClose={() => setNarrationReview(null)}
-                      videoStoragePath={narrationReview?.cardId === video.id ? (narrationReview.storagePath || null) : null}
-                      expectedNarration={narrationReview?.cardId === video.id ? (narrationReview.narrationText || null) : null}
-                    />
+                  {variant === 'final' && libraryTranscript?.cardId === video.id && libraryTranscript.videoUrl ? (
+                    <div className="fixed inset-0 z-50">
+                      <TranscriptPanel
+                        videoUrl={libraryTranscript.videoUrl}
+                        onClose={() => setLibraryTranscript(null)}
+                      />
+                    </div>
                   ) : null}
                 </article>
               )

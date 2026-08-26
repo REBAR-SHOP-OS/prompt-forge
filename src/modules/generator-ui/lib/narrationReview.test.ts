@@ -303,8 +303,8 @@ describe('final-film narration review integration contracts', () => {
     expect(panelSource).toContain('reviewNarration')
     expect(panelSource).not.toContain('prompt:')
     expect(dashboardSource).toContain('aria-label="Transcribe film audio"')
-    expect(dashboardSource).toContain('narrationReview.narrationText')
-    expect(dashboardSource).not.toContain('narrationReview.prompt')
+    expect(dashboardSource).toContain('libraryTranscript')
+    expect(dashboardSource).not.toContain('narrationReview')
   })
 
   it('treats no-speech as a result and guards against stale card responses', () => {
