@@ -169,14 +169,27 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
         { body: bodyPayload },
       )
       if (fnError) throw new Error(fnError.message)
-      if (data?.error) throw new Error(data.error)
+      if (data?.error) {
+        // A "no speech" result is a normal outcome for a transcript-only view,
+        // not a failure. Show the empty-state message instead of an error.
+        if (/no speech|no supported speech/i.test(data.error)) {
+          setTranscript('')
+          setWords([])
+          translations.current.clear()
+          translations.current.set(ORIGINAL, '')
+          setLanguage(ORIGINAL)
+          setDisplayText('No speech detected in this film.')
+          return
+        }
+        throw new Error(data.error)
+      }
       const text = (data?.transcript ?? '').trim()
       setTranscript(text)
       setWords(Array.isArray(data?.words) ? data!.words : [])
       translations.current.clear()
       translations.current.set(ORIGINAL, text)
       setLanguage(ORIGINAL)
-      setDisplayText(text || 'No speech detected in this video.')
+      setDisplayText(text || 'No speech detected in this film.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to transcribe.')
     } finally {
@@ -313,7 +326,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
                         {i < words.length - 1 ? ' ' : ''}
                       </span>
                     ))
-                  : transcript || 'No speech detected in this video.'}
+                  : transcript || 'No speech detected in this film.'}
               </p>
             </div>
 
