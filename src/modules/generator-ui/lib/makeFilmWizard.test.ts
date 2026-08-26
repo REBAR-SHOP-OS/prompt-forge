@@ -32,6 +32,7 @@ import {
   normalizeFilmType,
   FILM_TYPE_VALUES,
   FILM_TYPE_TONES,
+  buildAutoPromptSeed,
 } from './makeFilmWizard'
 
 const CAMERA: Record<string, string> = {
@@ -794,5 +795,68 @@ describe('film type identifiers', () => {
     }
     expect(FILM_TYPE_TONES['Comparison']).toContain('COMPARISON tone')
     expect(FILM_TYPE_TONES['Comparison']).toContain('split-screen')
+  })
+})
+
+describe('buildAutoPromptSeed - Step 1 auto-prompt', () => {
+  const base = {
+    durationSeconds: 30,
+    aspect: '16:9' as const,
+    withNarration: true,
+    noTextOnImages: true,
+  }
+
+  it('works from an empty box - never returns an empty seed', () => {
+    const seed = buildAutoPromptSeed(base)
+    expect(seed.trim().length).toBeGreaterThan(0)
+    expect(seed).toContain('30-second')
+    expect(seed).toContain('16:9')
+  })
+
+  it('names the product when one is selected', () => {
+    const seed = buildAutoPromptSeed({ ...base, productName: 'Epoxy Coated Rebar' })
+    expect(seed).toContain('"Epoxy Coated Rebar"')
+  })
+
+  it('omits the character clause entirely when no character is selected', () => {
+    expect(buildAutoPromptSeed(base)).not.toContain('A character appears')
+    expect(buildAutoPromptSeed({ ...base, characterDescription: '  ' })).not.toContain('A character appears')
+    expect(buildAutoPromptSeed({ ...base, characterDescription: 'a welder in a blue jacket' }))
+      .toContain('A character appears in the film: a welder in a blue jacket.')
+  })
+
+  it('carries the film-type tone so the seed matches the wizard selection', () => {
+    const seed = buildAutoPromptSeed({ ...base, filmType: 'Comparison' })
+    expect(seed).toContain('Film type: Comparison.')
+    expect(seed).toContain('COMPARISON tone')
+  })
+
+  it('states narration and on-screen-text choices explicitly, both ways', () => {
+    expect(buildAutoPromptSeed({ ...base, withNarration: true })).toContain('has spoken narration')
+    expect(buildAutoPromptSeed({ ...base, withNarration: false })).toContain('no spoken narration')
+    expect(buildAutoPromptSeed({ ...base, noTextOnImages: true })).toContain('No written text')
+    expect(buildAutoPromptSeed({ ...base, noTextOnImages: false })).not.toContain('No written text')
+  })
+
+  it('never leaks null/undefined into the seed text', () => {
+    const seed = buildAutoPromptSeed({
+      ...base,
+      productName: null,
+      characterDescription: null,
+      filmType: null,
+      cameraAngle: null,
+      visualTheme: null,
+    })
+    expect(seed).not.toMatch(/null|undefined|NaN/)
+  })
+
+  it('falls back to a sane duration rather than emitting NaN seconds', () => {
+    expect(buildAutoPromptSeed({ ...base, durationSeconds: Number.NaN })).toContain('10-second')
+    expect(buildAutoPromptSeed({ ...base, durationSeconds: 0 })).toContain('10-second')
+  })
+
+  it('is deterministic - same selections in, same string out', () => {
+    const ctx = { ...base, productName: 'Rebar Coil', filmType: 'Brand Story', cameraAngle: 'low angle' }
+    expect(buildAutoPromptSeed(ctx)).toBe(buildAutoPromptSeed(ctx))
   })
 })
