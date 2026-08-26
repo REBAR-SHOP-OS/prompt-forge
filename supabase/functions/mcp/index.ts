@@ -2,7 +2,161 @@
 // To take ownership, delete this banner line; the plugin then leaves the file alone.
 // supabase function: mcp
 // Bundled from src/lib/mcp/index.ts by @lovable.dev/mcp-js.
+// src/lib/mcp/index.ts
+import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@0.20.1";
+
+// src/lib/mcp/tools/list-jobs.ts
+import { createClient } from "npm:@supabase/supabase-js@2.108.2";
+import { defineTool } from "npm:@lovable.dev/mcp-js@0.20.1";
+import { z } from "npm:zod@^4.4.3";
+function supabaseForUser(ctx) {
+  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+var list_jobs_default = defineTool({
+  name: "list_jobs",
+  title: "List generation jobs",
+  description: "List the signed-in user's most recent video generation jobs, including prompt, status, model and timestamps.",
+  inputSchema: {
+    limit: z.number().int().optional().describe("Maximum number of jobs to return (default 10, capped at 50).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ limit }, ctx) => {
+    if (!ctx.isAuthenticated())
+      return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
+    const take = Math.min(Math.max(limit ?? 10, 1), 50);
+    const { data, error } = await supabaseForUser(ctx).from("generator_generation_jobs").select("id, input_prompt, status, model_key, provider_key, requested_duration, requested_aspect_ratio, created_at, updated_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(take);
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    return {
+      content: [{ type: "text", text: JSON.stringify(data ?? []) }],
+      structuredContent: { jobs: data ?? [] }
+    };
+  }
+});
+
+// src/lib/mcp/tools/get-job.ts
+import { createClient as createClient2 } from "npm:@supabase/supabase-js@2.108.2";
+import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.20.1";
+import { z as z2 } from "npm:zod@^4.4.3";
+function supabaseForUser2(ctx) {
+  return createClient2(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+var get_job_default = defineTool2({
+  name: "get_job",
+  title: "Get generation job",
+  description: "Fetch a single video generation job by its id for the signed-in user.",
+  inputSchema: {
+    jobId: z2.string().trim().min(1).describe("The generation job id (UUID).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ jobId }, ctx) => {
+    if (!ctx.isAuthenticated())
+      return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
+    const { data, error } = await supabaseForUser2(ctx).from("generator_generation_jobs").select("id, input_prompt, negative_prompt, status, model_key, provider_key, provider_job_id, requested_duration, requested_aspect_ratio, narration_text, created_at, updated_at").eq("id", jobId).is("deleted_at", null).maybeSingle();
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    if (!data) return { content: [{ type: "text", text: "Job not found" }], isError: true };
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: { job: data }
+    };
+  }
+});
+
+// src/lib/mcp/tools/list-videos.ts
+import { createClient as createClient3 } from "npm:@supabase/supabase-js@2.108.2";
+import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.20.1";
+import { z as z3 } from "npm:zod@^4.4.3";
+function supabaseForUser3(ctx) {
+  return createClient3(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+var list_videos_default = defineTool3({
+  name: "list_videos",
+  title: "List generated videos",
+  description: "List the signed-in user's generated video assets, including duration, aspect ratio and thumbnail.",
+  inputSchema: {
+    limit: z3.number().int().optional().describe("Maximum number of videos to return (default 10, capped at 50).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ limit }, ctx) => {
+    if (!ctx.isAuthenticated())
+      return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
+    const take = Math.min(Math.max(limit ?? 10, 1), 50);
+    const { data, error } = await supabaseForUser3(ctx).from("generator_video_assets").select("id, job_id, storage_path, thumbnail_url, duration, aspect_ratio, created_at").is("deleted_at", null).order("created_at", { ascending: false }).limit(take);
+    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
+    return {
+      content: [{ type: "text", text: JSON.stringify(data ?? []) }],
+      structuredContent: { videos: data ?? [] }
+    };
+  }
+});
+
+// src/lib/mcp/tools/get-credit-balance.ts
+import { createClient as createClient4 } from "npm:@supabase/supabase-js@2.108.2";
+import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@0.20.1";
+function supabaseForUser4(ctx) {
+  return createClient4(process.env.SUPABASE_URL, process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+var get_credit_balance_default = defineTool4({
+  name: "get_credit_balance",
+  title: "Get credit balance",
+  description: "Get the signed-in user's wallet credit balance and, when initialized, daily and monthly quota limits and usage.",
+  inputSchema: {},
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async (_input, ctx) => {
+    if (!ctx.isAuthenticated())
+      return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
+    const userId = ctx.getUserId();
+    const client = supabaseForUser4(ctx);
+    const [profileResult, quotaResult] = await Promise.all([
+      client.from("core_user_profiles").select("credits_balance").eq("id", userId).maybeSingle(),
+      client.from("billing_user_quotas").select("daily_limit_credits, monthly_limit_credits, used_today, used_this_month, last_reset_day, last_reset_month").eq("user_id", userId).maybeSingle()
+    ]);
+    if (profileResult.error) {
+      return { content: [{ type: "text", text: profileResult.error.message }], isError: true };
+    }
+    if (quotaResult.error) {
+      return { content: [{ type: "text", text: quotaResult.error.message }], isError: true };
+    }
+    const summary = {
+      balance: {
+        credits: profileResult.data?.credits_balance ?? null,
+        status: profileResult.data ? "available" : "profile_not_found"
+      },
+      quota: quotaResult.data,
+      quotaStatus: quotaResult.data ? "initialized" : "not_initialized"
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(summary) }],
+      structuredContent: summary
+    };
+  }
+});
+
+// src/lib/mcp/index.ts
+var projectRef = "sacxoanuyetjfrfllkzx";
+var mcp_default = defineMcp({
+  name: "prompt-forge-mcp",
+  title: "Prompt Forge MCP",
+  version: "0.1.0",
+  instructions: "Tools for Prompt Forge, an AI video generation platform. Read the signed-in user's generation jobs, generated videos, and credit balance. Use list_jobs and get_job to inspect job status, list_videos for finished assets, and get_credit_balance for quota usage.",
+  auth: auth.oauth.issuer({
+    issuer: `https://${projectRef}.supabase.co/auth/v1`,
+    acceptedAudiences: "authenticated"
+  }),
+  tools: [list_jobs_default, get_job_default, list_videos_default, get_credit_balance_default]
+});
+
 // lovable-mcp-supabase-entry.ts
-import mcp from "npm:C:\\Users\\SattarEsmaeili\\pf158\\src\\lib\\mcp\\index.ts";
 import { createSupabaseHandler } from "npm:@lovable.dev/mcp-js@0.20.1/stacks/supabase";
-Deno.serve(createSupabaseHandler(mcp, { functionName: "mcp" }));
+Deno.serve(createSupabaseHandler(mcp_default, { functionName: "mcp" }));
