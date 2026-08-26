@@ -9325,37 +9325,36 @@ export default function DashboardPage() {
         onChange={handleFileInputChange}
       />
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className={`fixed left-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-transparent transition hover:border-border hover:bg-accent/45 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}
-            type="button"
-            aria-label="Open account menu"
-          >
-            <Avatar className="h-10 w-10 ring-1 ring-border">
-              {profile?.avatar_url ? (
-                <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
-              ) : null}
-              <AvatarFallback className="bg-accent text-sm font-semibold text-foreground/90">
-                {initialsForName(profile?.first_name ?? '', profile?.last_name ?? '', profile?.email ?? session?.user.email ?? '')}
-              </AvatarFallback>
-            </Avatar>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" sideOffset={8} className="w-64">
-          <DropdownMenuItem onSelect={() => setIsAccountCenterOpen(true)} className="flex items-center gap-2 text-xs font-normal text-muted-foreground focus:text-foreground/90">
-            <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => { void signOut() }} className="text-danger focus:text-danger">
-            <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>Sign out</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <div className={`fixed left-14 top-4 flex items-center gap-2 sm:left-16 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+      <div className={`fixed left-4 top-4 flex items-center gap-2 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="grid h-10 w-10 place-items-center rounded-full border border-transparent transition hover:border-border hover:bg-accent/45"
+              type="button"
+              aria-label="Open account menu"
+            >
+              <Avatar className="h-10 w-10 ring-1 ring-border">
+                {profile?.avatar_url ? (
+                  <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
+                ) : null}
+                <AvatarFallback className="bg-accent text-sm font-semibold text-foreground/90">
+                  {initialsForName(profile?.first_name ?? '', profile?.last_name ?? '', profile?.email ?? session?.user.email ?? '')}
+                </AvatarFallback>
+              </Avatar>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" sideOffset={8} className="w-64">
+            <DropdownMenuItem onSelect={() => setIsAccountCenterOpen(true)} className="flex items-center gap-2 text-xs font-normal text-muted-foreground focus:text-foreground/90">
+              <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => { void signOut() }} className="text-danger focus:text-danger">
+              <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <TooltipProvider delayDuration={150}>
           <Tooltip>
             <TooltipTrigger asChild>
