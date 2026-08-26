@@ -28,7 +28,6 @@ import {
   Image as ImageIcon,
   ImagePlus,
   CalendarPlus,
-  LayoutGrid,
   Library,
   Languages,
   LoaderCircle,
@@ -106,6 +105,7 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
 
 import { ApiError } from '@/core/api/client'
@@ -142,6 +142,7 @@ import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/record
 import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHandoff'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { AccountCenterDialog } from '@/modules/generator-ui/components/AccountCenterDialog'
+import { initialsForName } from '@/modules/generator-ui/lib/initials'
 import { ThemeSwitcher } from '@/modules/generator-ui/components/ThemeSwitcher'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
@@ -9327,11 +9328,18 @@ export default function DashboardPage() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className={`fixed left-4 top-4 grid h-9 w-9 place-items-center rounded-md border border-transparent text-foreground/80 transition hover:border-border hover:bg-accent/45 hover:text-foreground sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}
+            className={`fixed left-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-transparent transition hover:border-border hover:bg-accent/45 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}
             type="button"
-            aria-label="Open menu"
+            aria-label="Open account menu"
           >
-            <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
+            <Avatar className="h-10 w-10 ring-1 ring-border">
+              {profile?.avatar_url ? (
+                <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
+              ) : null}
+              <AvatarFallback className="bg-accent text-sm font-semibold text-foreground/90">
+                {initialsForName(profile?.first_name ?? '', profile?.last_name ?? '', profile?.email ?? session?.user.email ?? '')}
+              </AvatarFallback>
+            </Avatar>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={8} className="w-64">
@@ -12256,7 +12264,7 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      {/* Left library panel — only opens via the LayoutGrid icon. Shows approved videos. */}
+      {/* Left library panel — only opens via the Library icon. Shows approved videos. */}
       <button
         type="button"
         aria-label="Close library"
