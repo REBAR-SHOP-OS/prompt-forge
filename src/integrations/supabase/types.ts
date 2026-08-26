@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -221,24 +221,33 @@ export type Database = {
       }
       core_user_profiles: {
         Row: {
+          avatar_url: string | null
           created_at: string
           credits_balance: number
           email: string
+          first_name: string | null
           id: string
+          last_name: string | null
           updated_at: string
         }
         Insert: {
+          avatar_url?: string | null
           created_at?: string
           credits_balance?: number
           email: string
+          first_name?: string | null
           id: string
+          last_name?: string | null
           updated_at?: string
         }
         Update: {
+          avatar_url?: string | null
           created_at?: string
           credits_balance?: number
           email?: string
+          first_name?: string | null
           id?: string
+          last_name?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -803,6 +812,7 @@ export type Database = {
         Args: { _daily: number; _monthly: number; _user_id: string }
         Returns: undefined
       }
+      fail_stale_exports: { Args: never; Returns: number }
       generator_claim_provider_start: {
         Args: {
           _job_id: string
