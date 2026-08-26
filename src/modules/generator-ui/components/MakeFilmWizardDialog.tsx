@@ -604,7 +604,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   async function handleOptimizePrompt() {
     const current = prompt.trim()
     if (!current) return
-    if (optimizing) return
+    if (optimizing || generatingPrompt) return
     setOptimizing(true)
     setOptimizeError(null)
     setPromptBeforeOptimize(prompt)
@@ -1332,8 +1332,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           <button
                             type="button"
                             aria-label="Optimize prompt"
-                            aria-disabled={optimizing || prompt.trim().length === 0}
-                            disabled={optimizing || prompt.trim().length === 0}
+                            aria-disabled={optimizing || generatingPrompt || prompt.trim().length === 0}
+                            disabled={optimizing || generatingPrompt || prompt.trim().length === 0}
                             onClick={handleOptimizePrompt}
                             className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                           >
