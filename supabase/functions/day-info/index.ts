@@ -31,8 +31,21 @@ Deno.serve(async (req) => {
     const isMonthMode = !date && /^\d{4}-\d{2}$/.test(month)
     const isDayMode = /^\d{4}-\d{2}-\d{2}$/.test(date)
 
-    if (!isDayMode && !isMonthMode) {
-      return new Response(JSON.stringify({ error: 'Provide date (YYYY-MM-DD) or month (YYYY-MM).' }), {
+    // Occasion mode: the CLIENT already decided which occasion falls on which
+    // day, deterministically (src/modules/generator-ui/lib/occasions.ts). All
+    // that is wanted here is prose. The model is never asked for a date.
+    const rawOccasion = body?.occasion
+    const occTitle = typeof rawOccasion?.title === 'string' ? rawOccasion.title.trim().slice(0, 200) : ''
+    const occDate = typeof rawOccasion?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawOccasion.date)
+      ? rawOccasion.date
+      : ''
+    const occCategory = ['canada', 'international', 'religious'].includes(String(rawOccasion?.category))
+      ? String(rawOccasion.category)
+      : ''
+    const isOccasionMode = occTitle.length > 0
+
+    if (!isDayMode && !isMonthMode && !isOccasionMode) {
+      return new Response(JSON.stringify({ error: 'Provide date (YYYY-MM-DD), month (YYYY-MM), or occasion { title }.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -42,6 +55,86 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'LOVABLE_API_KEY not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    if (isOccasionMode) {
+      const detailTools = [
+        {
+          type: 'function',
+          function: {
+            name: 'return_occasion_detail',
+            description: 'Return prose about one named occasion.',
+            parameters: {
+              type: 'object',
+              properties: {
+                whatItIs: { type: 'string', description: 'Short paragraph, 2-3 sentences.' },
+                history: { type: 'string', description: 'Paragraph, 3-5 sentences: origin, year founded, evolution.' },
+              },
+              required: ['whatItIs', 'history'],
+              additionalProperties: false,
+            },
+          },
+        },
+      ]
+
+      const detailSystem = [
+        'You explain a single, already-identified occasion in clear English.',
+        'You are NOT asked which day it falls on and you must NOT state, correct, or dispute any date.',
+        'Do not mention the calendar date in your answer.',
+        'If you do not recognise the occasion, describe it generically rather than inventing specifics.',
+        'You MUST respond by calling the return_occasion_detail function.',
+      ].join(' ')
+
+      const detailUser = [
+        `Occasion: "${occTitle}".`,
+        occCategory ? `Category: ${occCategory}.` : '',
+        occDate ? `Context only (do not repeat): observed on ${occDate}.` : '',
+      ].filter(Boolean).join(' ')
+
+      const detailResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'google/gemini-3-flash-preview',
+          messages: [
+            { role: 'system', content: detailSystem },
+            { role: 'user', content: detailUser },
+          ],
+          tools: detailTools,
+          tool_choice: { type: 'function', function: { name: 'return_occasion_detail' } },
+        }),
+      })
+
+      if (!detailResp.ok) {
+        const status = detailResp.status === 429 || detailResp.status === 402 ? detailResp.status : 500
+        const message = detailResp.status === 429
+          ? 'Rate limit exceeded. Try again shortly.'
+          : detailResp.status === 402
+            ? 'AI credits exhausted. Add credits in Workspace settings.'
+            : 'AI gateway error'
+        if (status === 500) console.error('AI gateway error:', detailResp.status, await detailResp.text())
+        return new Response(JSON.stringify({ error: message }), {
+          status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const detailData = await readJsonLoose(detailResp, 'day-info:occasion')
+      const detailCall = detailData?.choices?.[0]?.message?.tool_calls?.[0]
+      let whatItIs = ''
+      let history = ''
+      try {
+        const args = detailCall?.function?.arguments
+        const parsed = typeof args === 'string' ? JSON.parse(args) : args
+        whatItIs = typeof parsed?.whatItIs === 'string' ? parsed.whatItIs : ''
+        history = typeof parsed?.history === 'string' ? parsed.history : ''
+      } catch (err) {
+        console.error('Failed to parse occasion detail tool call:', err)
+      }
+
+      return new Response(
+        JSON.stringify({ occasion: { title: occTitle, date: occDate, category: occCategory, whatItIs, history }, lang }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
     }
 
     const baseRules = `You are a strict calendar assistant. Return ONLY occasions that fall into one of these three allowed categories:
