@@ -6,6 +6,13 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/integrations/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import {
+  getOccasionsForDate,
+  getOccasionsForMonth,
+  toDateKey,
+  type DatedOccasion,
+  type OccasionCategory,
+} from '@/modules/generator-ui/lib/occasions'
 
 interface CalendarInfoDialogProps {
   open: boolean
@@ -14,25 +21,22 @@ interface CalendarInfoDialogProps {
   todayOnly?: boolean
 }
 
-type Category = 'canada' | 'international' | 'religious'
+type Category = OccasionCategory
 
-interface Occasion {
-  title: string
+// WHICH occasions exist, and WHEN, is decided locally by
+// `lib/occasions.ts` - deterministic, instant, and identical for the day
+// panel and the month panel. The `day-info` edge function is now only asked
+// for PROSE about an occasion the client already picked. It is never asked
+// what day something falls on.
+type Occasion = DatedOccasion
+type MonthOccasion = DatedOccasion
+
+interface OccasionDetail {
   whatItIs: string
   history: string
-  category: Category
 }
 
-interface MonthOccasion extends Occasion {
-  date: string // YYYY-MM-DD
-}
-
-const fmt = (d: Date) => {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+const fmt = (d: Date) => toDateKey(d)
 const fmtMonth = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
 const labels = {
@@ -61,12 +65,9 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
   const [lang, setLang] = useState<'en'>('en')
-  const [dayCache, setDayCache] = useState<Record<string, Occasion[]>>({})
-  const [monthCache, setMonthCache] = useState<Record<string, MonthOccasion[]>>({})
-  const [loading, setLoading] = useState(false)
-  const [monthLoading, setMonthLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [monthError, setMonthError] = useState<string | null>(null)
+  const [detailCache, setDetailCache] = useState<Record<string, OccasionDetail>>({})
+  const [detailLoadingKey, setDetailLoadingKey] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
   const [activeFilters, setActiveFilters] = useState<Set<Category>>(() => new Set(ALL_CATEGORIES))
   const [selectedOccasion, setSelectedOccasion] = useState<Occasion | null>(null)
@@ -77,10 +78,17 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
   const monthKey = useMemo(() => fmtMonth(visibleMonth), [visibleMonth])
-  const dayCacheKey = `v2:${dateKey}:${lang}`
-  const monthCacheKey = `v1:${monthKey}:${lang}`
-  const occasions = dayCache[dayCacheKey] ?? null
-  const monthOccasions = monthCache[monthCacheKey] ?? null
+  // Cache keys bumped (day v2 -> v3, month v1 -> v2) so anything persisted
+  // from the LLM-dated era is not read back.
+  const dayCacheKey = `v3:${dateKey}:${lang}`
+  const monthCacheKey = `v2:${monthKey}:${lang}`
+
+  // Deterministic, synchronous, no network. Both panels read one source.
+  const occasions = useMemo<Occasion[]>(() => getOccasionsForDate(selectedDate), [selectedDate])
+  const monthOccasions = useMemo<MonthOccasion[]>(
+    () => getOccasionsForMonth(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1),
+    [visibleMonth],
+  )
   const t = labels[lang]
   useEffect(() => {
     setExpandedIndex(null)
@@ -97,64 +105,39 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   }, [open, todayOnly])
 
 
-  // Day fetch
-  useEffect(() => {
-    if (!open) return
-    if (dayCache[dayCacheKey]) return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    ;(async () => {
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke('day-info', {
-          body: { date: dateKey, lang },
-        })
-        if (cancelled) return
-        if (fnError) throw fnError
-        const list: Occasion[] = Array.isArray((data as { occasions?: Occasion[] })?.occasions)
-          ? (data as { occasions: Occasion[] }).occasions
-          : []
-        setDayCache((c) => ({ ...c, [dayCacheKey]: list }))
-      } catch (err) {
-        if (cancelled) return
-        const msg = err instanceof Error ? err.message : 'Failed to load day info'
-        setError(msg)
-        toast({ title: 'Could not load day info', description: msg, variant: 'destructive' })
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [open, dateKey, lang, dayCacheKey, dayCache, toast])
+  const detailKey = (occ: Occasion) => `v3:${occ.date}:${occ.title}:${lang}`
 
-  // Month fetch
-  useEffect(() => {
-    if (!open) return
-    if (monthCache[monthCacheKey]) return
-    let cancelled = false
-    setMonthLoading(true)
-    setMonthError(null)
-    ;(async () => {
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke('day-info', {
-          body: { month: monthKey, lang },
-        })
-        if (cancelled) return
-        if (fnError) throw fnError
-        const list: MonthOccasion[] = Array.isArray((data as { occasions?: MonthOccasion[] })?.occasions)
-          ? (data as { occasions: MonthOccasion[] }).occasions
-          : []
-        setMonthCache((c) => ({ ...c, [monthCacheKey]: list }))
-      } catch (err) {
-        if (cancelled) return
-        const msg = err instanceof Error ? err.message : 'Failed to load month info'
-        setMonthError(msg)
-      } finally {
-        if (!cancelled) setMonthLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [open, monthKey, lang, monthCacheKey, monthCache])
+  // Prose only. The occasion and its date are already known and were never
+  // asked of a model, so there is nothing here that can drift by a day.
+  const loadDetail = async (occ: Occasion) => {
+    const key = detailKey(occ)
+    if (detailCache[key] || detailLoadingKey === key) return
+    setDetailLoadingKey(key)
+    setDetailError(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('day-info', {
+        body: { occasion: { title: occ.title, date: occ.date, category: occ.category }, lang },
+      })
+      if (fnError) throw fnError
+      const detail = (data as { occasion?: OccasionDetail })?.occasion
+      setDetailCache((c) => ({
+        ...c,
+        [key]: {
+          whatItIs: detail?.whatItIs?.trim() || '',
+          history: detail?.history?.trim() || '',
+        },
+      }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load occasion detail'
+      setDetailError(msg)
+      toast({ title: 'Could not load occasion detail', description: msg, variant: 'destructive' })
+    } finally {
+      setDetailLoadingKey((k) => (k === key ? null : k))
+    }
+  }
+
+  // (The month list is derived above, synchronously, from the same source as
+  // the day list. There is no month fetch any more.)
 
   const longLabel = useMemo(
     () => selectedDate.toLocaleDateString('en-US', {
@@ -211,7 +194,8 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setScenarioLoading(true)
     setScenarioError(null)
     try {
-      const seed = `A cinematic 10-second scene about "${occ.title}". ${occ.whatItIs}`
+      const about = detailCache[detailKey(occ)]?.whatItIs ?? ''
+      const seed = `A cinematic 10-second scene about "${occ.title}" (${occ.category}). ${about}`.trim()
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
         body: { prompt: seed, mode: 'silent' },
       })
@@ -230,6 +214,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   const pickOccasion = (occ: Occasion) => {
     setSelectedOccasion(occ)
+    void loadDetail(occ)
     void generateScenario(occ)
   }
 
@@ -271,19 +256,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
-              {loading && (
-                <div className="flex items-center gap-2 px-2 text-sm text-muted-foreground">
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  {t.loading}
-                </div>
-              )}
-              {!loading && error && (
-                <div className="px-2 text-sm text-rose-300">{error}</div>
-              )}
-              {!loading && !error && occasions && occasions.length === 0 && (
+              {occasions.length === 0 && (
                 <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.empty}</div>
               )}
-              {!loading && !error && occasions && occasions.length > 0 && (
+              {occasions.length > 0 && (
                 <ul className="flex flex-col gap-1.5">
                   {occasions.map((occ, i) => {
                     const isOpen = expandedIndex === i
@@ -306,26 +282,42 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                             )}
                           />
                         </button>
-                        {isOpen && (
-                          <div className="space-y-3 border-t border-border/50 px-3 py-3 text-sm text-foreground/90" dir="auto">
-                            <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.whatItIs}</div>
-                              <p className="leading-relaxed">{occ.whatItIs}</p>
+                        {isOpen && (() => {
+                          const key = detailKey(occ)
+                          const detail = detailCache[key]
+                          const isLoadingDetail = detailLoadingKey === key
+                          return (
+                            <div className="space-y-3 border-t border-border/50 px-3 py-3 text-sm text-foreground/90" dir="auto">
+                              {isLoadingDetail && (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                                  {t.loading}
+                                </div>
+                              )}
+                              {!isLoadingDetail && !detail && detailError && (
+                                <div className="text-sm text-rose-300">{detailError}</div>
+                              )}
+                              {detail && (
+                                <>
+                                  <div>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.whatItIs}</div>
+                                    <p className="leading-relaxed">{detail.whatItIs}</p>
+                                  </div>
+                                  <div>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.history}</div>
+                                    <p className="leading-relaxed">{detail.history}</p>
+                                  </div>
+                                </>
+                              )}
                             </div>
-                            <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.history}</div>
-                              <p className="leading-relaxed">{occ.history}</p>
-                            </div>
-                          </div>
-                        )}
+                          )
+                        })()}
                       </li>
                     )
                   })}
                 </ul>
               )}
-              {!loading && !error && !occasions && (
-                <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.pick}</div>
-              )}
+
             </div>
           </div>
 
@@ -363,19 +355,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
               </div>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
-              {monthLoading && (
-                <div className="flex items-center gap-2 px-2 text-sm text-muted-foreground">
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  {t.loading}
-                </div>
-              )}
-              {!monthLoading && monthError && (
-                <div className="px-2 text-sm text-rose-300">{monthError}</div>
-              )}
-              {!monthLoading && !monthError && filteredMonthOccasions && filteredMonthOccasions.length === 0 && (
+              {filteredMonthOccasions && filteredMonthOccasions.length === 0 && (
                 <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.monthEmpty}</div>
               )}
-              {!monthLoading && !monthError && filteredMonthOccasions && filteredMonthOccasions.length > 0 && (
+              {filteredMonthOccasions && filteredMonthOccasions.length > 0 && (
                 <ul className="flex flex-col gap-0.5">
                   {filteredMonthOccasions.map((occ, i) => {
                     const day = Number(occ.date.split('-')[2])
