@@ -8,6 +8,21 @@ import source from './DashboardPage.tsx?raw'
 // stylesheet directly from disk for the token assertions.
 const css = readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf8')
 
+/**
+ * Slice the stylesheet between two markers, failing loudly when a marker is
+ * missing. `String.indexOf` returns -1 when a selector is renamed, and
+ * `slice(0, -1)` then quietly returns almost the whole file - so a token
+ * defined only in a dark block would still satisfy a ":root defines X"
+ * assertion. That is a false green, which is worse than no test at all.
+ */
+function cssBlock(startMarker: string, endMarker: string, searchFrom = 0): string {
+  const start = css.indexOf(startMarker, searchFrom)
+  if (start === -1) throw new Error(`index.css: marker not found: ${startMarker}`)
+  const end = css.indexOf(endMarker, start)
+  if (end === -1) throw new Error(`index.css: marker not found after ${startMarker}: ${endMarker}`)
+  return css.slice(start, end)
+}
+
 // Regression coverage for the Light Theme readability fix. The warm ivory
 // light theme previously had no --action-* values in :root, so every
 // action-* Tailwind class resolved to an undefined CSS variable (transparent),
@@ -15,8 +30,16 @@ const css = readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf8')
 // (text-emerald-200, text-violet-200, text-rose-200, etc.) that washed out on
 // the light background.
 describe('DashboardPage light-theme contrast', () => {
+  it('the block markers this file relies on still exist', () => {
+    // Synthetic control: if index.css is restructured, these throw here with a
+    // clear message instead of silently widening every slice below.
+    expect(() => cssBlock(':root', '.dark {')).not.toThrow()
+    expect(() => cssBlock('.dark,', '@layer base')).not.toThrow()
+    expect(() => cssBlock(':root', 'this-selector-does-not-exist')).toThrow(/marker not found/)
+  })
+
   it('defines every --action-* token in the :root (light) block', () => {
-    const rootBlock = css.slice(css.indexOf(':root'), css.indexOf('.dark {'))
+    const rootBlock = cssBlock(':root', '.dark {')
     for (const token of [
       '--action-cyan',
       '--action-cyan-strong',
@@ -36,12 +59,12 @@ describe('DashboardPage light-theme contrast', () => {
   })
 
   it('defines a --danger token in the :root (light) block', () => {
-    const rootBlock = css.slice(css.indexOf(':root'), css.indexOf('.dark {'))
+    const rootBlock = cssBlock(':root', '.dark {')
     expect(rootBlock).toContain('--danger')
   })
 
   it('keeps the bright action palette on dark-oriented themes', () => {
-    const darkBlock = css.slice(css.indexOf('.dark,'), css.indexOf('@layer base', css.indexOf('.dark,')))
+    const darkBlock = cssBlock('.dark,', '@layer base')
     for (const token of ['--action-cyan', '--action-violet', '--action-emerald', '--action-rose']) {
       expect(darkBlock).toContain(token)
     }
