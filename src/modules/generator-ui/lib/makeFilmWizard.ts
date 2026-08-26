@@ -768,3 +768,64 @@ export function sanitizeProductName(title: string | null | undefined): string {
 
   return out.trim() || raw
 }
+
+/* ------------------------------------------------------------------ */
+/* Auto-prompt seed (Make Full Film, Step 1)                           */
+/*                                                                     */
+/* "Optimize prompt" improves text the user already wrote and is left  */
+/* untouched. This builds a brief from the pack the user has ALREADY   */
+/* assembled - product, character, film type, duration, framing,       */
+/* camera, theme - so a prompt can be produced from an empty box.      */
+/* Pure and deterministic: same selections in, same string out.        */
+/* ------------------------------------------------------------------ */
+
+export interface AutoPromptContext {
+  productName?: string | null
+  characterDescription?: string | null
+  filmType?: string | null
+  durationSeconds: number
+  aspect: FilmAspect
+  cameraAngle?: string | null
+  visualTheme?: string | null
+  withNarration: boolean
+  noTextOnImages: boolean
+}
+
+const clean = (value: string | null | undefined): string => (typeof value === 'string' ? value.trim() : '')
+
+export function buildAutoPromptSeed(ctx: AutoPromptContext): string {
+  const productName = clean(ctx.productName)
+  const character = clean(ctx.characterDescription)
+  const filmType = normalizeFilmType(ctx.filmType)
+  const camera = clean(ctx.cameraAngle)
+  const theme = clean(ctx.visualTheme)
+  const seconds = Number.isFinite(ctx.durationSeconds) && ctx.durationSeconds > 0
+    ? Math.round(ctx.durationSeconds)
+    : 10
+
+  const parts: string[] = []
+
+  parts.push(
+    productName
+      ? `Invent the concept for a ${seconds}-second film about the product "${productName}".`
+      : `Invent the concept for a ${seconds}-second product film.`,
+  )
+
+  if (filmType) {
+    parts.push(`Film type: ${filmType}.`)
+    parts.push(FILM_TYPE_TONES[filmType])
+  }
+  if (character) parts.push(`A character appears in the film: ${character}.`)
+  parts.push(`Framing: ${ctx.aspect}.`)
+  if (camera) parts.push(`Camera treatment: ${camera}.`)
+  if (theme) parts.push(`Visual style: ${theme}.`)
+  parts.push(ctx.withNarration ? 'The film has spoken narration.' : 'The film has no spoken narration.')
+  if (ctx.noTextOnImages) parts.push('No written text may appear in any frame.')
+
+  parts.push(
+    'Describe the setting, the story, and the sequence of shots in flowing English prose.',
+    'Return only the film idea - no questions, no headings, no bullet list, no preamble.',
+  )
+
+  return parts.join(' ')
+}
