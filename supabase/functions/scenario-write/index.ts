@@ -4,6 +4,8 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+
+import { buildSystemPrompt, expectedSceneCount, type ProductAdOpts, type CharacterSheetOpts } from "./prompt.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
 import {
   getScenarioDurationPolicy,
