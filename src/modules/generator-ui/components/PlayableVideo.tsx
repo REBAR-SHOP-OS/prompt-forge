@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type VideoHTMLAttributes } from "react";
-import { LoaderCircle, Clapperboard } from "lucide-react";
+import { LoaderCircle, Clapperboard, AlertCircle } from "lucide-react";
 import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
 
 type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
@@ -38,7 +38,7 @@ const MAX_RETRIES = 3;
  *     blank/gray surface between poster and video.
  */
 export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbnail, ...rest }: Props) {
-  const { url, loading: resolving, reload } = usePlayableVideoUrl(src);
+  const { url, loading: resolving, error: resolveError, reload } = usePlayableVideoUrl(src);
   const [errored, setErrored] = useState(false);
   const [painted, setPainted] = useState(false);
   const retriesRef = useRef(0);
@@ -147,7 +147,8 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
   // The poster/placeholder layer is always mounted; the <video> fades in on
   // top once it has painted a frame. No node is ever swapped mid-load.
   if (thumbnail) {
-    const showVideo = !!src && !resolving && !!url && !errored;
+    const showVideo = !!src && !resolving && !!url && !errored && !resolveError;
+    const showFailure = (!!src && resolveError) || errored;
     const playUrl =
       showVideo && retryToken > 0
         ? `${url}${url.includes("?") ? "&" : "?"}_r=${retryToken}`
@@ -156,7 +157,34 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
     return (
       <div className="relative h-full w-full overflow-hidden">
         <div className="absolute inset-0">
-          {quietPlaceholder(!src ? false : resolving || (!painted && !errored))}
+          {showFailure
+            ? (
+              <div
+                className={
+                  fallbackClassName ??
+                  "grid h-full w-full place-items-center bg-surface-2 text-muted-foreground"
+                }
+                role="presentation"
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    retriesRef.current = 0;
+                    reloadedRef.current = false;
+                    setErrored(false);
+                    setRetryToken(0);
+                    reload();
+                  }}
+                  className="flex flex-col items-center gap-1 text-xs text-muted-foreground/80 hover:text-foreground transition-colors"
+                  aria-label="Retry loading video"
+                >
+                  <AlertCircle className="h-5 w-5" aria-hidden="true" />
+                  <span>Retry</span>
+                </button>
+              </div>
+            )
+            : quietPlaceholder(!src ? false : resolving || (!painted && !errored))}
         </div>
         {showVideo ? (
           <video
@@ -179,8 +207,37 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
   }
 
   if (!src) return quietPlaceholder(false);
-  if (resolving || !url) return quietPlaceholder(true);
-  if (errored) return quietPlaceholder(false);
+  if (resolving || (!url && !resolveError)) return quietPlaceholder(true);
+  if (resolveError || errored) {
+    // Resolution or playback failed after all retries — show a quiet but
+    // recognisable failure state with a retry button, never an infinite loader.
+    return (
+      <div
+        className={
+          fallbackClassName ??
+          "grid h-full w-full place-items-center bg-surface-2 text-muted-foreground"
+        }
+        role="presentation"
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            retriesRef.current = 0;
+            reloadedRef.current = false;
+            setErrored(false);
+            setRetryToken(0);
+            reload();
+          }}
+          className="flex flex-col items-center gap-1 text-xs text-muted-foreground/80 hover:text-foreground transition-colors"
+          aria-label="Retry loading video"
+        >
+          <AlertCircle className="h-5 w-5" aria-hidden="true" />
+          <span>Retry</span>
+        </button>
+      </div>
+    );
+  }
 
   // Cache-bust on retry so the browser re-issues the request.
   const playUrl = retryToken > 0

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type VideoHTMLAttributes } from 'react'
-import { LoaderCircle } from 'lucide-react'
+import { LoaderCircle, AlertCircle } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
   PreviewSoundtrackWaveforms,
@@ -93,7 +93,7 @@ export function VideoWithSoundtrack({
 
   const { className: videoClassName, style: videoStyle, ...restVideoProps } = videoProps
 
-  const { url: resolvedSrc, loading: srcLoading, reload } = usePlayableVideoUrl(src)
+  const { url: resolvedSrc, loading: srcLoading, error: resolveError, reload } = usePlayableVideoUrl(src)
 
   // ---- Expired-token / transient-error recovery (mirrors PlayableVideo). ----
   // The resolved URL for private buckets is a video-proxy URL with embedded
@@ -141,6 +141,23 @@ export function VideoWithSoundtrack({
         {srcLoading ? (
           <div className={`grid h-full w-full place-items-center bg-black text-muted-foreground ${videoClassName ?? ''}`} style={videoStyle}>
             <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+          </div>
+        ) : resolveError ? (
+          <div className={`grid h-full w-full place-items-center bg-black text-muted-foreground ${videoClassName ?? ''}`} style={videoStyle}>
+            <button
+              type="button"
+              onClick={() => {
+                retriesRef.current = 0
+                reloadedRef.current = false
+                setRetryToken(0)
+                reload()
+              }}
+              className="flex flex-col items-center gap-1 text-xs text-muted-foreground/80 hover:text-foreground transition-colors"
+              aria-label="Retry loading video"
+            >
+              <AlertCircle className="h-5 w-5" aria-hidden="true" />
+              <span>Retry</span>
+            </button>
           </div>
         ) : (
           <video
