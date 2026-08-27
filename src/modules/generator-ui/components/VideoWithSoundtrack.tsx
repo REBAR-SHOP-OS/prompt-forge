@@ -106,6 +106,7 @@ export function VideoWithSoundtrack({
   const retriesRef = useRef(0)
   const reloadedRef = useRef(false)
   const [retryToken, setRetryToken] = useState(0)
+  const [playbackError, setPlaybackError] = useState(false)
 
   // Reset the retry/reload budget only when the SOURCE truly changes —
   // reload() changes `resolvedSrc` for the same `src` and must not reset it
@@ -114,6 +115,7 @@ export function VideoWithSoundtrack({
     retriesRef.current = 0
     reloadedRef.current = false
     setRetryToken(0)
+    setPlaybackError(false)
   }, [src])
 
   const handleVideoError: VideoHTMLAttributes<HTMLVideoElement>['onError'] = (e) => {
@@ -127,6 +129,8 @@ export function VideoWithSoundtrack({
       reload()
       return
     }
+    // All retries and one re-resolve exhausted — show final failure UI.
+    setPlaybackError(true)
     videoProps.onError?.(e)
   }
 
@@ -142,13 +146,14 @@ export function VideoWithSoundtrack({
           <div className={`grid h-full w-full place-items-center bg-black text-muted-foreground ${videoClassName ?? ''}`} style={videoStyle}>
             <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
           </div>
-        ) : resolveError ? (
+        ) : resolveError || playbackError ? (
           <div className={`grid h-full w-full place-items-center bg-black text-muted-foreground ${videoClassName ?? ''}`} style={videoStyle}>
             <button
               type="button"
               onClick={() => {
                 retriesRef.current = 0
                 reloadedRef.current = false
+                setPlaybackError(false)
                 setRetryToken(0)
                 reload()
               }}
@@ -170,8 +175,9 @@ export function VideoWithSoundtrack({
             onError={handleVideoError}
             onLoadedMetadata={(e) => {
               // A successful load proves the current URL works — restore the
-              // full retry budget for any later mid-play failure.
+              // full retry budget and clear any prior playback error.
               retriesRef.current = 0
+              setPlaybackError(false)
               // Apply clip volume as soon as the element is ready — the volume
               // effect may have run while the <video> was still loading.
               const el = e.currentTarget
