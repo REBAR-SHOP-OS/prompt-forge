@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LoaderCircle, Pause, Play, X } from 'lucide-react'
+import { LoaderCircle, Pause, Play, X, AlertCircle } from 'lucide-react'
 import { usePlayableVideoUrl, usePlayableVideoUrls } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
   PreviewSoundtrackWaveforms,
@@ -210,7 +210,7 @@ export function SequentialClipPlayer({
 
   const current = clips[index] ?? null
 
-  const { url: resolvedVideoSrc, loading: srcLoading, reload } = usePlayableVideoUrl(
+  const { url: resolvedVideoSrc, loading: srcLoading, error: resolveError, reload } = usePlayableVideoUrl(
     current && current.kind === 'video' ? current.src : null,
   )
 
@@ -475,9 +475,24 @@ export function SequentialClipPlayer({
           ) : null}
 
           {current.kind === 'video' ? (
-            srcLoading || !resolvedVideoSrc ? (
+            srcLoading || (!resolvedVideoSrc && !resolveError) ? (
               <div className="grid h-full w-full place-items-center bg-black text-muted-foreground">
                 <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+              </div>
+            ) : resolveError ? (
+              <div className="grid h-full w-full place-items-center bg-black text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => {
+                    erroredOnceRef.current = null
+                    reload()
+                  }}
+                  className="flex flex-col items-center gap-1 text-xs text-muted-foreground/80 hover:text-foreground transition-colors"
+                  aria-label="Retry loading video"
+                >
+                  <AlertCircle className="h-5 w-5" aria-hidden="true" />
+                  <span>Retry</span>
+                </button>
               </div>
             ) : (
               <video

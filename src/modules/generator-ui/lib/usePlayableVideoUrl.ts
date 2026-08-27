@@ -63,6 +63,7 @@ function resolve(src: string): Promise<string> {
 export function usePlayableVideoUrl(src: string | null | undefined): {
   url: string | undefined;
   loading: boolean;
+  error: boolean;
   reload: () => void;
 } {
   const initial =
@@ -113,12 +114,13 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
     };
   }, [src, reloadNonce]);
 
-  return { url, loading: !!src && !url && !error, reload };
+  return { url, loading: !!src && !url && !error, error, reload };
 }
 
 export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
   urls: Array<string | undefined>;
   loading: boolean;
+  errors: Array<boolean>;
 } {
   const key = srcs.map((s) => s ?? "").join("|");
   const [urls, setUrls] = useState<Array<string | undefined>>(() =>
@@ -128,16 +130,23 @@ export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
       return cache.get(s);
     }),
   );
+  const [errors, setErrors] = useState<Array<boolean>>(() => srcs.map(() => false));
 
   useEffect(() => {
     let cancelled = false;
     Promise.all(
       srcs.map((s) =>
-        s ? resolve(s).catch(() => s) : Promise.resolve(undefined as unknown as string),
+        s
+          ? resolve(s).then(
+              (u) => u,
+              () => undefined as unknown as string,
+            )
+          : Promise.resolve(undefined as unknown as string),
       ),
     ).then((res) => {
       if (cancelled) return;
       setUrls(res.map((u, i) => (srcs[i] ? u : undefined)));
+      setErrors(res.map((u, i) => !!srcs[i] && u === undefined));
     });
     return () => {
       cancelled = true;
@@ -145,5 +154,9 @@ export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return { urls, loading: urls.some((u, i) => !!srcs[i] && !u) };
+  return {
+    urls,
+    loading: urls.some((u, i) => !!srcs[i] && !u && !errors[i]),
+    errors,
+  };
 }

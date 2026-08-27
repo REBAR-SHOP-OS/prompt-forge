@@ -9452,7 +9452,7 @@ export default function DashboardPage() {
           }`}
         >
           <Building2
-            className={`h-[18px] w-[18px] ${hasBusinessInfo === false ? 'text-accent-warm' : ''}`}
+            className="h-[18px] w-[18px] text-accent-warm"
             aria-hidden="true"
           />
           <span
