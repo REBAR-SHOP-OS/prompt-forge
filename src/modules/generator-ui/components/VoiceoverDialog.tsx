@@ -91,6 +91,9 @@ interface VoiceoverDialogProps {
   mergedDurationSec?: number
   waveformRef?: MutableRefObject<SoundtrackWaveformHandle | null>
   onClearVoiceover?: () => void
+  /** Incremented by the parent on Start Over / workspace reset to clear
+   *  transient voiceover state (text, generated audio, translation, etc.). */
+  resetKey?: number
 }
 
 function base64ToBlob(b64: string, mime: string): Blob {
@@ -232,6 +235,7 @@ export function VoiceoverDialog({
   mergedDurationSec = 0,
   waveformRef,
   onClearVoiceover,
+  resetKey = 0,
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
@@ -421,6 +425,41 @@ export function VoiceoverDialog({
       setPlayingSampleId(null)
     }
   }, [open])
+
+  // Start Over / workspace reset: clear transient voiceover state so a new
+  // project opens with a clean TEXT field. Durable data (Draft/Final Film,
+  // projectAudio, Library) lives in the parent and is untouched here.
+  useEffect(() => {
+    if (resetKey === 0) return
+    // Revoke any local blob URL we still own (not the one handed to parent).
+    if (lastUrlRef.current) {
+      try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
+      lastUrlRef.current = null
+    }
+    setText('')
+    setGeneratedText('')
+    setAudioUrl(null)
+    setTranslation(null)
+    setTranslationLang(null)
+    setLastNarration(null)
+    setCheckResult(null)
+    setCheckOpen(false)
+    setChecking(false)
+    setIsGenerating(false)
+    setPlayingSampleId(null)
+    setIsProductPopoverOpen(false)
+    setSelectedProductId(null)
+    setIsWritingNarration(false)
+    setIsTranslateOpen(false)
+    setIsTranslating(false)
+    // Voice/Tone/Gender are project-specific here; reset to defaults so a new
+    // project starts clean without touching any persisted user preference.
+    setGender('female')
+    setVoiceId(defaultVoiceForGender('female').id)
+    setTone('advertising')
+    setIsAutoDuration(true)
+    setCustomDuration('')
+  }, [resetKey])
 
   async function persistVoiceover(blob: Blob) {
     try {
@@ -723,7 +762,7 @@ export function VoiceoverDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-lg">
+      <DialogContent className="border-border bg-background text-foreground sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Mic className="h-4 w-4" aria-hidden="true" />
@@ -737,7 +776,7 @@ export function VoiceoverDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="vo-text" className="text-xs uppercase tracking-wider text-zinc-400">
+            <Label htmlFor="vo-text" className="text-xs uppercase tracking-wider text-muted-foreground">
               Text
             </Label>
             <Textarea
@@ -754,7 +793,7 @@ export function VoiceoverDialog({
               placeholder="What should the voice say?"
               rows={5}
               maxLength={5000}
-              className="resize-none border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
+              className="resize-none border-border bg-accent/40 text-foreground placeholder:text-muted-foreground"
             />
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
@@ -764,7 +803,7 @@ export function VoiceoverDialog({
                     type="button"
                     title="Write an advertising narration from one of your products"
                     aria-label="Generate advertising narration from a product"
-                    className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                    className="flex items-center gap-1.5 rounded-full border border-border bg-accent/40 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                   >
                     <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
                     Product narration
@@ -772,23 +811,23 @@ export function VoiceoverDialog({
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  className="w-80 border-white/10 bg-black text-zinc-100"
+                  className="w-80 border-border bg-background text-foreground"
                 >
                   <div className="space-y-3">
                     <div>
-                      <p className="text-xs font-semibold text-zinc-200">Product narration</p>
-                      <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">
+                      <p className="text-xs font-semibold text-foreground/90">Product narration</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
                         Pick a product and a duration to auto-write an English
                         advertising narration.
                       </p>
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label className="text-[10px] uppercase tracking-wider text-zinc-400">
+                      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
                         Product
                       </Label>
                       {products.length === 0 ? (
-                        <p className="rounded-md border border-dashed border-white/10 px-2 py-3 text-center text-[11px] text-zinc-500">
+                        <p className="rounded-md border border-dashed border-border px-2 py-3 text-center text-[11px] text-muted-foreground">
                           No saved products yet.
                         </p>
                       ) : (
@@ -802,10 +841,10 @@ export function VoiceoverDialog({
                               className={`group relative flex flex-col gap-1 rounded-lg border p-1 text-left transition ${
                                 selectedProductId === p.id
                                   ? 'border-emerald-300/60 bg-emerald-300/10'
-                                  : 'border-white/10 bg-white/[0.03] hover:border-white/25'
+                                  : 'border-border bg-accent/30 hover:border-border'
                               }`}
                             >
-                              <span className="relative block aspect-square w-full overflow-hidden rounded-md border border-white/10 bg-[#15171a]">
+                              <span className="relative block aspect-square w-full overflow-hidden rounded-md border border-border bg-surface-2">
                                 {p.imageUrl ? (
                                   <img
                                     src={p.imageUrl}
@@ -815,7 +854,7 @@ export function VoiceoverDialog({
                                   />
                                 ) : (
                                   <span className="grid h-full w-full place-items-center">
-                                    <ShoppingBag className="h-4 w-4 text-zinc-600" aria-hidden="true" />
+                                    <ShoppingBag className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                                   </span>
                                 )}
                                 {selectedProductId === p.id ? (
@@ -826,7 +865,7 @@ export function VoiceoverDialog({
                               </span>
                               <span
                                 className={`truncate text-[10px] ${
-                                  selectedProductId === p.id ? 'text-emerald-100' : 'text-zinc-400'
+                                  selectedProductId === p.id ? 'text-emerald-100' : 'text-muted-foreground'
                                 }`}
                               >
                                 {p.name}
@@ -840,7 +879,7 @@ export function VoiceoverDialog({
                     <div className="space-y-1.5">
                       <Label
                         htmlFor="vo-narration-seconds"
-                        className="text-[10px] uppercase tracking-wider text-zinc-400"
+                        className="text-[10px] uppercase tracking-wider text-muted-foreground"
                       >
                         Duration (seconds)
                       </Label>
@@ -852,7 +891,7 @@ export function VoiceoverDialog({
                         value={narrationSeconds}
                         onChange={(e) => setNarrationSeconds(e.target.value)}
                         placeholder="e.g. 15"
-                        className="h-8 border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
+                        className="h-8 border-border bg-accent/40 text-foreground placeholder:text-muted-foreground"
                       />
                     </div>
 
@@ -883,7 +922,7 @@ export function VoiceoverDialog({
                   disabled={isWritingNarration}
                   title="Regenerate narration"
                   aria-label="Regenerate narration"
-                  className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-50"
+                  className="grid h-7 w-7 place-items-center rounded-full border border-border bg-accent/40 text-foreground/80 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-50"
                 >
                   <RefreshCw
                     className={`h-3.5 w-3.5 ${isWritingNarration ? 'animate-spin' : ''}`}
@@ -898,7 +937,7 @@ export function VoiceoverDialog({
                     disabled={isTranslating || !text.trim()}
                     title="Translate narration"
                     aria-label="Translate narration"
-                    className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:opacity-50"
+                    className="grid h-7 w-7 place-items-center rounded-full border border-border bg-accent/40 text-foreground/80 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-accent-cool disabled:opacity-50"
                   >
                     {isTranslating ? (
                       <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -908,7 +947,7 @@ export function VoiceoverDialog({
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-44 p-1.5">
-                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Translate to
                   </p>
                   <div className="max-h-56 overflow-y-auto">
@@ -918,7 +957,7 @@ export function VoiceoverDialog({
                         type="button"
                         disabled={isTranslating}
                         onClick={() => void handleTranslate(l.code)}
-                        className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-50"
+                        className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-foreground/90 transition hover:bg-accent/60 disabled:opacity-50"
                       >
                         {l.label}
                       </button>
@@ -927,15 +966,15 @@ export function VoiceoverDialog({
                 </PopoverContent>
               </Popover>
               </div>
-              <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
+              <div className="text-right text-[10px] uppercase tracking-wider text-muted-foreground">
                 {text.length}/5000
               </div>
             </div>
 
             {translation ? (
-              <div className="space-y-1.5 rounded-lg border border-dashed border-white/15 bg-white/[0.03] p-3">
+              <div className="space-y-1.5 rounded-lg border border-dashed border-border bg-accent/30 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Translation{translationLang ? ` (${translationLang})` : ''} — reference only
                   </p>
                   <button
@@ -946,12 +985,12 @@ export function VoiceoverDialog({
                     }}
                     title="Dismiss translation"
                     aria-label="Dismiss translation"
-                    className="grid h-5 w-5 place-items-center rounded-full text-zinc-500 transition hover:bg-white/10 hover:text-zinc-200"
+                    className="grid h-5 w-5 place-items-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground/90"
                   >
                     <X className="h-3 w-3" aria-hidden="true" />
                   </button>
                 </div>
-                <p className="whitespace-pre-wrap text-[12px] leading-5 text-zinc-300">
+                <p className="whitespace-pre-wrap text-[12px] leading-5 text-foreground/80">
                   {translation}
                 </p>
               </div>
@@ -962,11 +1001,11 @@ export function VoiceoverDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                 Gender
               </Label>
               <Select value={gender} onValueChange={(v) => handleGenderChange(v as Gender)}>
-                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
+                <SelectTrigger className="border-border bg-accent/40 text-foreground">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -978,11 +1017,11 @@ export function VoiceoverDialog({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                 Tone
               </Label>
               <Select value={tone} onValueChange={(v) => setTone(v as Tone)}>
-                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
+                <SelectTrigger className="border-border bg-accent/40 text-foreground">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -998,16 +1037,16 @@ export function VoiceoverDialog({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                 Voice / Character
               </Label>
-              <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 Tap ▶ to preview
               </span>
             </div>
             <div className="flex items-center gap-2">
               <Select value={voiceId} onValueChange={(v) => setVoiceId(v)}>
-                <SelectTrigger className="flex-1 border-white/10 bg-white/[0.04] text-zinc-100">
+                <SelectTrigger className="flex-1 border-border bg-accent/40 text-foreground">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1015,7 +1054,7 @@ export function VoiceoverDialog({
                     <SelectItem key={v.id} value={v.id}>
                       <span className="flex items-center gap-2">
                         <span>{v.label}</span>
-                        <span className="text-[11px] text-zinc-500">· {v.personality}</span>
+                        <span className="text-[11px] text-muted-foreground">· {v.personality}</span>
                       </span>
                     </SelectItem>
                   ))}
@@ -1027,7 +1066,7 @@ export function VoiceoverDialog({
                 size="icon"
                 aria-label={`Play sample of ${currentVoice.label}`}
                 onClick={() => playSample(currentVoice.id)}
-                className="shrink-0 border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/10"
+                className="shrink-0 border-border bg-accent/40 text-foreground hover:bg-accent"
               >
                 {playingSampleId === currentVoice.id ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1036,18 +1075,18 @@ export function VoiceoverDialog({
                 )}
               </Button>
             </div>
-            <p className="text-[11px] leading-snug text-zinc-500">
+            <p className="text-[11px] leading-snug text-muted-foreground">
               {currentVoice.label} — {currentVoice.personality.toLowerCase()}.
             </p>
           </div>
 
 
           <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-wider text-zinc-400">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">
               Duration
             </Label>
             <div className="grid grid-cols-2 gap-3">
-              <div className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-white/[0.04] p-1">
+              <div className="grid grid-cols-2 gap-1 rounded-md border border-border bg-accent/40 p-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -1056,8 +1095,8 @@ export function VoiceoverDialog({
                   }}
                   className={`rounded px-3 py-1.5 text-sm transition-colors ${
                     isAutoDuration
-                      ? 'bg-white/10 text-zinc-100'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground/90'
                   }`}
                 >
                   Auto
@@ -1067,8 +1106,8 @@ export function VoiceoverDialog({
                   onClick={() => setIsAutoDuration(false)}
                   className={`rounded px-3 py-1.5 text-sm transition-colors ${
                     !isAutoDuration
-                      ? 'bg-white/10 text-zinc-100'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground/90'
                   }`}
                 >
                   Manual
@@ -1086,10 +1125,10 @@ export function VoiceoverDialog({
                   setCustomDuration(e.target.value)
                 }}
                 placeholder={isAutoDuration ? 'Auto' : 'Seconds (1–135)'}
-                className="border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="border-border bg-accent/40 text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               />
             </div>
-            <p className="text-[11px] leading-snug text-zinc-500">
+            <p className="text-[11px] leading-snug text-muted-foreground">
               {isAutoDuration
                 ? 'Voice is paced and fitted automatically to the content.'
                 : 'Voice is paced and fitted to the chosen length (1–135 seconds).'}
@@ -1120,9 +1159,9 @@ export function VoiceoverDialog({
 
 
           {activeVoiceoverUrl ? (
-            <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
+            <div className="space-y-4 rounded-md border border-border bg-accent/30 p-3">
               <div className="flex items-center justify-between">
-                <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-300">
+                <div className="flex min-w-0 items-center gap-2 text-xs text-foreground/80">
                   <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span className="truncate">{activeVoiceoverName ?? 'Voiceover'}</span>
                 </div>
@@ -1137,10 +1176,10 @@ export function VoiceoverDialog({
                           checkResult?.status === 'error'
                             ? 'text-red-500 hover:bg-red-500/10 hover:text-red-400'
                             : checkResult?.status === 'warn'
-                              ? 'text-amber-400 hover:bg-amber-400/10 hover:text-amber-300'
+                              ? 'text-amber-400 hover:bg-amber-400/10 hover:text-accent-warm'
                               : checkResult?.status === 'ok'
                                 ? 'text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300'
-                                : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-100'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                         }`}
                       >
                         {checking ? (
@@ -1150,9 +1189,9 @@ export function VoiceoverDialog({
                         )}
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-80 border-white/10 bg-black text-zinc-100">
+                    <PopoverContent align="end" className="w-80 border-border bg-background text-foreground">
                       <div className="space-y-2.5">
-                        <p className="text-xs font-semibold text-zinc-200">Audio health &amp; pronunciation check</p>
+                        <p className="text-xs font-semibold text-foreground/90">Audio health &amp; pronunciation check</p>
                         {checkResult ? (
                           <div className="space-y-2.5">
                             <p
@@ -1160,33 +1199,33 @@ export function VoiceoverDialog({
                                 checkResult.status === 'error'
                                   ? 'text-red-400'
                                   : checkResult.status === 'warn'
-                                    ? 'text-amber-300'
+                                    ? 'text-accent-warm'
                                     : 'text-emerald-300'
                               }`}
                             >
                               {checkResult.summary}
                             </p>
                             {checkResult.issues.length > 0 ? (
-                              <ul className="list-disc space-y-1 pl-4 text-[11px] leading-4 text-zinc-400">
+                              <ul className="list-disc space-y-1 pl-4 text-[11px] leading-4 text-muted-foreground">
                                 {checkResult.issues.map((issue, i) => (
                                   <li key={i}>{issue}</li>
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-[11px] text-zinc-500">No issues found.</p>
+                              <p className="text-[11px] text-muted-foreground">No issues found.</p>
                             )}
                             {checkResult.diff && checkResult.diff.some((t) => !t.ok) ? (
                               <div className="space-y-1">
-                                <p className="text-[10px] uppercase tracking-wider text-zinc-500">
+                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
                                   Script vs. spoken
                                 </p>
-                                <p className="max-h-28 overflow-y-auto rounded-md border border-white/10 bg-white/[0.03] p-2 text-[11px] leading-5">
+                                <p className="max-h-28 overflow-y-auto rounded-md border border-border bg-accent/30 p-2 text-[11px] leading-5">
                                   {checkResult.diff.map((t, i) => (
                                     <span
                                       key={i}
                                       className={
                                         t.ok
-                                          ? 'text-zinc-300'
+                                          ? 'text-foreground/80'
                                           : 'rounded bg-red-500/20 text-red-300 line-through decoration-red-400/60'
                                       }
                                     >
@@ -1194,14 +1233,14 @@ export function VoiceoverDialog({
                                     </span>
                                   ))}
                                 </p>
-                                <p className="text-[10px] text-zinc-500">
+                                <p className="text-[10px] text-muted-foreground">
                                   Highlighted words were skipped or mispronounced.
                                 </p>
                               </div>
                             ) : null}
                           </div>
                         ) : (
-                          <p className="text-[11px] leading-4 text-zinc-500">
+                          <p className="text-[11px] leading-4 text-muted-foreground">
                             Check silence, distortion, and pronunciation against the script. Press the button below.
                           </p>
                         )}
@@ -1234,7 +1273,7 @@ export function VoiceoverDialog({
                       type="button"
                       onClick={onClearVoiceover}
                       aria-label="Remove voiceover"
-                      className="grid h-6 w-6 place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                      className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                       <X className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
@@ -1243,9 +1282,9 @@ export function VoiceoverDialog({
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>Voiceover volume</span>
-                  <span className="tabular-nums text-zinc-200">{Math.round(voiceoverVolume * 100)}%</span>
+                  <span className="tabular-nums text-foreground/90">{Math.round(voiceoverVolume * 100)}%</span>
                 </div>
                 <Slider
                   value={[Math.round(voiceoverVolume * 100)]}
@@ -1267,17 +1306,17 @@ export function VoiceoverDialog({
                 onRangeChange={(r) => { if (r[1] > r[0]) onVoiceoverRangeChange?.([r[0], r[1]]) }}
               />
 
-              <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
-                <div className="flex items-center justify-between text-xs text-zinc-300">
+              <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
+                <div className="flex items-center justify-between text-xs text-foreground/80">
                   <span className="font-medium">Play on video from … to</span>
-                  <span className="tabular-nums text-zinc-200">
+                  <span className="tabular-nums text-foreground/90">
                     {formatTimeMS(voiceoverTimeline[0])} – {formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}
                   </span>
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>Start</span>
-                    <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[0])}</span>
+                    <span className="tabular-nums text-foreground/90">{formatTimeMS(voiceoverTimeline[0])}</span>
                   </div>
                   <Slider
                     value={[Math.round(voiceoverTimeline[0])]}
@@ -1289,9 +1328,9 @@ export function VoiceoverDialog({
                       onVoiceoverTimelineChange?.([Math.max(0, s), voiceoverTimeline[1] || mergedDurationSec])
                     }}
                   />
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>End</span>
-                    <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}</span>
+                    <span className="tabular-nums text-foreground/90">{formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}</span>
                   </div>
                   <Slider
                     value={[Math.round(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)]}
@@ -1304,7 +1343,7 @@ export function VoiceoverDialog({
                     }}
                   />
                 </div>
-                <p className="text-[11px] leading-relaxed text-zinc-500">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
                   Outside this window the voiceover is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
                 </p>
               </div>

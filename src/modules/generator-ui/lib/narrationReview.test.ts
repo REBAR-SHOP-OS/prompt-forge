@@ -224,6 +224,49 @@ describe('reviewNarration', () => {
     expect(result.status).toBe('pass')
     expect(result.matchPercent).toBeGreaterThanOrEqual(80)
   })
+
+  it('[brand] normalizes dotted brand names so punctuation does not create a false mismatch', () => {
+    // Expected narration contains "Rebar.Shop"; STT renders it as "Rebar Shop".
+    // The dot must not be treated as a changed word.
+    const words = [
+      w('Visit', 0.0, 0.4),
+      w('Rebar', 0.5, 0.8),
+      w('Shop', 0.9, 1.2),
+      w('today', 1.3, 1.6),
+    ]
+    const result = reviewNarration(
+      ['Visit Rebar.Shop today'],
+      words,
+      'Visit Rebar Shop today',
+    )
+    expect(result.status).toBe('pass')
+    expect(result.issues).toHaveLength(0)
+  })
+
+  it('[pronunciation] labels a substituted word as a possible pronunciation issue, not a definitive error', () => {
+    const words = [
+      w('Welcome', 0.0, 0.3),
+      w('to', 0.35, 0.45),
+      w('our', 0.5, 0.65),
+      w('shop', 0.7, 1.0),
+    ]
+    const result = reviewNarration(['Welcome to our store'], words, 'Welcome to our shop')
+    expect(result.status).toBe('issues')
+    const issue = result.issues[0]
+    expect(issue.kind).toBe('changed')
+    expect(issue.problem).toContain('Possible pronunciation issue')
+  })
+
+  it('[verdict] reports PASS / REVIEW REQUIRED / Transcript only titles', () => {
+    const pass = reviewNarration(['Hello world'], [w('Hello', 0, 0.4), w('world', 0.5, 0.9)], 'Hello world')
+    expect(reviewVerdictTitle(pass)).toBe('PASS')
+
+    const issues = reviewNarration(['Hello world'], [w('Hello', 0, 0.4), w('there', 0.5, 0.9)], 'Hello there')
+    expect(reviewVerdictTitle(issues)).toBe('REVIEW REQUIRED')
+
+    const noNarration = reviewNarration([], [w('Hello', 0, 0.4)], 'Hello')
+    expect(reviewVerdictTitle(noNarration)).toBe('Transcript only')
+  })
 })
 
 describe('complete translated review content', () => {
@@ -245,22 +288,31 @@ describe('complete translated review content', () => {
 })
 
 describe('final-film narration review integration contracts', () => {
-  it('always transcribes available final media even when expected narration is unavailable', () => {
-    const start = panelSource.indexOf('const runReview')
-    const runReview = panelSource.slice(start, panelSource.indexOf('useEffect(() =>', start))
-    expect(runReview).toContain('supabase.functions.invoke<FnResponse>')
-    expect(runReview).not.toContain('expectedLines.length === 0')
+  it('automatically transcribes the selected film through the existing signing/proxy path', () => {
+    expect(panelSource).toContain('proxiedVideoUrl(videoStoragePath)')
+    expect(panelSource).toContain("supabase.functions.invoke<FnResponse>('narration-review'")
+    expect(panelSource).toContain('void runTranscription()')
   })
 
-  it('persists merged narration and retains a legacy source-clip fallback', () => {
-    expect(dashboardSource).toContain('narration_text: aggregatedNarrationText')
-    expect(dashboardSource).toContain('(projectSourceJobs[video.id] ?? [])')
-    expect(dashboardSource).toContain('.map((j) => j.narration_text)')
+  it('takes expected narration from film metadata, never from the prompt', () => {
+    // The panel now compares heard speech against the Final Film's saved
+    // narration_text (metadata), not the prompt. It must not derive expected
+    // narration from the prompt via extractNarration.
+    expect(panelSource).not.toContain('extractNarration')
+    expect(panelSource).toContain('expectedNarration')
+    expect(panelSource).toContain('reviewNarration')
+    expect(panelSource).not.toContain('prompt:')
+    expect(dashboardSource).toContain('aria-label="Transcribe film audio"')
+    expect(dashboardSource).toContain('libraryTranscript')
+    expect(dashboardSource).not.toContain('narrationReview')
   })
 
-  it('returns no-speech as a review result instead of an invocation error', () => {
+  it('treats no-speech as a result and guards against stale card responses', () => {
     expect(edgeSource).toContain("code: 'NO_SPEECH'")
-    expect(panelSource).toContain("data.code !== 'NO_SPEECH'")
+    expect(panelSource).toContain("data?.code === 'NO_SPEECH'")
+    expect(panelSource).toContain('requestId !== requestIdRef.current')
+    expect(panelSource).toContain('fetchAbortRef.current?.abort()')
+    expect(panelSource).toContain('Transcription timed out. Please retry.')
   })
 })
 

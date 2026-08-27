@@ -169,14 +169,27 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
         { body: bodyPayload },
       )
       if (fnError) throw new Error(fnError.message)
-      if (data?.error) throw new Error(data.error)
+      if (data?.error) {
+        // A "no speech" result is a normal outcome for a transcript-only view,
+        // not a failure. Show the empty-state message instead of an error.
+        if (/no speech|no supported speech/i.test(data.error)) {
+          setTranscript('')
+          setWords([])
+          translations.current.clear()
+          translations.current.set(ORIGINAL, '')
+          setLanguage(ORIGINAL)
+          setDisplayText('No speech detected in this film.')
+          return
+        }
+        throw new Error(data.error)
+      }
       const text = (data?.transcript ?? '').trim()
       setTranscript(text)
       setWords(Array.isArray(data?.words) ? data!.words : [])
       translations.current.clear()
       translations.current.set(ORIGINAL, text)
       setLanguage(ORIGINAL)
-      setDisplayText(text || 'No speech detected in this video.')
+      setDisplayText(text || 'No speech detected in this film.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to transcribe.')
     } finally {
@@ -223,12 +236,12 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   )
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col bg-[#07080a]/95 backdrop-blur">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-        <span className="text-sm font-semibold text-zinc-100">Transcript</span>
+    <div className="absolute inset-0 z-20 flex flex-col bg-card/95 backdrop-blur">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <span className="text-sm font-semibold text-foreground">Transcript</span>
         <div className="flex items-center gap-2">
           <Select value={language} onValueChange={handleLanguageChange} disabled={!transcript || loading}>
-            <SelectTrigger className="h-8 w-[130px] border-white/15 bg-white/[0.04] text-xs text-zinc-200">
+            <SelectTrigger className="h-8 w-[130px] border-border bg-accent/40 text-xs text-foreground/90">
               <SelectValue placeholder="Language" />
             </SelectTrigger>
             <SelectContent>
@@ -244,7 +257,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
             onClick={onClose}
             aria-label="Close transcript"
             title="Close"
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+            className="grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -253,7 +266,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {loading ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-zinc-400">
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
             <span className="text-sm">Processing…</span>
           </div>
@@ -263,7 +276,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
             <button
               type="button"
               onClick={() => void runTranscribe()}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08]"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-accent/40 px-4 py-1.5 text-xs font-semibold text-foreground/90 transition hover:bg-accent/80"
             >
               <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
               Retry
@@ -273,19 +286,19 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
           <div className="space-y-4">
             <div className="space-y-2">
               {showTranslation ? (
-                <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Original
                 </div>
               ) : null}
               {hasLowConfidence ? (
-                <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
+                <p className="flex items-center gap-2 text-[11px] text-accent-warm/90">
                   <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
                   Highlighted words may be mispronounced — click one to hear the correct pronunciation.
                 </p>
               ) : null}
               <p
                 dir={originalRtl ? 'rtl' : 'ltr'}
-                className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
+                className="whitespace-pre-wrap text-[15px] leading-7 text-foreground/90"
               >
                 {showWords
                   ? words.map((w, i) => (
@@ -296,8 +309,8 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
                             onClick={() => void playPronunciation(w.text, i)}
                             disabled={pronouncing === i}
                             title="Click to hear the correct pronunciation"
-                            className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-amber-400/20 hover:text-amber-200 disabled:cursor-wait ${
-                              playingWord === i ? 'bg-amber-400/25 text-amber-100' : ''
+                            className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-accent-warm underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-accent-warm/20 hover:text-accent-warm disabled:cursor-wait ${
+                              playingWord === i ? 'bg-accent-warm/25 text-accent-warm' : ''
                             }`}
                           >
                             {w.text}
@@ -313,18 +326,18 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
                         {i < words.length - 1 ? ' ' : ''}
                       </span>
                     ))
-                  : transcript || 'No speech detected in this video.'}
+                  : transcript || 'No speech detected in this film.'}
               </p>
             </div>
 
             {showTranslation ? (
-              <div className="space-y-2 border-t border-white/10 pt-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              <div className="space-y-2 border-t border-border pt-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {translationLabel}
                 </div>
                 <p
                   dir={translationRtl ? 'rtl' : 'ltr'}
-                  className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
+                  className="whitespace-pre-wrap text-[15px] leading-7 text-foreground/90"
                 >
                   {displayText}
                 </p>

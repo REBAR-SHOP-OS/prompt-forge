@@ -323,15 +323,15 @@ function SceneText({ text, narrationLabel }: { text: string; narrationLabel: str
   const { body, narration } = splitNarration(text)
   return (
     <div className="space-y-2">
-      <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+      <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-foreground">
         {body}
       </p>
       {narration ? (
-        <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
-          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+        <div className="rounded-md border border-accent-warm/30 bg-amber-400/5 px-2.5 py-2">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm/90">
             {narrationLabel}
           </div>
-          <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-amber-50/90">
+          <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-accent-warm/90">
             {narration}
           </p>
         </div>
@@ -1403,13 +1403,13 @@ export default function ProductAdDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+      <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isCharacter ? (
-              <Drama className="h-5 w-5 text-amber-300" aria-hidden="true" />
+              <Drama className="h-5 w-5 text-accent-warm" aria-hidden="true" />
             ) : (
-              <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+              <Package className="h-5 w-5 text-accent-warm" aria-hidden="true" />
             )}
             {t.title}
             <div className="ms-auto flex items-center gap-2">
@@ -1422,7 +1422,7 @@ export default function ProductAdDialog({
                     className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
                       businessInfo.trim()
                         ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                        : 'border-accent-warm/40 bg-accent-warm/10 text-accent-warm'
                     }`}
                   >
                     <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1431,9 +1431,9 @@ export default function ProductAdDialog({
                     )}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-[28rem] max-w-[92vw] border-white/10 bg-[#0b0c0e] text-zinc-100">
-                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-                    {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
+                <PopoverContent align="end" className="w-[28rem] max-w-[92vw] border-border bg-card text-foreground">
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
+                    {t.businessLabel} <span className="text-accent-warm">{t.businessRequiredTag}</span>
                   </div>
                   <Textarea
                     value={businessInfo}
@@ -1445,9 +1445,9 @@ export default function ProductAdDialog({
                     rows={10}
                     maxLength={undefined}
                     placeholder={t.businessPlaceholder}
-                    className="max-h-[55vh] min-h-[220px] resize-y border-white/10 bg-black/30 text-sm text-zinc-100"
+                    className="max-h-[55vh] min-h-[220px] resize-y border-border bg-surface-2 text-sm text-foreground"
                   />
-                  <div className="mt-3 mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                  <div className="mt-3 mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
                     {t.contactLabel}
                   </div>
                   <div className="space-y-2">
@@ -1455,33 +1455,33 @@ export default function ProductAdDialog({
                       value={contactWebsite}
                       onChange={(e) => { setContactWebsite(e.target.value); setBusinessSaved(false) }}
                       placeholder={t.contactWebsite}
-                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                      className="h-9 border-border bg-surface-2 text-sm text-foreground"
                     />
                     <Input
                       value={contactPhone}
                       onChange={(e) => { setContactPhone(e.target.value); setBusinessSaved(false) }}
                       placeholder={t.contactPhone}
-                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                      className="h-9 border-border bg-surface-2 text-sm text-foreground"
                     />
                     <Input
                       value={contactAddress}
                       onChange={(e) => { setContactAddress(e.target.value); setBusinessSaved(false) }}
                       placeholder={t.contactAddress}
-                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                      className="h-9 border-border bg-surface-2 text-sm text-foreground"
                     />
                     <div className="flex items-center gap-2 pt-1">
                       {contactLogo ? (
                         <img
                           src={contactLogo}
                           alt={t.contactLogo}
-                          className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                          className="h-10 w-10 rounded-md border border-border bg-accent/50 object-contain p-0.5"
                         />
                       ) : (
-                        <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-black/30 text-zinc-500">
+                        <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground">
                           <ImagePlus className="h-4 w-4" aria-hidden="true" />
                         </div>
                       )}
-                      <label className="cursor-pointer rounded-md border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                      <label className="cursor-pointer rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border">
                         {contactLogo ? 'Replace' : t.contactLogo}
                         <input
                           type="file"
@@ -1494,7 +1494,7 @@ export default function ProductAdDialog({
                         <button
                           type="button"
                           onClick={() => { setContactLogo(''); setBusinessSaved(false) }}
-                          className="text-[11px] text-zinc-400 transition hover:text-rose-300"
+                          className="text-[11px] text-muted-foreground transition hover:text-rose-300"
                         >
                           ✕
                         </button>
@@ -1519,10 +1519,10 @@ export default function ProductAdDialog({
               </Popover>
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
                 <SelectTrigger
-                  className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
+                  className="h-7 w-auto gap-1.5 rounded-full border-border bg-muted/60 px-2.5 text-[11px] font-semibold text-foreground/80"
                   aria-label="Language"
                 >
-                  <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                  <Languages className="h-3.5 w-3.5 text-accent-cool" aria-hidden="true" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1535,7 +1535,7 @@ export default function ProductAdDialog({
               </Select>
             </div>
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription className="text-muted-foreground">
             {t.description}
           </DialogDescription>
         </DialogHeader>
@@ -1572,7 +1572,7 @@ export default function ProductAdDialog({
                         <img
                           src={safeMediaUrl(imagePreviewUrl) ?? ''}
                           alt="Product"
-                          className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
+                          className="h-20 w-20 rounded-md border border-border object-cover transition hover:border-border"
                           onLoad={() => setPreviewLoading(false)}
                           onError={() => {
                             setPreviewLoading(false)
@@ -1580,7 +1580,7 @@ export default function ProductAdDialog({
                           }}
                         />
                         {previewLoading && (
-                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-surface-2/60">
                             <LoaderCircle className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
                           </div>
                         )}
@@ -1591,7 +1591,7 @@ export default function ProductAdDialog({
                     type="button"
                     onClick={clearImage}
                     aria-label="Remove image"
-                    className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
+                    className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-foreground/90 ring-1 ring-foreground/20 hover:bg-surface-2"
                   >
                     <X className="h-3 w-3" aria-hidden="true" />
                   </button>
@@ -1603,7 +1603,7 @@ export default function ProductAdDialog({
                   disabled={isUploadingImage}
                   title="Add product photo"
                   aria-label="Add product photo"
-                  className="inline-flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-white/15 bg-black/30 text-zinc-400 transition hover:border-amber-300/40 hover:text-amber-100 disabled:opacity-50"
+                  className="inline-flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground transition hover:border-accent-warm/40 hover:text-accent-warm disabled:opacity-50"
                 >
                   {isUploadingImage ? (
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -1619,7 +1619,7 @@ export default function ProductAdDialog({
                   type="button"
                   onClick={openProductPicker}
                   title={t.chooseFromProducts}
-                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-accent-warm/40 hover:text-accent-warm"
                 >
                   <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
                   <span className="truncate">{t.chooseFromProducts}</span>
@@ -1629,7 +1629,7 @@ export default function ProductAdDialog({
                 type="button"
                 onClick={() => setAiImageOpen(true)}
                 title={t.generateWithAi}
-                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-amber-300/30 bg-amber-300/10 px-1 py-1 text-[10px] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20"
+                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-accent-warm/30 bg-accent-warm/10 px-1 py-1 text-[10px] text-accent-warm transition hover:border-accent-warm/60 hover:bg-accent-warm/20"
               >
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="truncate">{t.generateWithAi}</span>
@@ -1641,14 +1641,14 @@ export default function ProductAdDialog({
                       type="button"
                       onClick={openCharacterPicker}
                       title="Change character"
-                      className="block w-20 overflow-hidden rounded-md border border-amber-300/50 bg-amber-300/10"
+                      className="block w-20 overflow-hidden rounded-md border border-amber-300/50 bg-accent-warm/10"
                     >
                       <img
                         src={characterRefDisplayUrl}
                         alt="Character"
                         className="h-16 w-20 object-cover"
                       />
-                      <span className="block truncate px-1 py-0.5 text-[9px] text-amber-100">
+                      <span className="block truncate px-1 py-0.5 text-[9px] text-accent-warm">
                         {characterRefName || 'Character'}
                       </span>
                     </button>
@@ -1656,7 +1656,7 @@ export default function ProductAdDialog({
                       type="button"
                       onClick={clearCharacter}
                       aria-label="Remove character"
-                      className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-foreground/90 ring-1 ring-foreground/20 hover:bg-surface-2"
                     >
                       <X className="h-3 w-3" aria-hidden="true" />
                     </button>
@@ -1666,7 +1666,7 @@ export default function ProductAdDialog({
                     type="button"
                     onClick={openCharacterPicker}
                     title="Add character"
-                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-border bg-surface-2 px-1 py-1 text-[10px] text-foreground/80 transition hover:border-accent-warm/40 hover:text-accent-warm"
                   >
                     <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
                     <span className="truncate">Add character</span>
@@ -1677,7 +1677,7 @@ export default function ProductAdDialog({
 
             <div className="flex-1 space-y-2">
               <div>
-                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {t.productName}
                 </div>
                 <Input
@@ -1687,7 +1687,7 @@ export default function ProductAdDialog({
                     if (nameNeedsReview) setNameNeedsReview(false)
                   }}
                   placeholder={t.productNamePlaceholder}
-                  className="border-white/10 bg-black/30 text-zinc-100"
+                  className="border-border bg-surface-2 text-foreground"
                 />
                 {nameNeedsReview && (
                   <p className="mt-1.5 text-xs text-amber-400" dir="ltr">
@@ -1696,15 +1696,15 @@ export default function ProductAdDialog({
                 )}
               </div>
               <div>
-                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  {t.descriptionLabel} <span className="text-zinc-600">{t.optional}</span>
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t.descriptionLabel} <span className="text-muted-foreground">{t.optional}</span>
                 </div>
                 <Textarea
                   value={productDescription}
                   onChange={(e) => setProductDescription(e.target.value)}
                   rows={2}
                   placeholder={t.descriptionPlaceholder}
-                  className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
+                  className="min-h-[56px] border-border bg-surface-2 text-foreground"
                 />
               </div>
             </div>
@@ -1712,27 +1712,27 @@ export default function ProductAdDialog({
 
           {/* Your prompt */}
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              {t.yourPrompt} <span className="text-zinc-600">{t.optional}</span>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t.yourPrompt} <span className="text-muted-foreground">{t.optional}</span>
             </div>
             <Textarea
               value={userPrompt}
               onChange={(e) => setUserPrompt(e.target.value)}
               rows={3}
               placeholder={t.yourPromptPlaceholder}
-              className="min-h-[72px] border-white/10 bg-black/30 text-zinc-100"
+              className="min-h-[72px] border-border bg-surface-2 text-foreground"
             />
           </div>
 
 
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t.duration}
             </div>
             <div
               role="radiogroup"
               aria-label="Ad duration"
-              className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold"
+              className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold"
             >
               {DURATIONS.map((sec) => {
                 const active = duration === sec
@@ -1744,7 +1744,7 @@ export default function ProductAdDialog({
                     aria-checked={active}
                     onClick={() => setDuration(sec)}
                     className={`rounded-full px-3 py-1.5 transition ${
-                      active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                      active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'
                     }`}
                   >
                     {sec}s
@@ -1753,7 +1753,7 @@ export default function ProductAdDialog({
               })}
             </div>
             {SPLIT_DURATIONS.includes(duration) ? (
-              <p className="mt-2 text-xs text-zinc-500">
+              <p className="mt-2 text-xs text-muted-foreground">
                 Will be split into {duration / 15} sequential 15s scenes and sent as {duration / 15} cards.
               </p>
             ) : null}
@@ -1761,7 +1761,7 @@ export default function ProductAdDialog({
 
           {/* Camera style */}
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t.cameraStyle}
             </div>
             <div role="radiogroup" aria-label="Camera style" className="flex flex-wrap gap-2">
@@ -1785,8 +1785,8 @@ export default function ProductAdDialog({
                       aria-checked={active}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
-                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                          : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                          ? 'border-accent-warm/60 bg-accent-warm/15 text-accent-warm'
+                          : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                       }`}
                     >
                       <span className="text-sm leading-none">{style.icon}</span>
@@ -1800,8 +1800,8 @@ export default function ProductAdDialog({
 
           {/* Genre & atmosphere */}
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              {t.genre} <span className="text-zinc-600">{t.optional}</span>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t.genre} <span className="text-muted-foreground">{t.optional}</span>
             </div>
             <div role="radiogroup" aria-label="Genre and atmosphere" className="flex flex-wrap gap-2">
               {GENRE_TEMPLATES.map((g) => {
@@ -1824,8 +1824,8 @@ export default function ProductAdDialog({
                       aria-checked={active}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
-                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                          : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                          ? 'border-accent-warm/60 bg-accent-warm/15 text-accent-warm'
+                          : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                       }`}
                     >
                       <span className="text-sm leading-none">{g.icon}</span>
@@ -1839,13 +1839,13 @@ export default function ProductAdDialog({
 
           {/* Scene & environment */}
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              {t.scene} <span className="text-zinc-600">{t.optional}</span>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t.scene} <span className="text-muted-foreground">{t.optional}</span>
             </div>
             <div className="space-y-2.5">
               {SCENE_GROUPS.map((group) => (
                 <div key={group}>
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                     {tr(SCENE_GROUP_LOC[group], lang)}
                   </div>
                   <div role="radiogroup" aria-label={group} className="flex flex-wrap gap-2">
@@ -1869,8 +1869,8 @@ export default function ProductAdDialog({
                             aria-checked={active}
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               active
-                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                                : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                                ? 'border-accent-warm/60 bg-accent-warm/15 text-accent-warm'
+                                : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                             }`}
                           >
                             <span className="text-sm leading-none">{s.icon}</span>
@@ -1887,13 +1887,13 @@ export default function ProductAdDialog({
 
           {/* Video templates */}
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              {t.videoTemplates} <span className="text-zinc-600">{t.optional}</span>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t.videoTemplates} <span className="text-muted-foreground">{t.optional}</span>
             </div>
             <div className="space-y-2.5">
               {VIDEO_GROUPS.map((group) => (
                 <div key={group}>
-                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                     {tr(VIDEO_GROUP_LOC[group], lang)}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1916,8 +1916,8 @@ export default function ProductAdDialog({
                             aria-pressed={active}
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               active
-                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                                : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                                ? 'border-accent-warm/60 bg-accent-warm/15 text-accent-warm'
+                                : 'border-border bg-muted/60 text-muted-foreground hover:text-foreground/90'
                             }`}
                           >
                             <span className="text-sm leading-none">{v.icon}</span>
@@ -1938,15 +1938,15 @@ export default function ProductAdDialog({
 
           {/* Camera movement notes */}
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              {t.cameraNotes} <span className="text-zinc-600">{t.optional}</span>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t.cameraNotes} <span className="text-muted-foreground">{t.optional}</span>
             </div>
             <Textarea
               value={cameraMovement}
               onChange={(e) => setCameraMovement(e.target.value)}
               rows={2}
               placeholder={t.cameraNotesPlaceholder}
-              className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
+              className="min-h-[56px] border-border bg-surface-2 text-foreground"
             />
           </div>
 
@@ -1956,9 +1956,9 @@ export default function ProductAdDialog({
           {isSplit ? (
             <div className="space-y-3">
               {scenes.map((text, i) => (
-                <div key={i} className="rounded-md border border-white/10 bg-black/30 p-3">
+                <div key={i} className="rounded-md border border-border bg-surface-2 p-3">
                   <div className="mb-1.5 flex items-center justify-between">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {t.scene_} {i + 1} ({sceneRange(i)})
                     </div>
                     <Button
@@ -1981,8 +1981,8 @@ export default function ProductAdDialog({
               ))}
             </div>
           ) : scenes.length > 0 ? (
-            <div className="rounded-md border border-white/10 bg-black/30 p-3">
-              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <div className="rounded-md border border-border bg-surface-2 p-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t.adScenario} ({duration}s)
               </div>
               <SceneText text={scenes[0]} narrationLabel={t.narration} />
@@ -2021,18 +2021,18 @@ export default function ProductAdDialog({
                     {t.regenerate}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+                <PopoverContent align="end" dir={dir} className="w-52 border-border bg-card p-1">
                   <button
                     type="button"
                     onClick={() => generate(true)}
-                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-foreground transition hover:bg-accent"
                   >
                     {t.withNarration}
                   </button>
                   <button
                     type="button"
                     onClick={() => generate(false)}
-                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-foreground transition hover:bg-accent"
                   >
                     {t.withoutNarration}
                   </button>
@@ -2071,18 +2071,18 @@ export default function ProductAdDialog({
                   {t.generate}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+              <PopoverContent align="end" dir={dir} className="w-52 border-border bg-card p-1">
                 <button
                   type="button"
                   onClick={() => generate(true)}
-                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-foreground transition hover:bg-accent"
                 >
                   {t.withNarration}
                 </button>
                 <button
                   type="button"
                   onClick={() => generate(false)}
-                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-foreground transition hover:bg-accent"
                 >
                   {t.withoutNarration}
                 </button>
@@ -2092,13 +2092,13 @@ export default function ProductAdDialog({
         </div>
 
         <Dialog open={productPickerOpen} onOpenChange={(o) => { if (!preparingId) setProductPickerOpen(o) }}>
-          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+          <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
             <button
               type="button"
               onClick={openReframeHistory}
               title={t.reframeHistory}
               aria-label={t.reframeHistory}
-              className="absolute right-12 top-4 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-200"
+              className="absolute right-12 top-4 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-accent/50 text-foreground/80 transition hover:border-accent-warm/40 hover:text-accent-warm"
             >
               <History className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -2106,14 +2106,14 @@ export default function ProductAdDialog({
               <DialogTitle className="flex items-center gap-2">
                 <Boxes className="h-4 w-4" aria-hidden="true" /> {t.chooseFromProducts}
               </DialogTitle>
-              <DialogDescription className="text-zinc-400">{t.aspectHint}</DialogDescription>
+              <DialogDescription className="text-muted-foreground">{t.aspectHint}</DialogDescription>
             </DialogHeader>
 
 
             {/* Step 1: aspect ratio */}
             <div>
-              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.pickAspect}</div>
-              <div role="radiogroup" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.pickAspect}</div>
+              <div role="radiogroup" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
                 {PRODUCT_ASPECTS.map((opt) => {
                   const active = pickedAspect === opt.value
                   return (
@@ -2123,7 +2123,7 @@ export default function ProductAdDialog({
                       role="radio"
                       aria-checked={active}
                       onClick={() => setPickedAspect(opt.value)}
-                      className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                      className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'}`}
                     >
                       {opt.value}
                     </button>
@@ -2134,13 +2134,13 @@ export default function ProductAdDialog({
 
             {/* Step 2: product grid */}
             <div className="mt-3">
-              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.pickProduct}</div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.pickProduct}</div>
               {loadingProducts ? (
-                <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                   <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> {t.loadingProducts}
                 </div>
               ) : productPhotos.length === 0 ? (
-                <div className="py-10 text-center text-sm text-zinc-500">{t.noProducts}</div>
+                <div className="py-10 text-center text-sm text-muted-foreground">{t.noProducts}</div>
               ) : (
                 <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
                   {productPhotos.map((photo) => {
@@ -2151,18 +2151,18 @@ export default function ProductAdDialog({
                         type="button"
                         disabled={!pickedAspect || Boolean(preparingId)}
                         onClick={() => pickProduct(photo)}
-                        className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-accent-warm/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <img
                           src={photo.url}
                           alt={photo.title ?? 'Product'}
                           loading="lazy"
-                          className="aspect-square w-full bg-black/40 object-cover"
+                          className="aspect-square w-full bg-surface-2/60 object-cover"
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
                         />
-                        <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
+                        <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || t.untitled}</div>
                         {busy ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-xs text-zinc-100">
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-surface-2/80 text-xs text-foreground">
                             <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                             {t.preparing}
                           </div>
@@ -2183,20 +2183,20 @@ export default function ProductAdDialog({
         </Dialog>
 
         <Dialog open={reframeHistoryOpen} onOpenChange={setReframeHistoryOpen}>
-          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+          <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <History className="h-4 w-4" aria-hidden="true" /> {t.reframeHistory}
               </DialogTitle>
-              <DialogDescription className="text-zinc-400">{t.reuseHint}</DialogDescription>
+              <DialogDescription className="text-muted-foreground">{t.reuseHint}</DialogDescription>
             </DialogHeader>
 
             {loadingReframes ? (
-              <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+              <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                 <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> {t.loadingReframes}
               </div>
             ) : reframeItems.length === 0 ? (
-              <div className="py-10 text-center text-sm text-zinc-500">{t.noReframes}</div>
+              <div className="py-10 text-center text-sm text-muted-foreground">{t.noReframes}</div>
             ) : (
               <div className="grid max-h-[55vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
                 {reframeItems.map((item) => (
@@ -2204,19 +2204,19 @@ export default function ProductAdDialog({
                     key={item.id}
                     type="button"
                     onClick={() => reuseReframe(item)}
-                    className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                    className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-accent-warm/40"
                   >
                     <img
                       src={item.url}
                       alt={item.title ?? 'Reframed image'}
                       loading="lazy"
-                      className="aspect-square w-full bg-black/40 object-cover"
+                      className="aspect-square w-full bg-surface-2/60 object-cover"
                       onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
                     />
-                    <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                       {item.aspect}
                     </span>
-                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{item.title || t.untitled}</div>
+                    <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{item.title || t.untitled}</div>
                   </button>
                 ))}
               </div>
@@ -2241,12 +2241,12 @@ export default function ProductAdDialog({
         />
 
         <Dialog open={characterPickerOpen} onOpenChange={(o) => { if (!uploadingCharacter) setCharacterPickerOpen(o) }}>
-          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+          <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <UserRound className="h-4 w-4" aria-hidden="true" /> Choose a character
               </DialogTitle>
-              <DialogDescription className="text-zinc-400">
+              <DialogDescription className="text-muted-foreground">
                 Pick a character you created with the Character Sheet, or upload one. The ad scenario will feature this character.
               </DialogDescription>
             </DialogHeader>
@@ -2256,7 +2256,7 @@ export default function ProductAdDialog({
                 type="button"
                 onClick={() => characterFileInputRef.current?.click()}
                 disabled={uploadingCharacter}
-                className="inline-flex items-center gap-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md border border-accent-warm/30 bg-accent-warm/10 px-3 py-1.5 text-xs font-semibold text-accent-warm transition hover:border-accent-warm/60 hover:bg-accent-warm/20 disabled:opacity-50"
               >
                 {uploadingCharacter ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -2268,13 +2268,13 @@ export default function ProductAdDialog({
             </div>
 
             <div className="mt-3">
-              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">Your characters</div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your characters</div>
               {loadingCharacters ? (
-                <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                   <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> Loading characters…
                 </div>
               ) : characterPhotos.length === 0 ? (
-                <div className="py-10 text-center text-sm text-zinc-500">No characters yet. Create one with the Character Sheet, or upload an image above.</div>
+                <div className="py-10 text-center text-sm text-muted-foreground">No characters yet. Create one with the Character Sheet, or upload an image above.</div>
               ) : (
                 <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
                   {characterPhotos.map((photo) => (
@@ -2282,16 +2282,16 @@ export default function ProductAdDialog({
                       key={photo.id}
                       type="button"
                       onClick={() => pickCharacter(photo)}
-                      className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                      className="group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-accent-warm/40"
                     >
                       <img
                         src={photo.url}
                         alt={photo.title ?? 'Character'}
                         loading="lazy"
-                        className="aspect-square w-full bg-black/40 object-cover"
+                        className="aspect-square w-full bg-surface-2/60 object-cover"
                         onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
                       />
-                      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
+                      <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || t.untitled}</div>
                     </button>
                   ))}
                 </div>
@@ -2308,7 +2308,7 @@ export default function ProductAdDialog({
 
 
         <Dialog open={previewLightboxOpen && Boolean(safeMediaUrl(imagePreviewUrl))} onOpenChange={setPreviewLightboxOpen}>
-          <DialogContent dir={dir} className="max-w-3xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+          <DialogContent dir={dir} className="max-w-3xl border-border bg-card text-foreground">
             <DialogHeader>
               <DialogTitle className="text-base">{t.viewImage}</DialogTitle>
             </DialogHeader>

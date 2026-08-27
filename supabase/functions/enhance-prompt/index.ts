@@ -18,10 +18,33 @@ const BASE_SYSTEM_PROMPT = [
   "If no image is attached, just rewrite the user's text into a single,",
   "vivid, cinematic, concrete prompt with subject, action, setting,",
   "lighting, camera motion, and mood when relevant.",
-  "Preserve the user's original language exactly (Persian stays Persian,",
-  "English stays English, etc.).",
+  "Always write the rewritten prompt in ENGLISH, regardless of the input",
+  "language. Understand the user's meaning if they wrote in another language,",
+  "but output English. Preserve product names, character names, brand names,",
+  "URLs, identifiers, and proper nouns exactly as written — do not translate them.",
   "Output ONLY the rewritten prompt — no preamble,",
   "no quotes, no explanation, no markdown.",
+].join(" ");
+
+// Film-wizard mode: the Wand in Make Full Film Step 1 turns a short idea into
+// a polished, scenario-ready prompt. Unlike the generic rewrite, this must
+// ALWAYS output English, stay within 2-5 coherent sentences, and must NOT
+// produce SHOTs / ===SCENE=== / 5-second splits / plan counts / a full
+// scenario — those are the Scenario Writer's job.
+const FILM_SYSTEM_PROMPT = [
+  "You are an expert film director and prompt engineer for AI video generation.",
+  "Rewrite the user's short idea into a polished, professional film prompt.",
+  "ALWAYS write the output in English, even if the user's idea is in Persian or another language.",
+  "Write 2 to 5 coherent sentences (about 60-120 words) that together describe:",
+  "(1) the film's goal and the main story or event,",
+  "(2) the product's key benefit or message,",
+  "(3) the visual feel (camera, lighting, mood, style), and",
+  "(4) a clear ending or brand payoff.",
+  "Preserve the user's core idea faithfully; do NOT invent facts, features, or claims the user did not state.",
+  "The product is the hero. If a character is present, describe their natural interaction with the product while keeping the product central.",
+  "Use the provided film context (product, character, film type, duration, aspect ratio, camera angle, visual theme, narration, text-on-images) to shape the prompt, but do NOT list these settings as a checklist.",
+  "Do NOT write SHOTs, do NOT use \"===SCENE===\" delimiters, do NOT split into 5-second segments, do NOT mention plan counts, and do NOT write a full scenario. Those are the Scenario Writer's job.",
+  "Output ONLY the final prompt — no preamble, no labels, no quotes, no markdown, no explanation.",
 ].join(" ");
 
 const SILENT_SUFFIX = [
@@ -39,8 +62,8 @@ function narratedSuffix(script: string): string {
     "speaker) reading the following script verbatim. Build the visual scene,",
     "pacing, camera, and mood to match these exact words. Inside the rewritten",
     "prompt, include a clear directive such as 'voice-over narration delivering",
-    "the following script:' followed by the script in its original language and",
-    "wording, kept intact between quotes. Keep the rest of the prompt vivid and",
+    "the following script:' followed by the script kept intact between quotes.",
+    "Keep the rest of the prompt vivid and",
     "cinematic. The total output may be up to 130 words.",
     `\n\nNARRATOR SCRIPT:\n"""${script}"""`,
   ].join(" ");
@@ -63,12 +86,32 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-    const mode: "silent" | "narrated" | null =
-      body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
+    const mode: "silent" | "narrated" | "film" | null =
+      body?.mode === "silent" || body?.mode === "narrated" || body?.mode === "film"
+        ? body.mode
+        : null;
     const narratorScript: string =
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const styleHints: string =
       typeof body?.styleHints === "string" ? body.styleHints.trim().slice(0, 4000) : "";
+    const filmType: string =
+      typeof body?.filmType === "string" ? body.filmType.trim().slice(0, 50) : "";
+    const productName: string =
+      typeof body?.productName === "string" ? body.productName.trim().slice(0, 200) : "";
+    const characterDescription: string =
+      typeof body?.characterDescription === "string" ? body.characterDescription.trim().slice(0, 2000) : "";
+    const duration: number | null =
+      typeof body?.duration === "number" ? body.duration : null;
+    const aspectRatio: string =
+      typeof body?.aspectRatio === "string" ? body.aspectRatio.trim().slice(0, 20) : "";
+    const cameraAngle: string =
+      typeof body?.cameraAngle === "string" ? body.cameraAngle.trim().slice(0, 200) : "";
+    const visualTheme: string =
+      typeof body?.visualTheme === "string" ? body.visualTheme.trim().slice(0, 200) : "";
+    const withNarration: boolean | null =
+      typeof body?.withNarration === "boolean" ? body.withNarration : null;
+    const noTextOnImages: boolean | null =
+      typeof body?.noTextOnImages === "boolean" ? body.noTextOnImages : null;
     const rawUrls: unknown = body?.imageUrls;
     // SSRF protection: only allow https URLs from our own Supabase storage host
     // (user-images, wan-frames, merged-videos buckets) and known public CDNs.
@@ -135,19 +178,79 @@ Deno.serve(async (req) => {
           "INSPIRATION, not a template to copy literally: borrow their mood, energy,",
           "lighting feel, and visual sensibility, then adapt and reinterpret them to fit",
           "the user's specific subject/content and a believable result — while keeping the",
-          "user's core idea, subject identity, and original language fully intact:",
+          "user's core idea and subject identity fully intact:",
           `\n${styleHints}`,
         ].join(" ")
       : "";
 
+    // Build film context from the user's explicit creative choices.
+    const filmContextParts: string[] = [];
+    if (filmType) {
+      // Stable English identifiers plus legacy Persian values (PR #135) so
+      // existing stored data keeps working without destructive changes.
+      const filmTypeDescriptions: Record<string, string> = {
+        "Advertisement": "This is a commercial advertisement film. The tone should be persuasive, energetic, and conversion-focused. Highlight the product's unique selling points with dynamic visuals and compelling storytelling. Each scene should build desire and end with a clear call-to-action.",
+        "Product Showcase": "This is a product showcase / explainer film. The tone should be clear, informative, and engaging. Focus on demonstrating the product's features, benefits, and use cases with smooth, detailed visual storytelling. Educational yet captivating.",
+        "Manufacturing Process": "This is a manufacturing / process film. The tone should be documentary-style, showing the journey from raw materials to finished product. Emphasize craftsmanship, precision, scale, and the beauty of industrial processes.",
+        "Project Application": "This is a real-world application / case study film. The tone should be practical and results-oriented. Show the product being used in actual projects, demonstrating its impact, reliability, and performance on the job site.",
+        "Comparison": "This is a comparison film. The tone should be analytical and clear. Show before/after or side-by-side visuals that highlight advantages. Use split-screen or sequential contrasts to make differences obvious and memorable.",
+        "Brand Story": "This is a brand identity / storytelling film. The tone should be emotional, aspirational, and values-driven. Focus on brand story, mission, culture, and emotional connection rather than individual product features. Cinematic and memorable.",
+        "تبلیغاتی": "This is a commercial advertisement film. The tone should be persuasive, energetic, and conversion-focused. Highlight the product's unique selling points with dynamic visuals and compelling storytelling. Each scene should build desire and end with a clear call-to-action.",
+        "معرفی محصول": "This is a product showcase / explainer film. The tone should be clear, informative, and engaging. Focus on demonstrating the product's features, benefits, and use cases with smooth, detailed visual storytelling. Educational yet captivating.",
+        "فرآیند ساخت": "This is a manufacturing / process film. The tone should be documentary-style, showing the journey from raw materials to finished product. Emphasize craftsmanship, precision, scale, and the beauty of industrial processes.",
+        "کاربرد در پروژه": "This is a real-world application / case study film. The tone should be practical and results-oriented. Show the product being used in actual projects, demonstrating its impact, reliability, and performance on the job site.",
+        "مقایسه‌ای": "This is a comparison film. The tone should be analytical and clear. Show before/after or side-by-side visuals that highlight advantages. Use split-screen or sequential contrasts to make differences obvious and memorable.",
+        "برند": "This is a brand identity / storytelling film. The tone should be emotional, aspirational, and values-driven. Focus on brand story, mission, culture, and emotional connection rather than individual product features. Cinematic and memorable.",
+      };
+      const typeDesc = filmTypeDescriptions[filmType] ?? `This is a ${filmType} film.`;
+      filmContextParts.push(`FILM TYPE: ${filmType}. ${typeDesc}`);
+    }
+    if (productName) {
+      filmContextParts.push(`PRODUCT: The video must feature the product named "${productName}" prominently.`);
+    }
+    if (characterDescription) {
+      filmContextParts.push(`CHARACTER: ${characterDescription}`);
+    }
+    if (duration !== null && duration > 0) {
+      filmContextParts.push(`DURATION: ${duration} seconds total.`);
+    }
+    if (aspectRatio) {
+      filmContextParts.push(`ASPECT RATIO: ${aspectRatio}.`);
+    }
+    if (cameraAngle) {
+      filmContextParts.push(`CAMERA ANGLE: ${cameraAngle}`);
+    }
+    if (visualTheme) {
+      filmContextParts.push(`VISUAL THEME: ${visualTheme}`);
+    }
+    if (withNarration !== null) {
+      filmContextParts.push(
+        withNarration
+          ? "NARRATION: The film includes a voice-over narrator; the prompt should leave room for spoken narration."
+          : "NARRATION: The film has no narration; the prompt should rely on visual storytelling only.",
+      );
+    }
+    if (noTextOnImages !== null) {
+      filmContextParts.push(
+        noTextOnImages
+          ? "TEXT ON IMAGES: Keep the visuals clean with no on-screen text."
+          : "TEXT ON IMAGES: On-screen text is allowed where it helps the message.",
+      );
+    }
+    const filmContext = filmContextParts.length > 0
+      ? `\n\nFILM CONTEXT (use these details to shape the prompt, but keep the user's original idea and language intact):\n${filmContextParts.join("\n")}`
+      : "";
 
-    const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
-      mode === "silent"
-        ? SILENT_SUFFIX
-        : mode === "narrated"
-          ? narratedSuffix(narratorScript)
-          : DEFAULT_SUFFIX
-    }${styleSuffix}`;
+
+    const systemPrompt = mode === "film"
+      ? `${FILM_SYSTEM_PROMPT}${styleSuffix}${filmContext}`
+      : `${BASE_SYSTEM_PROMPT}\n\n${
+        mode === "silent"
+          ? SILENT_SUFFIX
+          : mode === "narrated"
+            ? narratedSuffix(narratorScript)
+            : DEFAULT_SUFFIX
+      }${styleSuffix}${filmContext}`;
 
 
 

@@ -1,4 +1,4 @@
-import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookmarkCheck,
@@ -28,7 +28,6 @@ import {
   Image as ImageIcon,
   ImagePlus,
   CalendarPlus,
-  LayoutGrid,
   Library,
   Languages,
   LoaderCircle,
@@ -105,6 +104,8 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
 
 import { ApiError } from '@/core/api/client'
@@ -113,7 +114,10 @@ import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
+import { TransitionPicker } from '@/modules/generator-ui/components/TransitionPicker'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
+import { DraggablePreview } from '@/modules/generator-ui/components/DraggablePreview'
+import { usePreviewPosition } from '@/modules/generator-ui/hooks/usePreviewPosition'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
@@ -124,7 +128,9 @@ import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { externalApiAdapterGateway, type LocalVideoStatusResult } from '@/modules/external-api-adapter/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { TRANSITION_LABEL, DEFAULT_TRANSITION_DURATION, transitionSpecFor, applyTransitionToAll } from '@/modules/generator-ui/lib/transitions'
 import { mergeVideoUrlsWebCodecs, canEncodeWithWebCodecs, WebCodecsUnsupportedError } from '@/modules/generator-ui/lib/mergeVideosWebCodecs'
+import { awaitUploadWithLateCleanup, createFinalFilmPipeline } from '@/modules/generator-ui/lib/finalFilmPipeline'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
   loadContinuity,
@@ -135,7 +141,9 @@ import {
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
 import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHandoff'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
-import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
+import { AccountCenterDialog } from '@/modules/generator-ui/components/AccountCenterDialog'
+import { initialsForName } from '@/modules/generator-ui/lib/initials'
+import { ThemeSwitcher } from '@/modules/generator-ui/components/ThemeSwitcher'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
@@ -148,11 +156,16 @@ import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
-import { NarrationReviewPanel } from '@/modules/generator-ui/components/NarrationReviewPanel'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
+import {
+  GlobalSceneBatchError,
+  queueSceneBatch,
+  waitForSceneBatch,
+  type SceneBatchResult,
+} from '@/modules/generator-ui/lib/sceneBatch'
 import {
   type ModelMeta,
   getAvailableModels,
@@ -163,31 +176,20 @@ import {
 } from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
+import {
+  autoFilmPreviewReducer,
+  createAutoFilmPreviewState,
+  summarizeAutoFilmBatch,
+} from '@/modules/generator-ui/lib/autoFilmPreview'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
 
 
-const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
-  { id: 'cut', label: 'Cut', durationMs: 0 },
-  { id: 'fade', label: 'Fade', durationMs: 500 },
-  { id: 'crossfade', label: 'Crossfade', durationMs: 500 },
-  { id: 'slide-left', label: 'Slide ←', durationMs: 500 },
-  { id: 'slide-right', label: 'Slide →', durationMs: 500 },
-  { id: 'wipe', label: 'Wipe', durationMs: 500 },
-  { id: 'zoom', label: 'Zoom', durationMs: 500 },
-]
-const TRANSITION_LABEL: Record<TransitionId, string> = TRANSITION_OPTIONS.reduce(
-  (acc, o) => { acc[o.id] = o.label; return acc },
-  {} as Record<TransitionId, string>,
-)
-const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.reduce(
-  (acc, o) => { acc[o.id] = o.durationMs; return acc },
-  {} as Record<TransitionId, number>,
-)
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
+import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
   CAMERA_STYLES,
@@ -235,7 +237,7 @@ function StyleSection({
 }) {
   return (
     <div className="space-y-1.5">
-      <h2 className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{title}</h2>
+      <h2 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
       <div className="flex flex-wrap gap-1.5">
         {items.map((item) => {
           const active = selectedIds.includes(item.id)
@@ -245,8 +247,8 @@ function StyleSection({
               type="button"
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
                 active
-                  ? 'border-amber-300 bg-amber-300/15 text-amber-100'
-                  : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/25 hover:bg-white/[0.06]'
+                  ? 'border-amber-300 bg-accent-warm/15 text-accent-warm'
+                  : 'border-border bg-accent/30 text-foreground/80 hover:border-border hover:bg-accent/60'
               }`}
             >
               <span aria-hidden="true">{item.icon}</span>
@@ -286,7 +288,7 @@ type UploadedFile = {
   error: string | null
 }
 
-type UserImageItem = {
+export type UserImageItem = {
   id: string
   storage_path: string
   created_at: string
@@ -497,9 +499,9 @@ function UserImageView({
 
   if (broken) {
     return (
-      <div className={`flex flex-col items-center justify-center gap-2 bg-[#0b0d10] text-center ${className ?? ''}`}>
-        <ImageIcon className="h-7 w-7 text-zinc-600" aria-hidden="true" />
-        <span className="px-2 text-xs text-zinc-500">Image unavailable</span>
+      <div className={`flex flex-col items-center justify-center gap-2 bg-surface-2 text-center ${className ?? ''}`}>
+        <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
+        <span className="px-2 text-xs text-muted-foreground">Image unavailable</span>
       </div>
     )
   }
@@ -708,7 +710,7 @@ function ImageDurationInput({
       }}
       onClick={(e) => e.stopPropagation()}
       aria-label="Image duration in seconds"
-      className="w-10 bg-transparent text-center text-zinc-100 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      className="w-10 bg-transparent text-center text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
     />
   )
 }
@@ -772,11 +774,11 @@ function getStatusDotClassName(status: string) {
   const normalizedStatus = normalizeStatus(status)
 
   if (normalizedStatus === 'completed') {
-    return 'bg-emerald-300'
+    return 'bg-action-emerald'
   }
 
   if (normalizedStatus === 'failed' || normalizedStatus === 'cancelled') {
-    return 'bg-rose-300'
+    return 'bg-action-rose'
   }
 
   return 'bg-amber-300'
@@ -1024,7 +1026,7 @@ function ProjectAudioTrackRow({
     }
   }, [track.url, signUrl])
 
-  const accentText = accent === 'sky' ? 'text-sky-200' : 'text-amber-200'
+  const accentText = accent === 'sky' ? 'text-accent-cool' : 'text-accent-warm'
 
   return (
     <div className="space-y-1.5">
@@ -1041,7 +1043,7 @@ function ProjectAudioTrackRow({
           }}
           aria-label={`Download ${label.toLowerCase()}`}
           title={`Download ${label.toLowerCase()}`}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
         >
           {downloading ? (
             <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -1050,13 +1052,13 @@ function ProjectAudioTrackRow({
           )}
         </button>
       </div>
-      <p className="truncate text-[11px] text-zinc-500">{track.name}</p>
+      <p className="truncate text-[11px] text-muted-foreground">{track.name}</p>
       {signed ? (
         <audio controls preload="metadata" src={signed} className="h-8 w-full" />
       ) : failed ? (
-        <p className="text-[11px] text-rose-300">Unable to load audio.</p>
+        <p className="text-[11px] text-action-rose">Unable to load audio.</p>
       ) : (
-        <p className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500">
+        <p className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" /> Preparing…
         </p>
       )}
@@ -1074,7 +1076,7 @@ export default function DashboardPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
-  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string; narrationText: string | null; prompt: string | null } | null>(null)
+  const [libraryTranscript, setLibraryTranscript] = useState<{ cardId: string; videoUrl: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -1542,23 +1544,33 @@ export default function DashboardPage() {
   // line, ratio chips wrapping). We observe its top edge and reserve that
   // much room for the preview so the video card never slides under the chat.
   const composerRef = useRef<HTMLFormElement | null>(null)
+  // Refs for the draggable central Preview: the workspace area, the fixed
+  // sidebars, the composer, and the preview frame itself.
+  const previewWorkspaceRef = useRef<HTMLElement | null>(null)
+  const previewRightSidebarRef = useRef<HTMLElement | null>(null)
+  const previewLeftSidebarRef = useRef<HTMLElement | null>(null)
+  const previewFrameRef = useRef<HTMLElement | null>(null)
+  const previewHeaderRef = useRef<HTMLElement | null>(null)
   const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
     if (typeof window === 'undefined') return 600
-    return Math.max(240, window.innerHeight - 320)
+    return Math.max(240, Math.round(Math.min(window.innerHeight - 320, window.innerHeight * 0.72) * 0.88))
   })
   useEffect(() => {
-    const SAFE_GAP = 24 // breathing room between preview card and composer
-    const TOP_RESERVE = 56 // top header strip (Start Over / Final Film / Music)
+    const SAFE_GAP = 28 // breathing room between preview card and composer
+    const TOP_RESERVE = 76 // top header strip (Start Over / Final Film / Music) + gap
+    const PREVIEW_SCALE = 0.88 // ~12% smaller preview for visual balance
+    const VERTICAL_MAX_VH = 0.72 // cap vertical (9:16) preview at ~72vh
     const recompute = () => {
       const el = composerRef.current
       const vh = window.innerHeight
       if (!el) {
-        setPreviewMaxHeightPx(Math.max(240, vh - 320))
+        setPreviewMaxHeightPx(Math.max(240, Math.round(Math.min(vh - 320, vh * VERTICAL_MAX_VH) * PREVIEW_SCALE)))
         return
       }
       const top = el.getBoundingClientRect().top
       const budget = Math.max(240, top - TOP_RESERVE - SAFE_GAP)
-      setPreviewMaxHeightPx(budget)
+      const capped = Math.min(budget, vh * VERTICAL_MAX_VH)
+      setPreviewMaxHeightPx(Math.round(capped * PREVIEW_SCALE))
     }
     recompute()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recompute) : null
@@ -1598,6 +1610,14 @@ export default function DashboardPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [previewDismissed, setPreviewDismissed] = useState(false)
+  // Ephemeral by design: only a user-started Make Full Film batch can populate
+  // this reducer. It is never hydrated or persisted, so refreshes, old clips,
+  // single-clip jobs and ordinary polling cannot auto-open Preview.
+  const [autoFilmPreview, dispatchAutoFilmPreview] = useReducer(
+    autoFilmPreviewReducer,
+    undefined,
+    createAutoFilmPreviewState,
+  )
   // Re-open preview whenever a card is explicitly selected.
   useEffect(() => {
     if (previewVideoId) setPreviewDismissed(false)
@@ -1605,6 +1625,7 @@ export default function DashboardPage() {
   const closePreview = () => {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
+    dispatchAutoFilmPreview({ type: 'dismiss' })
     setTranscriptOpen(false)
     setTranscriptVideoUrl(null)
   }
@@ -1624,6 +1645,17 @@ export default function DashboardPage() {
       setTranscriptResolving(false)
     }
   }, [signStorageUrl])
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
+    if (typeof window === 'undefined') return '16:9'
+    try {
+      const v = window.localStorage.getItem('generator:aspectRatio')
+      if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    } catch { /* ignore */ }
+    return '16:9'
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
+  }, [aspectRatio])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
@@ -1807,6 +1839,7 @@ export default function DashboardPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [upcomingOccasion, setUpcomingOccasion] = useState<{ title: string; daysAway: number } | null>(null)
   const [isBusinessOpen, setIsBusinessOpen] = useState(false)
+  const [isAccountCenterOpen, setIsAccountCenterOpen] = useState(false)
   const [hasBusinessInfo, setHasBusinessInfo] = useState<boolean | null>(null)
 
   // Deterministic daily check: is today (or within the next 3 days) a curated
@@ -1827,17 +1860,16 @@ export default function DashboardPage() {
   // Continuity Mode — automatic per-chain card-to-card continuity for multi-card
   // durations. State is persisted per generation chain (see continuityChainKey).
   const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
-  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
-    if (typeof window === 'undefined') return '16:9'
-    try {
-      const v = window.localStorage.getItem('generator:aspectRatio')
-      if (v === '9:16' || v === '1:1' || v === '16:9') return v
-    } catch { /* ignore */ }
-    return '16:9'
-  })
-  useEffect(() => {
-    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
-  }, [aspectRatio])
+  // Draggable preview position — must be called AFTER aspectRatio and
+  // previewMaxHeightPx are declared to avoid temporal dead zone violations.
+  const previewPosition = usePreviewPosition(userId, {
+    workspace: previewWorkspaceRef,
+    rightSidebar: previewRightSidebarRef,
+    leftSidebar: previewLeftSidebarRef,
+    composer: composerRef,
+    frame: previewFrameRef,
+    header: previewHeaderRef,
+  }, [aspectRatio, previewMaxHeightPx, isApprovedPanelOpen])
   // Per-job aspect ratio map so the preview chrome matches the clip exactly,
   // even before the asset row carries `aspect_ratio`. Persisted in localStorage.
   type Ratio = '9:16' | '1:1' | '16:9'
@@ -2425,7 +2457,25 @@ export default function DashboardPage() {
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
   type ProjectAudioTrack = { url: string; name: string }
-  type ProjectAudio = { music?: ProjectAudioTrack; voiceover?: ProjectAudioTrack }
+  /** Full audio-mix settings captured at finalization so "Reopen for editing"
+   *  restores the exact Final Film sound (ranges, timelines, volumes, mix mode).
+   *  Every field is optional for backward compatibility with older snapshots. */
+  type ProjectAudioSettings = {
+    musicRange?: [number, number]
+    musicTimeline?: [number, number]
+    musicVolume?: number
+    voiceoverRange?: [number, number]
+    voiceoverTimeline?: [number, number]
+    voiceoverVolume?: number
+    clipVolume?: number
+    voiceoverClipVolume?: number
+    soundtrackMode?: 'music-only' | 'mix'
+  }
+  type ProjectAudio = {
+    music?: ProjectAudioTrack
+    voiceover?: ProjectAudioTrack
+    settings?: ProjectAudioSettings
+  }
   const [projectAudio, setProjectAudio] = useState<Record<string, ProjectAudio>>({})
   const projectAudioKey = userId ? `project-audio:${userId}` : null
   useEffect(() => {
@@ -3191,7 +3241,7 @@ export default function DashboardPage() {
       throw err instanceof Error ? err : new Error(msg)
     }
   }
-  const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
+  const [transitions, setTransitions] = useState<Record<string, TransitionSpec>>({})
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
@@ -3206,11 +3256,6 @@ export default function DashboardPage() {
   // preview images (each regenerable) → explicit approval → render. Nothing
   // renders until the user approves in this flow.
   const [isMakeFilmWizardOpen, setIsMakeFilmWizardOpen] = useState(false)
-  // Always-fresh pointer to handleMergeAllVideos so the long-lived auto-film
-  // orchestrator (which starts minutes before the batch completes) invokes the
-  // LATEST closure — reading current generatedVideos/activeJobIds state — instead
-  // of a stale merge function captured when the orchestrator was first called.
-  const handleMergeAllVideosRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
@@ -3228,6 +3273,9 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  // Bumped on Start Over / workspace reset to clear VoiceoverDialog's transient
+  // state (text, generated audio, translation) without touching durable data.
+  const [voiceoverResetKey, setVoiceoverResetKey] = useState(0)
   // Saved products live in `archiveProductImages`, which is normally filled when
   // the Archive dialog opens. Users often open Voiceover → Product narration
   // directly, so load them on demand when the Voiceover dialog opens.
@@ -4876,7 +4924,7 @@ export default function DashboardPage() {
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
     | { kind: 'image'; image: UserImageItem }
-    | { kind: 'sequence'; clips: UnifiedClip[] }
+    | { kind: 'sequence'; clips: UnifiedClip[]; autoPlayAttemptId?: string }
 
   // A clip is "playable" in the live sequential preview if it's a ready video
   // (completed + has a storage_path) or an uploaded image.
@@ -4904,9 +4952,36 @@ export default function DashboardPage() {
     return Math.max(1, Math.round(total))
   }, [playableSequenceClips])
 
+  // Track the previous film length so we can detect when a new clip extends
+  // the project and auto-extend a full-length music timeline to match.
+  const prevMergedDurationRef = useRef(mergedDurationSec)
+
+  // When the project grows (a new clip is added), a music track that was
+  // previously covering the full film should auto-extend to the new end so the
+  // new clip isn't silent. A manually-shortened timeline is left untouched.
+  useEffect(() => {
+    const prev = prevMergedDurationRef.current
+    const next = mergedDurationSec
+    prevMergedDurationRef.current = next
+    const newEnd = resolveMusicTimelineEnd({
+      prevDurationSec: prev,
+      nextDurationSec: next,
+      hasMusic: Boolean(musicUrl),
+      hasMusicRange: musicRange[1] > musicRange[0],
+      timeline: musicTimeline,
+    })
+    if (newEnd !== null) {
+      setMusicTimeline(([start]) => [start, newEnd])
+    }
+  }, [mergedDurationSec, musicUrl, musicRange, musicTimeline])
+
 
 
   const previewItem = useMemo<PreviewItem | null>(() => {
+    // While a Make Full Film batch is generating, keep the central preview
+    // empty (only per-card loading/progress shows) until the whole batch
+    // settles and auto-opens.
+    if (isAutoFilming) return null
     // Highest priority: the transient Final Film output (not a card).
     if (lastMergedPreview) {
       const synthetic: JobDetail = {
@@ -4938,6 +5013,22 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
+    // A completed Make Full Film batch auto-opens its full sequence exactly
+    // once. It is placed after manual selection + dismissal so the user can
+    // still click a card or close it, and before the Library/sequence fallback
+    // so it wins over the generic "2+ playable clips" auto-stitch.
+    if (autoFilmPreview.active) {
+      return {
+        kind: 'sequence',
+        autoPlayAttemptId: autoFilmPreview.active.batchId,
+        clips: autoFilmPreview.active.clips.map((job) => ({
+          kind: 'video' as const,
+          id: job.id,
+          createdAt: job.created_at,
+          job,
+        })),
+      }
+    }
     // When the user is viewing a Library project, lock the preview to that
     // exact merged project. Never substitute another Library entry.
     if (selectedProjectId) {
@@ -4968,7 +5059,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, selectedProjectId, visibleVideos, playableSequenceClips])
+  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, autoFilmPreview.active, isAutoFilming, selectedProjectId, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
@@ -6278,15 +6369,11 @@ export default function DashboardPage() {
       })
     }
 
-    // 8. Move the film cover over to the draft scope.
-    setCoverImages((prev) => {
-      const cover = prev[finalId]
-      if (!cover) return prev
-      const { [finalId]: _dropCover, ...rest } = prev
-      const next = { ...rest, [draftId]: cover }
-      persistCoverImages(next)
-      return next
-    })
+    // 8. Do NOT move or delete the film cover. The finalized project keeps
+    // its cover association (it still exists in Library). The new draft starts
+    // without a cover — the user can create one if desired. This prevents
+    // both stale cover leaks into the draft AND unnecessary cover loss from
+    // the original Final project.
 
     // 8b. Move the film's persisted audio over to the draft scope so the
     // soundtrack stays attached and is restored into the live audio state.
@@ -6331,8 +6418,17 @@ export default function DashboardPage() {
     setVoiceoverDuration(0)
     setVoiceoverRange([0, 0])
     setVoiceoverTimeline([0, 0])
+    setMusicVolume(1)
+    setVoiceoverVolume(1)
+    setClipVolume(1)
+    setVoiceoverClipVolume(0.3)
+    setSoundtrackMode('mix')
     delete draftAudioSnapshotRef.current[draftId]
     if (!audio) return
+    const audioSettings = audio.settings
+    if (audioSettings?.clipVolume !== undefined) setClipVolume(audioSettings.clipVolume)
+    if (audioSettings?.voiceoverClipVolume !== undefined) setVoiceoverClipVolume(audioSettings.voiceoverClipVolume)
+    if (audioSettings?.soundtrackMode) setSoundtrackMode(audioSettings.soundtrackMode)
     // Always persist the restored audio under the draft scope so it survives
     // refresh / draft switch even when this was driven by an override (move).
     if (audio.music || audio.voiceover) {
@@ -6362,7 +6458,9 @@ export default function DashboardPage() {
         }
         setMusicName(name)
         setMusicUrl(url)
-        setMusicTimeline([0, mergedDurationSec])
+        setMusicTimeline(audioSettings?.musicTimeline ?? [0, mergedDurationSec])
+        if (audioSettings?.musicRange) setMusicRange(audioSettings.musicRange)
+        if (audioSettings?.musicVolume !== undefined) setMusicVolume(audioSettings.musicVolume)
         try {
           const a = new Audio()
           a.src = url
@@ -6370,8 +6468,8 @@ export default function DashboardPage() {
             const d = a.duration
             if (Number.isFinite(d) && d > 0) {
               setMusicDuration(d)
-              setMusicRange([0, d])
-              if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+              if (!audioSettings?.musicRange) setMusicRange([0, d])
+              if (mergedDurationSec <= 0 && !audioSettings?.musicTimeline) setMusicTimeline([0, tlEnd(d)])
             }
           })
         } catch { /* ignore */ }
@@ -6395,7 +6493,9 @@ export default function DashboardPage() {
         }
         setVoiceoverName(name)
         setVoiceoverUrl(url)
-        setVoiceoverTimeline([0, mergedDurationSec])
+        setVoiceoverTimeline(audioSettings?.voiceoverTimeline ?? [0, mergedDurationSec])
+        if (audioSettings?.voiceoverRange) setVoiceoverRange(audioSettings.voiceoverRange)
+        if (audioSettings?.voiceoverVolume !== undefined) setVoiceoverVolume(audioSettings.voiceoverVolume)
         try {
           const a = new Audio()
           a.src = url
@@ -6403,8 +6503,8 @@ export default function DashboardPage() {
             const d = a.duration
             if (Number.isFinite(d) && d > 0) {
               setVoiceoverDuration(d)
-              setVoiceoverRange([0, d])
-              if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+              if (!audioSettings?.voiceoverRange) setVoiceoverRange([0, d])
+              if (mergedDurationSec <= 0 && !audioSettings?.voiceoverTimeline) setVoiceoverTimeline([0, tlEnd(d)])
             }
           })
         } catch { /* ignore */ }
@@ -7183,6 +7283,10 @@ export default function DashboardPage() {
       theme?: string
       /** When false, no narration/voiceover is produced for any clip. */
       withNarration?: boolean
+      /** Wizard batches stay closed until their bounded poll produces Preview. */
+      suppressPreviewUntilBatchSettles?: boolean
+      /** Explicit flag: true when the wizard produced plan-based 5s shots. */
+      isPlanBased?: boolean
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7209,7 +7313,14 @@ export default function DashboardPage() {
     // supports (5 | 10 | 15). The sum always equals the chosen total.
     const totalDuration = opts?.durationSeconds ?? durationSeconds
     const clipDurations = computeClipDurations(totalDuration)
-    const perClipDuration: 5 | 10 | 15 = clipDurations[0] ?? 15
+    // For plan-based films (Make Full Film wizard), every plan is a 5-second clip.
+    // Use the explicit isPlanBased flag when provided; otherwise fall back to the
+    // legacy heuristic for backward compatibility.
+    const isPlanBased = opts?.isPlanBased ?? (
+      opts?.perSceneImageUrls && opts.perSceneImageUrls.length > 0 &&
+      (opts.durationSeconds ?? durationSeconds) / (opts.perSceneImageUrls.length || 1) === 5
+    )
+    const perClipDuration: 5 | 10 | 15 = isPlanBased ? 5 : (clipDurations[0] ?? 15)
 
     // The wizard's product/character selections win when supplied; otherwise
     // fall back to the composer's pinned product/character.
@@ -7253,19 +7364,20 @@ export default function DashboardPage() {
     const hasPerSceneImages = Boolean(
       opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
     )
+    // The review wizard supplies one approved image slot per scene. That makes
+    // every scene an independent job: no scene waits for a previous render or
+    // consumes its last frame. Other callers retain the legacy chained flow.
+    const isIndependentSceneBatch = Array.isArray(opts?.perSceneImageUrls)
     const scenarioModel =
       continuityCharacterRef || activeProduct || hasPerSceneImages
         ? toImageToVideoModel(selectedModel)
         : selectedModel
     if (continuityCharacterRef || activeProduct || hasPerSceneImages) setGenerationMode('image-to-video')
-    // Job ids created in this batch, returned so an orchestrator can await the
-    // batch's completion (e.g. to auto-assemble the Final Film).
+    // Job ids created in this batch, returned so the caller can report each
+    // clip's terminal state. Final Film assembly remains a manual action.
     const createdJobIds: string[] = []
-    try {
-      for (let i = 0; i < scenes.length; i++) {
-        const sourcePrompt = scenes[i].trim()
-        if (!sourcePrompt) continue
-        const sceneLabel = `Scene ${i + 1}`
+    const queueScene = async (sourcePrompt: string, i: number): Promise<string> => {
+      const sceneLabel = `Scene ${i + 1}`
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited. When the
         // wizard chose "Without narration", suppress narration entirely.
@@ -7299,9 +7411,10 @@ export default function DashboardPage() {
         const perSceneImageUrl = opts?.perSceneImageUrls?.[i]
         if (perSceneImageUrl) {
           startFrameUrl = perSceneImageUrl
-          // Keep continuity: capture the previous clip's last frame as the end
-          // frame for this scene so the sequence still flows from scene to scene.
-          if (i > 0 && previousJobId) {
+          // Legacy chained callers may still interpolate from the previous
+          // clip. Wizard batches never wait here: each approved image starts an
+          // independent job and one failed scene cannot block the next queue.
+          if (!isIndependentSceneBatch && i > 0 && previousJobId) {
             try {
               endFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
             } catch (err) {
@@ -7313,8 +7426,12 @@ export default function DashboardPage() {
               endFrameUrl = undefined
             }
           }
-        } else if (i === 0) {
-          startFrameUrl = firstSceneImageUrl
+        } else if (i === 0 || isIndependentSceneBatch) {
+          // A missing wizard image never falls back to another scene's image.
+          // Scene 1 may still use the caller's explicit first-frame fallback;
+          // later scenes remain independent and unseeded unless identity prep
+          // below creates their own frame.
+          startFrameUrl = i === 0 ? firstSceneImageUrl : undefined
           // No uploaded start frame but a character is anchored: build a clean
           // single-view start frame from the Character Sheet so card 1 locks onto
           // the character instead of drifting in pure text-to-video.
@@ -7381,17 +7498,42 @@ export default function DashboardPage() {
           setLockedProjectRatio(effectiveRatio)
           persistLockedRatio(effectiveRatio)
         }
-        // Keep the preview on the full sequential auto-stitch instead of
-        // pinning to each pending clip as it's queued.
-        setPreviewVideoId(null)
-        setPreviewDismissed(false)
+        // Other scenario flows preserve their existing live-preview behavior.
+        // The reviewed Make Full Film path opens exactly once after its own
+        // batch settles, never once per queued or polled card.
+        if (!opts?.suppressPreviewUntilBatchSettles) {
+          setPreviewVideoId(null)
+          setPreviewDismissed(false)
+        }
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
-        previousJobId = seededJob.id
-        createdJobIds.push(seededJob.id)
+        if (!isIndependentSceneBatch) previousJobId = seededJob.id
+        return seededJob.id
+    }
+    try {
+      if (isIndependentSceneBatch) {
+        const queueResult = await queueSceneBatch(
+          scenes,
+          queueScene,
+          (failure) => {
+            console.error(`Scene ${failure.sceneIndex + 1}: queue failed`, failure.message)
+          },
+        )
+        createdJobIds.push(...queueResult.jobIds)
+        if (queueResult.failed.length > 0) {
+          setVideoColumnMessage(
+            `${queueResult.jobIds.length} scene${queueResult.jobIds.length === 1 ? '' : 's'} queued; ${queueResult.failed.length} failed to queue.`,
+          )
+        }
+      } else {
+        for (let i = 0; i < scenes.length; i += 1) {
+          const sourcePrompt = scenes[i].trim()
+          if (!sourcePrompt) continue
+          createdJobIds.push(await queueScene(sourcePrompt, i))
+        }
       }
-      setVideoColumnMessage(null)
+      if (!isIndependentSceneBatch) setVideoColumnMessage(null)
       return createdJobIds
     } catch (error) {
       if (error instanceof ApiError && error.code === 'TIMEOUT') {
@@ -7434,33 +7576,21 @@ export default function DashboardPage() {
     return await signFramesUrl(storagePath).catch(() => data.publicUrl)
   }
 
-  // Poll the created jobs directly until every one reaches a terminal state,
-  // merging each finished detail into state so the subsequent Final Film merge
-  // sees the completed clips. Returns true when at least one clip completed with
-  // a playable video. Independent of the component's own poll loop (that loop
-  // also runs; both are idempotent reads).
-  async function waitForAutoFilmBatch(jobIds: string[]): Promise<boolean> {
-    const deadline = Date.now() + 45 * 60_000
-    const pending = new Set(jobIds)
-    let anyPlayable = false
-    while (pending.size > 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5_000))
-      for (const id of Array.from(pending)) {
-        let detail: JobDetail
-        try {
-          detail = await jobOrchestratorGateway.getJob(id)
-        } catch {
-          continue // transient poll failure — retry on the next tick
-        }
-        if (!isTerminalStatus(detail.status)) continue
-        pending.delete(id)
-        setGeneratedVideos((cur) => mergeJob(cur, detail))
-        if (normalizeStatus(detail.status) === 'completed' && detail.video?.storage_path) {
-          anyPlayable = true
-        }
-      }
-    }
-    return anyPlayable && pending.size === 0
+  // Poll every wizard clip independently with a hard deadline. Successful
+  // cards are preserved as they settle; failed and timed-out clips stay
+  // separate in the returned summary.
+  async function waitForApprovedFilmBatch(
+    jobIds: string[],
+  ): Promise<{ result: SceneBatchResult; settled: Map<string, JobDetail> }> {
+    const settled = new Map<string, JobDetail>()
+    const result = await waitForSceneBatch(jobIds, jobOrchestratorGateway.getJob, {
+      onSettled: (detail) => {
+        const job = detail as JobDetail
+        settled.set(job.id, job)
+        setGeneratedVideos((cur) => mergeJob(cur, job))
+      },
+    })
+    return { result, settled }
   }
 
   // ── Gated "Make Full Film" wizard helpers ────────────────────────────────
@@ -7527,6 +7657,7 @@ export default function DashboardPage() {
           withNarration: options?.withNarration,
           cameraStyle: options?.cameraStyle,
           genre: options?.theme,
+          unit: "plan",
         },
       })
       if (error) throw error
@@ -7607,7 +7738,13 @@ export default function DashboardPage() {
       })
       if (!composePrompt) throw new Error('Could not build the scene composition prompt')
       const { data: cData, error: cErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: composePrompt, imageUrls: [productUrl, characterUrl], aspectRatio: ratio },
+        body: {
+          prompt: composePrompt,
+          imageUrls: [productUrl, characterUrl],
+          referenceRoles: ['product', 'character'],
+          referenceCharacterSheets: [false, !!characterSheet],
+          aspectRatio: ratio,
+        },
       })
       if (cErr) throw cErr
       const composedUrl = (cData as { dataUrl?: unknown } | null)?.dataUrl
@@ -7651,9 +7788,9 @@ export default function DashboardPage() {
     return await stageImageIntoFramesBucket(dataUrl)
   }
 
-  // Step 3 (ONLY after the explicit Approve click) — seed one video job per
-  // scene with the approved preview images, await the whole batch, then
-  // auto-assemble the Final Film via the existing merge path.
+  // Step 3 (ONLY after the explicit Approve click) — seed one independent video
+  // job per approved scene and report the batch. Final Film assembly remains a
+  // separate manual action through the existing Final Film button.
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
@@ -7713,34 +7850,51 @@ export default function DashboardPage() {
         cameraStyle: options?.creative?.cameraStyle,
         theme: options?.creative?.theme,
         withNarration: options?.withNarration,
+        suppressPreviewUntilBatchSettles: true,
       })
+      const requestedSceneCount = scenes.filter((scene) => scene.trim().length > 0).length
+      const queueFailedCount = Math.max(0, requestedSceneCount - createdJobIds.length)
       if (!createdJobIds || createdJobIds.length === 0) {
-        throw new Error('No scenes could be queued for the film.')
+        setComposerError('No scenes could be queued for the film.')
+        setVideoColumnMessage(`No clips finished. ${queueFailedCount} failed to queue; 0 pending.`)
+        return
       }
       // Clear the composer prompt like the existing auto-split path does.
       setPromptText('')
 
-      // Wait for the whole batch.
+      // Wait for queued clips with a bounded poll. Completed cards are kept
+      // even when another clip fails or remains pending at the deadline.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
-      const anyPlayable = await waitForAutoFilmBatch(createdJobIds)
-      if (!anyPlayable) {
+      const { result: batch, settled } = await waitForApprovedFilmBatch(createdJobIds)
+      const failedCount = queueFailedCount + batch.failed.length
+      if (batch.completed.length === 0) {
         setComposerError('The scenes did not finish rendering — please try again.')
-        setVideoColumnMessage('No scenes finished rendering. Nothing to assemble.')
+        setVideoColumnMessage(
+          `No clips finished. ${failedCount} failed; ${batch.pending.length} still pending after the wait limit.`,
+        )
         return
       }
-      setVideoColumnMessage('All scenes ready — assembling your Final Film…')
-      // Auto-assemble the Final Film through the existing merge path once every
-      // scene has succeeded, so the user gets a complete film without a manual
-      // step. handleMergeAllVideosRef always points at the current handler.
-      try {
-        await handleMergeAllVideosRef.current()
-      } catch (mergeErr) {
-        const msg = mergeErr instanceof Error ? mergeErr.message : 'Could not assemble the Final Film.'
-        setComposerError(msg)
-        setVideoColumnMessage(msg)
+      const statusParts = [`${batch.completed.length} clip${batch.completed.length === 1 ? '' : 's'} ready`]
+      if (failedCount > 0) statusParts.push(`${failedCount} failed`)
+      if (batch.pending.length > 0) statusParts.push(`${batch.pending.length} still pending`)
+      setVideoColumnMessage(`${statusParts.join('; ')}. Use Final Film when you are ready to assemble them.`)
+      // Auto-open the full sequence ONLY when every expected card completed.
+      // A failed/cancelled/pending card keeps the existing error/retry surface
+      // and never auto-plays an incomplete preview.
+      if (batch.failed.length === 0 && batch.pending.length === 0) {
+        const summary = summarizeAutoFilmBatch(createdJobIds, settled, new Set(batch.pending))
+        setLastMergedPreview(null)
+        setPreviewVideoId(null)
+        setPreviewDismissed(false)
+        dispatchAutoFilmPreview({
+          type: 'batch-settled',
+          batchId: summary.batchId,
+          clips: summary.completed,
+        })
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Could not generate the film.'
+      const rootError = err instanceof GlobalSceneBatchError ? err.cause : err
+      const msg = generationStartErrorMessage(rootError, 'Could not generate the film.')
       setComposerError(msg)
       setVideoColumnMessage(msg)
     } finally {
@@ -8280,26 +8434,58 @@ export default function DashboardPage() {
       return
     }
 
+    setIsMerging(true)
+    setMergeProgress(0)
+    setMergeStage(null)
+    setVideoColumnMessage(null)
+    const pipeline = createFinalFilmPipeline(10 * 60_000)
+    mergeAbortRef.current = pipeline.controller
+    const stopPipelineUi = () => {
+      pipeline.finish()
+      mergeAbortRef.current = null
+      setIsMerging(false)
+      setMergeProgress(0)
+      setMergeStage(null)
+    }
+
     // Pre-flight: verify each video clip's source file is actually reachable.
     // Stale snapshots in localStorage can reference Veo files that were deleted
     // on the server; those would 404 inside mergeVideoUrls and abort the whole
     // Final Film with an opaque "Failed to load video" error.
     const brokenClips: { id: string; filename: string; jobId: string }[] = []
     {
-      const checks = await Promise.all(
-        eligibleClips.map(async (clip) => {
-          if (clip.kind !== 'video') return { clip, ok: true }
-          const src = clip.job.video?.storage_path as string | undefined
-          if (!src) return { clip, ok: false }
-          try {
-            const probeUrl = await proxiedVideoUrl(src)
-            const res = await fetch(probeUrl, { method: 'HEAD', cache: 'no-store' })
-            return { clip, ok: res.ok }
-          } catch {
-            return { clip, ok: false }
-          }
-        }),
-      )
+      let checks: { clip: UnifiedClip; ok: boolean }[]
+      try {
+        checks = await pipeline.race(Promise.all(
+          eligibleClips.map(async (clip) => {
+            if (clip.kind !== 'video') return { clip, ok: true }
+            const src = clip.job.video?.storage_path as string | undefined
+            if (!src) return { clip, ok: false }
+            try {
+              const probeUrl = await pipeline.race(proxiedVideoUrl(src))
+              const res = await pipeline.race(fetch(probeUrl, {
+                method: 'HEAD',
+                cache: 'no-store',
+                signal: pipeline.signal,
+              }))
+              return { clip, ok: res.ok }
+            } catch {
+              if (pipeline.signal.aborted) throw pipeline.signal.reason
+              return { clip, ok: false }
+            }
+          }),
+        ))
+      } catch (error) {
+        stopPipelineUi()
+        setVideoColumnMessage(
+          error instanceof MergeCancelledError
+            ? 'Rendering cancelled.'
+            : error instanceof Error
+              ? error.message
+              : 'Could not verify source videos.',
+        )
+        return
+      }
       const goodClips: UnifiedClip[] = []
       for (const { clip, ok } of checks) {
         if (ok) {
@@ -8341,14 +8527,11 @@ export default function DashboardPage() {
           ? `Source file(s) missing on server: ${names}. Broken clip(s) removed from workspace — please regenerate.`
           : 'Need at least 1 finished item (video or image) to finalize.',
       )
+      stopPipelineUi()
       return
     }
 
     // Single-clip Final Film is always allowed — edits and audio are optional.
-    setIsMerging(true)
-    setMergeProgress(0)
-    setMergeStage(null)
-    setVideoColumnMessage(null)
     // Final Film now saves the recorder's stable WebM output directly. Do not
     // pre-load ffmpeg.wasm here; that was the root cause of long projects
     // freezing around the old 95% encoding stage.
@@ -8359,10 +8542,11 @@ export default function DashboardPage() {
     // Pre-flight: refresh the auth session so the storage upload at the end
     // of Final Film never fails with a stale token (which would otherwise
     // leave the UI stuck right after the merge finalizes).
-    try { await supabase.auth.refreshSession() } catch { /* ignore */ }
-    // Declared here so the `finally` block can always clear it on success.
-    let pipelineTimer: ReturnType<typeof setTimeout> | null = null
     try {
+      try { await pipeline.race(supabase.auth.refreshSession()) } catch {
+        if (pipeline.signal.aborted) throw pipeline.signal.reason
+        // A refresh failure is non-fatal; the existing session may still work.
+      }
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
       const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
@@ -8372,8 +8556,8 @@ export default function DashboardPage() {
         : undefined
       if (firstVideoSrc) {
         try {
-          const probeUrl = await proxiedVideoUrl(firstVideoSrc)
-          targetSize = await new Promise((resolve) => {
+          const probeUrl = await pipeline.race(proxiedVideoUrl(firstVideoSrc))
+          targetSize = await pipeline.race(new Promise((resolve) => {
             const v = document.createElement('video')
             v.crossOrigin = 'anonymous'
             v.muted = true
@@ -8381,8 +8565,11 @@ export default function DashboardPage() {
             v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
             v.onerror = () => resolve({ width: 1280, height: 720 })
             v.src = probeUrl
-          })
-        } catch { targetSize = { width: 1280, height: 720 } }
+          }))
+        } catch {
+          if (pipeline.signal.aborted) throw pipeline.signal.reason
+          targetSize = { width: 1280, height: 720 }
+        }
       } else {
         const r = aspectRatio
         targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
@@ -8402,11 +8589,11 @@ export default function DashboardPage() {
           const rawSrc =
             editedClips[clip.job.id]?.url ??
             (clip.job.video!.storage_path as string)
-          const src = await proxiedVideoUrl(rawSrc)
+          const src = await pipeline.race(proxiedVideoUrl(rawSrc))
           mergeClips.push({ kind: 'video', url: src })
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          const src = await proxiedVideoUrl(clip.image.storage_path)
+          const src = await pipeline.race(proxiedVideoUrl(clip.image.storage_path))
           mergeClips.push({ kind: 'image', url: src, durationSec: seconds })
         }
       }
@@ -8414,11 +8601,15 @@ export default function DashboardPage() {
       // Bake the film cover (if any) as the opening segment so it is truly
       // rendered into the exported file and becomes the natural first-frame
       // thumbnail. It is held for the user-configured cover duration.
+      // SECURITY: currentCover is derived from coverScopeKey (the current
+      // project/draft scope) ONLY. Covers from other scopes, stale
+      // localStorage entries, or previous projects can never reach here.
       if (currentCover?.storage_path) {
         try {
-          const coverSrc = await proxiedVideoUrl(currentCover.storage_path)
+          const coverSrc = await pipeline.race(proxiedVideoUrl(currentCover.storage_path))
           mergeClips.unshift({ kind: 'image', url: coverSrc, durationSec: currentCoverDuration })
         } catch (e) {
+          if (pipeline.signal.aborted) throw pipeline.signal.reason
           console.warn('[merge] could not load cover image, skipping cover:', e)
         }
       }
@@ -8431,8 +8622,8 @@ export default function DashboardPage() {
         transitionsForMerge.push({ id: 'cut', durationMs: 0 })
       }
       for (const clip of eligibleClips.slice(0, -1)) {
-        const id = transitions[clip.id] ?? 'cut'
-        transitionsForMerge.push({ id, durationMs: TRANSITION_DURATION[id] ?? 0 })
+        const spec = transitions[clip.id]
+        transitionsForMerge.push(spec ?? { id: 'cut', durationMs: 0 })
       }
 
 
@@ -8466,18 +8657,6 @@ export default function DashboardPage() {
             clipVolume: mixedClipVolume,
           }
         : undefined
-      // Overall pipeline watchdog: if the entire merge+transcode+upload chain
-      // hasn't finished in 10 min, surface a clear error instead of leaving
-      // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
-      // successful run never leaves a dangling 10-min timeout behind.
-      const PIPELINE_TIMEOUT_MS = 10 * 60_000
-      const pipelineTimeout = new Promise<never>((_, reject) => {
-        pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
-      })
-
-      const abortController = new AbortController()
-      mergeAbortRef.current = abortController
-
       const overlayArg = contactActive
         ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
         : undefined
@@ -8497,10 +8676,9 @@ export default function DashboardPage() {
         }
       }
       type MergeFn = typeof mergeVideoUrls
-      const runMerge = (fn: MergeFn) => Promise.race([
-        fn(mergeClips, mergeProgressCb, audioOpt, transitionsForMerge, abortController.signal, overlayArg),
-        pipelineTimeout,
-      ])
+      const runMerge = (fn: MergeFn) => pipeline.race(
+        fn(mergeClips, mergeProgressCb, audioOpt, transitionsForMerge, pipeline.signal, overlayArg),
+      )
 
       // Prefer the deterministic WebCodecs MP4 encoder — it produces a smooth,
       // lag-free file because encoding is decoupled from wall-clock. Fall back
@@ -8522,23 +8700,25 @@ export default function DashboardPage() {
         mergeRes = await runMerge(mergeVideoUrls)
       }
 
-      if (abortController.signal.aborted) throw new MergeCancelledError()
+      if (pipeline.signal.aborted) throw pipeline.signal.reason
 
       setMergeStage('uploading')
       setMergeProgress(99)
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
-      // Hard timeout on the upload: if Supabase storage hangs (network/CDN
-      // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
-      // a typical Final Film blob (<200MB).
       const uploadPromise = supabase.storage
         .from(MERGED_BUCKET)
         .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
-      const uploadTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
+      const { error: upErr } = await awaitUploadWithLateCleanup(
+        uploadPromise,
+        pipeline.race,
+        async () => {
+          const { error } = await supabase.storage.from(MERGED_BUCKET).remove([storagePath])
+          if (error) console.warn('[merge] failed to clean up late upload', { storagePath, error })
+        },
       )
-      const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
       if (upErr) throw new Error(upErr.message)
+      pipeline.finish()
 
       setMergeProgress(100)
       setMergeStage(null)
@@ -8700,6 +8880,19 @@ export default function DashboardPage() {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
             if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
           }
+          // Capture the full mix so "Reopen for editing" restores the exact
+          // Final Film sound, not just the raw music/voiceover files.
+          entry.settings = {
+            musicRange: hasMusic ? musicRange : undefined,
+            musicTimeline: hasMusic ? musicTimeline : undefined,
+            musicVolume: hasMusic ? musicVolume : undefined,
+            voiceoverRange: hasVoiceover ? voiceoverRange : undefined,
+            voiceoverTimeline: hasVoiceover ? voiceoverTimeline : undefined,
+            voiceoverVolume: hasVoiceover ? voiceoverVolume : undefined,
+            clipVolume,
+            voiceoverClipVolume,
+            soundtrackMode,
+          }
           if (entry.music || entry.voiceover) {
             const nextAudio = { ...projectAudio, [mergedId]: entry }
             setProjectAudio(nextAudio)
@@ -8786,27 +8979,10 @@ export default function DashboardPage() {
             })
           }
         }
-        // Carry the Film Cover from the finalized draft/project scope over to
-        // the new merged project so it stays attached and visible after Final
-        // Film, and never lingers under the now-retired draft id.
-        {
-          const sourceScopeKeys = [selectedProjectId, activeDraftId].filter(
-            (k): k is string => !!k,
-          )
-          let movedCover: UserImageItem | null = null
-          for (const k of sourceScopeKeys) {
-            if (coverImages[k]) { movedCover = coverImages[k]; break }
-          }
-          if (movedCover) {
-            setCoverImages((prev) => {
-              const next = { ...prev }
-              for (const k of sourceScopeKeys) delete next[k]
-              next[mergedId] = movedCover as UserImageItem
-              persistCoverImages(next)
-              return next
-            })
-          }
-        }
+        // Do NOT carry the Film Cover from the finalized draft/project scope
+        // over to the new merged project. Covers must only exist for the
+        // scope where the user explicitly created them. Auto-carrying causes
+        // stale covers from previous projects to leak into new projects.
         setActiveDraftId(null)
         persistActiveDraftId(null)
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
@@ -8857,7 +9033,7 @@ export default function DashboardPage() {
       setVideoColumnMessage(friendly)
       }
     } finally {
-      if (pipelineTimer) { clearTimeout(pipelineTimer); pipelineTimer = null }
+      pipeline.finish()
       mergeAbortRef.current = null
       setIsMerging(false)
       setMergeProgress(0)
@@ -8865,13 +9041,6 @@ export default function DashboardPage() {
     }
 
   }
-
-  // Keep the merge ref pointing at the current-render closure so the auto-film
-  // orchestrator always merges with up-to-date state. No dep array: refreshes
-  // after every render, which is exactly when the closed-over state changes.
-  useEffect(() => {
-    handleMergeAllVideosRef.current = handleMergeAllVideos
-  })
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
@@ -8918,6 +9087,9 @@ export default function DashboardPage() {
     setMergeStage(null)
     // Drop the transient Final Film preview so Start Over fully clears it.
     setLastMergedPreview(null)
+    // Clear the currently displayed automatic batch while preserving its
+    // consumed guard, so Start Over cannot resurrect an old batch.
+    dispatchAutoFilmPreview({ type: 'clear-active' })
     // Reset the composer to a fresh state.
     setPromptText('')
     setSelectedCharacter(null)
@@ -8952,10 +9124,36 @@ export default function DashboardPage() {
       setWorkspaceHiddenImageIds(nextHiddenImgs)
       persistWorkspaceHiddenImageIds(nextHiddenImgs)
     }
+    // Clear the cover association for the current scope so it cannot leak
+    // into the next project. The underlying image file is NOT deleted — only
+    // the scope→cover mapping is dropped. The user can create a fresh cover
+    // in the new project.
+    {
+      const scopeKey = selectedProjectId ?? activeDraftId ?? null
+      if (scopeKey) {
+        setCoverImages((prev) => {
+          if (!(scopeKey in prev)) return prev
+          const { [scopeKey]: _drop, ...rest } = prev
+          persistCoverImages(rest)
+          return rest
+        })
+        setCoverDurations((prev) => {
+          if (!(scopeKey in prev)) return prev
+          const { [scopeKey]: _drop, ...rest } = prev
+          persistCoverDurations(rest)
+          return rest
+        })
+      }
+    }
     setSelectedProjectId(null)
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
+
+    // Clear the Voiceover dialog's transient state (text, generated audio,
+    // translation) so a new project opens with a clean TEXT field. Durable
+    // Draft/Final Film voiceovers and Library files are untouched.
+    setVoiceoverResetKey((k) => k + 1)
 
     // No server-side cleanup: Library files in `merged-videos` are kept.
   }
@@ -9040,7 +9238,7 @@ export default function DashboardPage() {
 
   return (
     <main
-      className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
+      className="relative min-h-screen overflow-hidden bg-background text-foreground"
       style={{
         backgroundImage:
           'linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px)',
@@ -9114,7 +9312,7 @@ export default function DashboardPage() {
       })()}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
-          isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
+          isDragging ? 'border-accent-warm/40 bg-amber-300/[0.045]' : 'border-transparent'
         }`}
       />
 
@@ -9127,37 +9325,62 @@ export default function DashboardPage() {
         onChange={handleFileInputChange}
       />
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className={`fixed left-4 top-4 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}
-            type="button"
-            aria-label="Open menu"
-          >
-            <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" sideOffset={8} className="w-64">
-          <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
-            <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setIsApprovedPanelOpen(true)}>
-            <Library className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>Library</span>
-            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {approvedIds.size}
-            </span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => { void signOut() }} className="text-red-400 focus:text-red-300">
-            <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>Sign out</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className={`fixed left-4 top-4 flex items-center gap-2 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="grid h-10 w-10 place-items-center rounded-full border border-transparent transition hover:border-border hover:bg-accent/45"
+              type="button"
+              aria-label="Open account menu"
+            >
+              <Avatar className="h-10 w-10 ring-1 ring-border">
+                {profile?.avatar_url ? (
+                  <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
+                ) : null}
+                <AvatarFallback className="bg-accent text-sm font-semibold text-foreground/90">
+                  {initialsForName(profile?.first_name ?? '', profile?.last_name ?? '', profile?.email ?? session?.user.email ?? '')}
+                </AvatarFallback>
+              </Avatar>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" sideOffset={8} className="w-64">
+            <DropdownMenuItem onSelect={() => setIsAccountCenterOpen(true)} className="flex items-center gap-2 text-xs font-normal text-muted-foreground focus:text-foreground/90">
+              <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => { void signOut() }} className="text-danger focus:text-danger">
+              <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Library"
+                title="Library"
+                onClick={() => setIsApprovedPanelOpen((open) => !open)}
+                className={`relative grid h-9 w-9 place-items-center rounded-md border transition ${
+                  isApprovedPanelOpen
+                    ? 'border-red-500/40 bg-red-500/10 text-danger'
+                    : 'border-transparent text-danger hover:border-border hover:bg-accent/45 hover:text-danger'
+                }`}
+              >
+                <Library className="h-[18px] w-[18px]" aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-surface-2 px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
+                  {approvedIds.size}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Library
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-      <div className={`fixed left-14 top-4 flex items-center gap-2 sm:left-16 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
         {(() => {
           const isAlert = upcomingOccasion !== null
           const occasionLabel = upcomingOccasion
@@ -9181,14 +9404,14 @@ export default function DashboardPage() {
         >
           <span className="relative grid place-items-center">
             <CalendarDays
-              className={`h-[20px] w-[20px] ${isAlert ? 'text-red-300' : 'text-emerald-300'}`}
+              className={`h-[20px] w-[20px] ${isAlert ? 'text-danger' : 'text-action-emerald'}`}
               aria-hidden="true"
             />
             {isAlert && (
               <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-red-500/70" aria-hidden="true" />
             )}
             <span
-              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-[#0b0c0e] ${
+              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-ring ${
                 isAlert ? 'bg-red-500' : 'bg-emerald-500'
               }`}
               aria-hidden="true"
@@ -9196,7 +9419,7 @@ export default function DashboardPage() {
           </span>
           <span
             className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
-              isAlert ? 'text-red-300' : 'text-emerald-300'
+              isAlert ? 'text-danger' : 'text-action-emerald'
             }`}
           >
             {occasionLabel}
@@ -9210,12 +9433,12 @@ export default function DashboardPage() {
           aria-label="Open storage archive"
           title="Storage"
           onClick={() => { setIsArchiveOpen(true); void loadArchive() }}
-          className="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100"
+          className="grid h-9 w-9 place-items-center rounded-md border border-transparent text-foreground/80 transition hover:border-border hover:bg-accent/45 hover:text-foreground"
         >
           <Database className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
 
-        <UsageStatsPopover triggerClassName="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100" />
+        <ThemeSwitcher />
 
         <button
           type="button"
@@ -9225,22 +9448,22 @@ export default function DashboardPage() {
           className={`group relative flex h-9 items-center gap-2 rounded-md border px-2.5 transition ${
             hasBusinessInfo === false
               ? 'border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/15'
-              : 'border-transparent text-zinc-200/80 hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100'
+              : 'border-transparent text-foreground/80 hover:border-border hover:bg-accent/45 hover:text-foreground'
           }`}
         >
           <Building2
-            className={`h-[18px] w-[18px] ${hasBusinessInfo === false ? 'text-amber-300' : ''}`}
+            className={`h-[18px] w-[18px] ${hasBusinessInfo === false ? 'text-accent-warm' : ''}`}
             aria-hidden="true"
           />
           <span
             className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
-              hasBusinessInfo === false ? 'text-amber-300' : 'text-zinc-300'
+              hasBusinessInfo === false ? 'text-accent-warm' : 'text-foreground/80'
             }`}
           >
             Your business
           </span>
           {hasBusinessInfo === false && (
-            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-ring" aria-hidden="true" />
           )}
         </button>
       </div>
@@ -9250,6 +9473,11 @@ export default function DashboardPage() {
         onOpenChange={setIsBusinessOpen}
         userId={userId}
         onSaved={(filled) => setHasBusinessInfo(filled)}
+      />
+
+      <AccountCenterDialog
+        open={isAccountCenterOpen}
+        onOpenChange={setIsAccountCenterOpen}
       />
 
 
@@ -9266,16 +9494,16 @@ export default function DashboardPage() {
         }}
       >
         <DialogContent
-          className="z-50 flex h-[min(90vh,52rem)] w-[min(72rem,95vw)] max-w-none flex-col gap-0 border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+          className="z-50 flex h-[min(90vh,52rem)] w-[min(72rem,95vw)] max-w-none flex-col gap-0 border-border bg-card p-0 text-foreground shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl"
         >
-          <DialogHeader className="border-b border-white/10 px-6 py-4">
+          <DialogHeader className="border-b border-border px-6 py-4">
             <div className="flex items-center justify-between gap-3">
               <div className="inline-flex items-center gap-2">
-                <Database className="h-5 w-5 text-sky-300" aria-hidden="true" />
-                <DialogTitle className="text-sm font-medium uppercase tracking-[0.18em] text-zinc-300">
+                <Database className="h-5 w-5 text-accent-cool" aria-hidden="true" />
+                <DialogTitle className="text-sm font-medium uppercase tracking-[0.18em] text-foreground/80">
                   Storage
                 </DialogTitle>
-                <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+                <span className="grid h-6 min-w-6 place-items-center rounded-full border border-border px-2 text-xs font-semibold text-foreground/80">
                   {archiveTab === 'films'
                     ? archiveJobs.length + finalizedItems.length
                     : archiveTab === 'images'
@@ -9287,7 +9515,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <DialogDescription className="mt-1 text-left text-xs text-zinc-500">
+            <DialogDescription className="mt-1 text-left text-xs text-muted-foreground">
               {archiveTab === 'films'
                 ? "All films — everything you've created"
                 : archiveTab === 'images'
@@ -9297,58 +9525,58 @@ export default function DashboardPage() {
                     : "All audio — uploaded music and generated voiceovers"}
             </DialogDescription>
 
-            <div className="mt-3 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+            <div className="mt-3 inline-flex items-center gap-1 rounded-lg border border-border bg-accent/30 p-1">
               <button
                 type="button"
                 onClick={() => setArchiveTab('films')}
                 className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                   archiveTab === 'films'
-                    ? 'bg-white/[0.08] text-zinc-100'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'bg-accent/80 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground/90'
                 }`}
               >
                 <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
                 Films
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveJobs.length + finalizedItems.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveJobs.length + finalizedItems.length}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setArchiveTab('images')}
                 className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                   archiveTab === 'images'
-                    ? 'bg-white/[0.08] text-zinc-100'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'bg-accent/80 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground/90'
                 }`}
               >
                 <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
                 Images
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveImages.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveImages.length}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setArchiveTab('audio')}
                 className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                   archiveTab === 'audio'
-                    ? 'bg-white/[0.08] text-zinc-100'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'bg-accent/80 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground/90'
                 }`}
               >
                 <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
                 Audio
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveAudio.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveAudio.length}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setArchiveTab('products')}
                 className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                   archiveTab === 'products'
-                    ? 'bg-white/[0.08] text-zinc-100'
-                    : 'text-zinc-400 hover:text-zinc-200'
+                    ? 'bg-accent/80 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground/90'
                 }`}
               >
                 <Package className="h-3.5 w-3.5" aria-hidden="true" />
                 Product Photos
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveProductImages.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductImages.length}</span>
               </button>
             </div>
           </DialogHeader>
@@ -9373,21 +9601,21 @@ export default function DashboardPage() {
                     onClick={() =>
                       setSelectedArchiveIds(allSelected ? new Set() : new Set(currentIds))
                     }
-                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-white/[0.07]"
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-accent/30 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:bg-accent/70"
                   >
                     <Checkbox checked={allSelected} className="pointer-events-none h-4 w-4" />
                     {allSelected ? 'Deselect all' : 'Select all'}
                   </button>
                   <div className="flex items-center gap-3">
                     {selectedCount > 0 ? (
-                      <span className="text-xs text-zinc-400">{selectedCount} selected</span>
+                      <span className="text-xs text-muted-foreground">{selectedCount} selected</span>
                     ) : null}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <button
                           type="button"
                           disabled={selectedCount === 0 || isBulkDeleting}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-action-rose/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-action-rose transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {isBulkDeleting ? (
                             <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -9422,16 +9650,16 @@ export default function DashboardPage() {
             {archiveTab === 'products' ? (() => {
               return (
                 <div className="space-y-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-accent/20 px-4 py-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-zinc-200">Upload a product photo</p>
-                      <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
-                      <p className="mt-0.5 text-xs text-zinc-500">Or bulk-import captions: upload <span className="text-zinc-300">.txt</span> files named like the photos (e.g. <span className="text-zinc-300">circular_tie_001.txt</span> → <span className="text-zinc-300">circular_tie_001</span>) to attach each text to its matching image.</p>
+                      <p className="text-sm font-medium text-foreground/90">Upload a product photo</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Or bulk-import captions: upload <span className="text-foreground/80">.txt</span> files named like the photos (e.g. <span className="text-foreground/80">circular_tie_001.txt</span> → <span className="text-foreground/80">circular_tie_001</span>) to attach each text to its matching image.</p>
                       {productUploadError ? (
-                        <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
+                        <p className="mt-1 text-xs text-action-rose">{productUploadError}</p>
                       ) : null}
                       {captionImportStatus ? (
-                        <p className="mt-1 text-xs text-sky-300">{captionImportStatus}</p>
+                        <p className="mt-1 text-xs text-accent-cool">{captionImportStatus}</p>
                       ) : null}
                     </div>
                     <input
@@ -9458,13 +9686,13 @@ export default function DashboardPage() {
                         maxLength={100}
                         placeholder="Product name (optional)"
                         disabled={isUploadingProductPhoto || !userId}
-                        className="w-44 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none transition focus:border-sky-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="w-44 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none transition focus:border-accent-cool/40 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <button
                         type="button"
                         onClick={handlePickProductPhoto}
                         disabled={isUploadingProductPhoto || !userId}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-accent-cool/30 bg-accent-cool/10 px-3 py-2 text-xs font-semibold text-accent-cool transition hover:bg-accent-cool/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isUploadingProductPhoto ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -9478,7 +9706,7 @@ export default function DashboardPage() {
                         onClick={handlePickCaptionFiles}
                         disabled={isImportingCaptions || !userId || archiveProductImages.length === 0}
                         title={archiveProductImages.length === 0 ? 'Upload product photos first, then import captions' : 'Import .txt captions matched by file name'}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs font-semibold text-foreground/90 transition hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isImportingCaptions ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -9491,15 +9719,15 @@ export default function DashboardPage() {
                   </div>
 
                   {archiveLoading && archiveProductImages.length === 0 ? (
-                    <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                    <div className="grid min-h-[10rem] place-items-center text-muted-foreground">
                       <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
                     </div>
                   ) : archiveProductImages.length === 0 ? (
-                    <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                    <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
                       <div>
-                        <Package className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                        <p className="mt-3 text-sm font-medium text-zinc-300">No product photos yet</p>
-                        <p className="mt-2 text-xs leading-5 text-zinc-600">
+                        <Package className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                        <p className="mt-3 text-sm font-medium text-foreground/80">No product photos yet</p>
+                        <p className="mt-2 text-xs leading-5 text-muted-foreground">
                           Upload a product image to store it here.
                         </p>
                       </div>
@@ -9509,14 +9737,14 @@ export default function DashboardPage() {
                       {archiveProductImages.map((img) => (
                         <article
                           key={img.id}
-                          className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
+                          className={`flex flex-col gap-3 rounded-2xl border bg-accent/35 p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-border'}`}
                         >
                           <button
                             type="button"
                             onClick={() => setPreviewImageUrl(img.storage_path)}
                             aria-label="View image"
                             title="Click to view"
-                            className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
+                            className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-surface-2 transition hover:border-border"
                           >
                             <img
                               src={img.storage_path}
@@ -9527,7 +9755,7 @@ export default function DashboardPage() {
                             <span
                               role="presentation"
                               onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(img.id) }}
-                              className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                              className="absolute left-2 top-2 grid place-items-center rounded-md bg-surface-2/80 p-1 backdrop-blur-sm"
                             >
                               <Checkbox
                                 checked={selectedArchiveIds.has(img.id)}
@@ -9549,14 +9777,14 @@ export default function DashboardPage() {
                                   if (e.key === 'Enter') { void renameProductPhoto(img.id) }
                                   if (e.key === 'Escape') cancelRenameProduct()
                                 }}
-                                className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-sky-300/40"
+                                className="min-w-0 flex-1 rounded-md border border-border bg-accent/50 px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-accent-cool/40"
                               />
                               <button
                                 type="button"
                                 onClick={() => { void renameProductPhoto(img.id) }}
                                 aria-label="Save name"
                                 title="Save"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald"
                               >
                                 <Check className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -9565,7 +9793,7 @@ export default function DashboardPage() {
                                 onClick={cancelRenameProduct}
                                 aria-label="Cancel"
                                 title="Cancel"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                               >
                                 <X className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -9577,10 +9805,10 @@ export default function DashboardPage() {
                               title="Rename product"
                               className="group flex items-center gap-1.5 text-left"
                             >
-                              <span className={`truncate text-xs font-medium ${img.title ? 'text-zinc-200' : 'italic text-zinc-500'}`}>
+                              <span className={`truncate text-xs font-medium ${img.title ? 'text-foreground/90' : 'italic text-muted-foreground'}`}>
                                 {img.title || 'Untitled'}
                               </span>
-                              <Pencil className="h-3 w-3 shrink-0 text-zinc-500 opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
+                              <Pencil className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
                             </button>
                           )}
                           <textarea
@@ -9592,9 +9820,9 @@ export default function DashboardPage() {
                             maxLength={2000}
                             rows={2}
                             placeholder="Describe for AI — what is this product? (helps the AI build the video correctly)"
-                            className="w-full resize-y rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] leading-snug text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-sky-300/40"
+                            className="w-full resize-y rounded-md border border-border bg-accent/40 px-2 py-1 text-[11px] leading-snug text-foreground/90 placeholder:text-muted-foreground outline-none focus:border-accent-cool/40"
                           />
-                          <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                          <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
 
                             <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                             <div className="flex shrink-0 items-center gap-1.5">
@@ -9603,7 +9831,7 @@ export default function DashboardPage() {
                                 onClick={() => handleUseImageAsStart(img.storage_path)}
                                 aria-label="Use as Start frame"
                                 title="Use as Start frame"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                               >
                                 <ImagePlus className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -9613,7 +9841,7 @@ export default function DashboardPage() {
                                 onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                                 aria-label="Download image"
                                 title="Download image"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                               >
                                 {downloadingId === img.id ? (
                                   <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -9627,7 +9855,7 @@ export default function DashboardPage() {
                                     type="button"
                                     aria-label="Delete image permanently"
                                     title="Delete permanently"
-                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                                   >
                                     <Trash2 className="h-3 w-3" aria-hidden="true" />
                                   </button>
@@ -9661,18 +9889,18 @@ export default function DashboardPage() {
             })() : archiveTab === 'audio' ? (() => {
               if (archiveLoading && archiveAudio.length === 0) {
                 return (
-                  <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                  <div className="grid min-h-[10rem] place-items-center text-muted-foreground">
                     <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
                   </div>
                 )
               }
               if (archiveAudio.length === 0) {
                 return (
-                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
                     <div>
-                      <Music2 className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                      <p className="mt-3 text-sm font-medium text-zinc-300">No audio yet</p>
-                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                      <Music2 className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-medium text-foreground/80">No audio yet</p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
                         Music you upload and voiceovers you generate are saved here for download.
                       </p>
                     </div>
@@ -9684,7 +9912,7 @@ export default function DashboardPage() {
                   {archiveAudio.map((a) => (
                     <article
                       key={a.id}
-                      className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-4 ${selectedArchiveIds.has(a.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
+                      className={`flex flex-col gap-3 rounded-2xl border bg-accent/35 p-4 ${selectedArchiveIds.has(a.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-border'}`}
                     >
                       <div className="flex items-start gap-3">
                         <Checkbox
@@ -9693,16 +9921,16 @@ export default function DashboardPage() {
                           aria-label="Select audio"
                           className="mt-0.5 h-4 w-4 shrink-0"
                         />
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-emerald-200">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-accent/40 text-action-emerald">
                           {a.kind === 'voiceover'
                             ? <Mic className="h-4 w-4" aria-hidden="true" />
                             : <Music2 className="h-4 w-4" aria-hidden="true" />}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-zinc-200" title={a.name ?? undefined}>
+                          <p className="truncate text-sm font-medium text-foreground/90" title={a.name ?? undefined}>
                             {a.name || (a.kind === 'voiceover' ? 'Voiceover' : 'Music')}
                           </p>
-                          <span className="mt-0.5 inline-flex items-center rounded-full border border-white/10 bg-black/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                          <span className="mt-0.5 inline-flex items-center rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                             {a.kind === 'voiceover' ? 'Voiceover' : 'Music'}
                           </span>
                         </div>
@@ -9710,9 +9938,9 @@ export default function DashboardPage() {
                       {a.url ? (
                         <audio controls preload="none" src={a.url} className="w-full" />
                       ) : (
-                        <p className="text-[11px] text-zinc-600">Preview unavailable</p>
+                        <p className="text-[11px] text-muted-foreground">Preview unavailable</p>
                       )}
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                         <span className="tabular-nums">{formatCreatedAt(a.created_at)}</span>
                         <div className="flex shrink-0 items-center gap-1.5">
                           <button
@@ -9721,7 +9949,7 @@ export default function DashboardPage() {
                             onClick={() => { void downloadAudioFile(a.id, a.url, a.name) }}
                             aria-label="Download audio"
                             title="Download audio"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                           >
                             {downloadingId === a.id ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -9735,7 +9963,7 @@ export default function DashboardPage() {
                                 type="button"
                                 aria-label="Delete audio permanently"
                                 title="Delete permanently"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                               >
                                 <Trash2 className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -9767,18 +9995,18 @@ export default function DashboardPage() {
             })() : archiveTab === 'images' ? (() => {
               if (archiveLoading && archiveImages.length === 0) {
                 return (
-                  <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                  <div className="grid min-h-[10rem] place-items-center text-muted-foreground">
                     <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
                   </div>
                 )
               }
               if (archiveImages.length === 0) {
                 return (
-                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
                     <div>
-                      <ImageIcon className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                      <p className="mt-3 text-sm font-medium text-zinc-300">No images yet</p>
-                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                      <ImageIcon className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-medium text-foreground/80">No images yet</p>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
                         Every image you generate or upload will be archived here with its date.
                       </p>
                     </div>
@@ -9790,14 +10018,14 @@ export default function DashboardPage() {
                   {archiveImages.map((img) => (
                     <article
                       key={img.id}
-                      className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
+                      className={`flex flex-col gap-3 rounded-2xl border bg-accent/35 p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-border'}`}
                     >
                       <button
                         type="button"
                         onClick={() => setPreviewImageUrl(img.storage_path)}
                         aria-label="View image"
                         title="Click to view"
-                        className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
+                        className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-border bg-surface-2 transition hover:border-border"
                       >
                         <img
                           src={img.storage_path}
@@ -9808,7 +10036,7 @@ export default function DashboardPage() {
                         <span
                           role="presentation"
                           onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(img.id) }}
-                          className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                          className="absolute left-2 top-2 grid place-items-center rounded-md bg-surface-2/80 p-1 backdrop-blur-sm"
                         >
                           <Checkbox
                             checked={selectedArchiveIds.has(img.id)}
@@ -9817,7 +10045,7 @@ export default function DashboardPage() {
                           />
                         </span>
                       </button>
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                         <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                         <div className="flex shrink-0 items-center gap-1.5">
                           <button
@@ -9825,7 +10053,7 @@ export default function DashboardPage() {
                             onClick={() => handleUseImageAsStart(img.storage_path)}
                             aria-label="Use as Start frame"
                             title="Use as Start frame"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                           >
                             <ImagePlus className="h-3 w-3" aria-hidden="true" />
                           </button>
@@ -9835,7 +10063,7 @@ export default function DashboardPage() {
                             onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                             aria-label="Download image"
                             title="Download image"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                           >
                             {downloadingId === img.id ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -9849,7 +10077,7 @@ export default function DashboardPage() {
                                 type="button"
                                 aria-label="Delete image permanently"
                                 title="Delete permanently"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                               >
                                 <Trash2 className="h-3 w-3" aria-hidden="true" />
                               </button>
@@ -9894,17 +10122,17 @@ export default function DashboardPage() {
                   onClick={() => setFilmsCategory(cat)}
                   className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                     filmsCategory === cat
-                      ? 'bg-white/[0.08] text-zinc-100'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-accent/80 text-foreground'
+                      : 'text-muted-foreground hover:text-foreground/90'
                   }`}
                 >
                   {label}
-                  <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{count}</span>
+                  <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{count}</span>
                 </button>
               )
               return (
                 <div className="space-y-4">
-                  <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                  <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-accent/30 p-1">
                     {subTab('final', 'Final Videos', finalCount)}
                     {subTab('drafts', 'Drafts', draftCount)}
                   </div>
@@ -9912,7 +10140,7 @@ export default function DashboardPage() {
 
               if (archiveLoading && entries.length === 0) {
                 return (
-                  <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                  <div className="grid min-h-[10rem] place-items-center text-muted-foreground">
                     <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
                   </div>
                 )
@@ -9920,13 +10148,13 @@ export default function DashboardPage() {
 
               if (entries.length === 0) {
                 return (
-                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
                     <div>
-                      <Database className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                      <p className="mt-3 text-sm font-medium text-zinc-300">
+                      <Database className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-medium text-foreground/80">
                         {filmsCategory === 'final' ? 'No final videos yet' : 'No drafts yet'}
                       </p>
-                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
                         {filmsCategory === 'final'
                           ? 'Finalized films you merge will appear here.'
                           : 'Every clip you generate will be archived here with its date.'}
@@ -9939,20 +10167,20 @@ export default function DashboardPage() {
               const statusBadge = (status: string) => {
                 if (status === 'completed') {
                   return (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 bg-emerald-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-action-emerald/30 bg-action-emerald/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-action-emerald">
                       Ready
                     </span>
                   )
                 }
                 if (status === 'failed' || status === 'cancelled') {
                   return (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300/30 bg-rose-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-200">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-action-rose/30 bg-action-rose/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-action-rose">
                       Failed
                     </span>
                   )
                 }
                 return (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-warm/30 bg-accent-warm/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm">
                     <LoaderCircle className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
                     Rendering
                   </span>
@@ -9968,10 +10196,10 @@ export default function DashboardPage() {
                     return (
                       <article
                         key={job.id}
-                        className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(job.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
+                        className={`flex flex-col gap-3 rounded-2xl border bg-accent/35 p-3 ${selectedArchiveIds.has(job.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-border'}`}
                       >
                         <div
-                          className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a] ${video?.storage_path ? 'cursor-pointer' : ''}`}
+                          className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-border bg-surface-2 ${video?.storage_path ? 'cursor-pointer' : ''}`}
                           role={video?.storage_path ? 'button' : undefined}
                           tabIndex={video?.storage_path ? 0 : undefined}
                           onClick={() => {
@@ -10017,13 +10245,13 @@ export default function DashboardPage() {
                                 }}
                               />
                               <div className="pointer-events-none absolute inset-0 grid place-items-center">
-                                <span className="grid h-10 w-10 place-items-center rounded-full bg-black/50 text-white backdrop-blur-sm transition group-hover:bg-black/60">
+                                <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2/80 text-foreground backdrop-blur-sm transition group-hover:bg-surface-2">
                                   <Play className="h-5 w-5" aria-hidden="true" />
                                 </span>
                               </div>
                             </>
                           ) : (
-                            <div className="grid h-full w-full place-items-center text-zinc-500">
+                            <div className="grid h-full w-full place-items-center text-muted-foreground">
                               <Clapperboard className="h-6 w-6" aria-hidden="true" />
                             </div>
                           )}
@@ -10031,7 +10259,7 @@ export default function DashboardPage() {
                             role="presentation"
                             onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(job.id) }}
                             onKeyDown={(e) => e.stopPropagation()}
-                            className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                            className="absolute left-2 top-2 grid place-items-center rounded-md bg-surface-2/80 p-1 backdrop-blur-sm"
                           >
                             <Checkbox
                               checked={selectedArchiveIds.has(job.id)}
@@ -10042,7 +10270,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                           <div className="flex items-start justify-between gap-2">
-                            <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
+                            <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-foreground/90">
                               {job.input_prompt}
                             </p>
                             <div className="flex shrink-0 items-center gap-1.5">
@@ -10056,11 +10284,11 @@ export default function DashboardPage() {
                                        onClick={(event) => event.stopPropagation()}
                                        aria-label="Download video"
                                        title="Download"
-                                       className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                       className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-border px-1 text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                                      >
                                        {downloadingId === job.id ? (
                                          downloadProgress !== null ? (
-                                           <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
+                                           <span className="text-[9px] font-semibold tabular-nums text-action-emerald">{downloadProgress}%</span>
                                          ) : (
                                            <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                          )
@@ -10102,7 +10330,7 @@ export default function DashboardPage() {
                                     onClick={(event) => event.stopPropagation()}
                                     aria-label="Delete video permanently"
                                     title="Delete permanently"
-                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200 disabled:opacity-60"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose disabled:opacity-60"
                                   >
                                     {deletingArchiveId === job.id ? (
                                       <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -10132,7 +10360,7 @@ export default function DashboardPage() {
                             </div>
 
                           </div>
-                          <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                          <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                             {statusBadge(job.status)}
                             <span className="tabular-nums">{formatCreatedAt(job.created_at)}</span>
                           </div>
@@ -10154,9 +10382,9 @@ export default function DashboardPage() {
         open={!!playerFilm}
         onOpenChange={(next) => { if (!next) setPlayerFilm(null) }}
       >
-        <DialogContent className="z-[60] w-[min(60rem,95vw)] max-w-none border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl">
-          <DialogHeader className="border-b border-white/10 px-5 py-3">
-            <DialogTitle className="line-clamp-1 pr-8 text-sm font-medium text-zinc-200">
+        <DialogContent className="z-[60] w-[min(60rem,95vw)] max-w-none border-border bg-card p-0 text-foreground shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+          <DialogHeader className="border-b border-border px-5 py-3">
+            <DialogTitle className="line-clamp-1 pr-8 text-sm font-medium text-foreground/90">
               {playerFilm?.title ?? 'Film'}
             </DialogTitle>
           </DialogHeader>
@@ -10192,12 +10420,13 @@ export default function DashboardPage() {
 
 
 
-      <div className="fixed left-1/2 top-[3.25rem] z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:top-5">
+      <div ref={previewHeaderRef} className="fixed left-1/2 top-[3.25rem] z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:top-5">
       {(() => {
-        const hasReadyClips = playableSequenceClips.length > 0
+        const hasReadyClips = playableSequenceClips.length > 0 && !isAutoFilming
         return (
           <button
             type="button"
+            disabled={isAutoFilming}
             onClick={() => {
               if (playableSequenceClips.length === 0) {
                 setVideoColumnMessage('No ready clips to live-preview yet.')
@@ -10205,20 +10434,20 @@ export default function DashboardPage() {
               }
               setVideoColumnMessage(null)
               setPreviewVideoId(null)
+              // Manual Preview always reflects the current workspace. Keep the
+              // consumed guard so the previous automatic batch stays one-shot.
+              dispatchAutoFilmPreview({ type: 'clear-active' })
               setPreviewDismissed(false)
             }}
-            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition ${
+            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-cyan/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-cyan/20 disabled:cursor-not-allowed disabled:opacity-50 ${
               hasReadyClips
-                ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100 shadow-[0_0_18px_-4px_rgba(16,185,129,0.7)] hover:border-emerald-300/60 hover:bg-emerald-400/25'
-                : 'border-white/10 bg-white/[0.04] text-zinc-400/70'
+                ? 'border-action-cyan/45 bg-action-cyan/10 text-action-cyan hover:border-action-cyan-strong/65 hover:bg-action-cyan/15 hover:text-action-cyan-strong'
+                : 'border-action-cyan/20 bg-action-cyan/[0.04] text-action-cyan/60 hover:border-action-cyan/30 hover:bg-action-cyan/[0.07] hover:text-action-cyan-strong/75'
             }`}
             aria-label="Connect all cards into one continuous preview"
             title="Connect all cards into one continuous preview"
           >
-            {hasReadyClips ? (
-              <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-emerald-400/50 animate-ping" aria-hidden="true" />
-            ) : null}
-            <Play className={`relative h-[14px] w-[14px] ${hasReadyClips ? 'animate-pulse' : ''}`} aria-hidden="true" />
+            <Play className="relative h-[14px] w-[14px]" aria-hidden="true" />
             <span className="relative hidden xl:inline">Preview</span>
           </button>
         )
@@ -10227,7 +10456,7 @@ export default function DashboardPage() {
 
         <AlertDialogTrigger asChild>
           <button
-            className="flex h-9 items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-violet-300 transition hover:border-violet-300/60 hover:bg-violet-400/[0.15] hover:text-violet-100"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-action-violet/40 bg-action-violet/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-violet transition hover:border-action-violet-strong/60 hover:bg-action-violet/[0.15] hover:text-action-violet-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-violet/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-violet/20"
             type="button"
             aria-label="Start over"
           >
@@ -10261,7 +10490,7 @@ export default function DashboardPage() {
                   toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
                 }
               }}
-              className="flex h-9 items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/15 px-3 text-xs uppercase tracking-[0.18em] text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-sky-400/40 disabled:hover:bg-sky-400/15"
+              className="flex h-9 items-center gap-1.5 rounded-md border border-accent-cool/40 bg-accent-cool/15 px-3 text-xs uppercase tracking-[0.18em] text-accent-cool transition hover:border-accent-cool/60 hover:bg-accent-cool/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-accent-cool/40 disabled:hover:bg-accent-cool/15"
               aria-label="Schedule to Social Media Manager"
               title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
             >
@@ -10272,7 +10501,7 @@ export default function DashboardPage() {
           <PopoverContent align="center" className="w-auto p-3">
             <div className="space-y-3">
               <div>
-                <p className="mb-1 text-xs font-medium text-zinc-200">Date</p>
+                <p className="mb-1 text-xs font-medium text-foreground/90">Date</p>
                 <Calendar
                   mode="single"
                   selected={scheduleDate}
@@ -10282,7 +10511,7 @@ export default function DashboardPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-200" htmlFor="schedule-time">
+                <label className="mb-1 block text-xs font-medium text-foreground/90" htmlFor="schedule-time">
                   Time
                 </label>
                 <input
@@ -10290,7 +10519,7 @@ export default function DashboardPage() {
                   type="time"
                   value={scheduleTime}
                   onChange={(e) => setScheduleTime(e.target.value)}
-                  className="h-9 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 outline-none focus:border-white/20"
+                  className="h-9 w-full rounded-md border border-border bg-accent/40 px-3 text-sm text-foreground outline-none focus:border-border"
                 />
               </div>
               <Button
@@ -10306,10 +10535,10 @@ export default function DashboardPage() {
                   className={
                     'text-xs ' +
                     (scheduleStatus.kind === 'error'
-                      ? 'text-red-300'
+                      ? 'text-danger'
                       : scheduleStatus.kind === 'sent'
-                        ? 'text-emerald-300'
-                        : 'text-sky-200')
+                        ? 'text-action-emerald'
+                        : 'text-accent-cool')
                   }
                 >
                   {scheduleStatus.kind === 'sending'
@@ -10320,21 +10549,21 @@ export default function DashboardPage() {
                 </p>
               )}
               {scheduleDebug && (
-                <div className="space-y-0.5 rounded-md border border-white/10 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-zinc-300">
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                <div className="space-y-0.5 rounded-md border border-border bg-surface-2/60 p-2 font-mono text-[10px] leading-relaxed text-foreground/80">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Debug
                   </p>
                   <p>clicked: {scheduleDebug.clicked ? 'yes' : 'no'}</p>
                   <p>isInIframe: {String(scheduleDebug.isInIframe)}</p>
                   <p>
                     videoUrl exists:{' '}
-                    <span className={scheduleDebug.videoUrlExists ? 'text-emerald-300' : 'text-red-300'}>
+                    <span className={scheduleDebug.videoUrlExists ? 'text-action-emerald' : 'text-danger'}>
                       {String(scheduleDebug.videoUrlExists)}
                     </span>
                   </p>
                   <p className="break-all">videoUrl source: {scheduleDebug.videoUrlSource || '—'}</p>
                   {!scheduleDebug.videoUrlExists && (
-                    <p className="text-red-300">Final video URL is missing</p>
+                    <p className="text-danger">Final video URL is missing</p>
                   )}
                   <p className="break-all">scheduledAt: {scheduleDebug.scheduledAt || '—'}</p>
                   <p className="break-all">detectedParentOrigin: {scheduleDebug.detectedParentOrigin || '— (none detected)'}</p>
@@ -10355,7 +10584,7 @@ export default function DashboardPage() {
                     <p>postMessage → parent/top: not sent</p>
                   )}
                   {scheduleDebug.error && (
-                    <p className="break-all text-red-300">error: {scheduleDebug.error}</p>
+                    <p className="break-all text-danger">error: {scheduleDebug.error}</p>
                   )}
                 </div>
               )}
@@ -10376,7 +10605,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsMakeFilmWizardOpen(true)}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-fuchsia-300/30 hover:bg-fuchsia-300/[0.06] hover:text-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-9 items-center gap-1.5 rounded-md border border-action-orange/40 bg-action-orange/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-orange transition hover:border-action-orange-strong/60 hover:bg-action-orange/[0.15] hover:text-action-orange-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-orange/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-orange/20 disabled:cursor-not-allowed disabled:border-action-orange/15 disabled:bg-action-orange/[0.03] disabled:text-action-orange/45 disabled:opacity-100 disabled:hover:border-action-orange/15 disabled:hover:bg-action-orange/[0.03] disabled:hover:text-action-orange/45"
         aria-label="Open the Make Full Film review wizard"
         title="Make full film: review the scenario and preview images before rendering"
       >
@@ -10389,7 +10618,7 @@ export default function DashboardPage() {
       </button>
 
       {isMerging ? (
-        <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
+        <div className="flex h-9 items-center gap-1 rounded-md border border-action-emerald/30 bg-action-emerald/[0.06] px-2 text-xs uppercase tracking-[0.18em] text-action-emerald/80">
           <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
           <span className="tabular-nums px-1">
             {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
@@ -10397,8 +10626,8 @@ export default function DashboardPage() {
           </span>
           <button
             type="button"
-            onClick={() => { mergeAbortRef.current?.abort() }}
-            className="ml-1 grid h-6 w-6 place-items-center rounded text-zinc-300 transition hover:bg-red-500/20 hover:text-red-200"
+            onClick={() => { mergeAbortRef.current?.abort(new MergeCancelledError()) }}
+            className="ml-1 grid h-6 w-6 place-items-center rounded text-foreground/80 transition hover:bg-red-500/20 hover:text-danger"
             aria-label="Cancel rendering"
             title="Cancel rendering"
           >
@@ -10410,7 +10639,7 @@ export default function DashboardPage() {
           type="button"
           onClick={handleMergeAllVideos}
           disabled={(Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
-          className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-9 items-center gap-1.5 rounded-md border border-action-emerald/40 bg-action-emerald/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-emerald transition hover:border-action-emerald-strong/60 hover:bg-action-emerald/[0.15] hover:text-action-emerald-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-emerald/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-emerald/20 disabled:cursor-not-allowed disabled:border-action-emerald/15 disabled:bg-action-emerald/[0.03] disabled:text-action-emerald/45 disabled:opacity-100 disabled:hover:border-action-emerald/15 disabled:hover:bg-action-emerald/[0.03] disabled:hover:text-action-emerald/45"
           aria-label="Save cards as a final film"
           title={(() => {
             const totalCards = completedSourceVideos.length + visibleUserImages.length
@@ -10443,7 +10672,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={handleMusicButtonClick}
-          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100"
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-action-yellow/40 bg-action-yellow/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-yellow transition hover:border-action-yellow-strong/60 hover:bg-action-yellow/[0.15] hover:text-action-yellow-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-yellow/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-yellow/20"
           aria-label="Edit soundtrack"
           title="Edit soundtrack"
         >
@@ -10457,7 +10686,7 @@ export default function DashboardPage() {
             aria-label="Remove soundtrack"
             onClick={(ev) => { ev.stopPropagation(); handleClearMusic() }}
             onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); handleClearMusic() } }}
-            className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+            className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <X className="h-3 w-3" aria-hidden="true" />
           </span>
@@ -10466,7 +10695,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={() => musicFileInputRef.current?.click()}
-          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100"
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-action-yellow/40 bg-action-yellow/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-yellow transition hover:border-action-yellow-strong/60 hover:bg-action-yellow/[0.15] hover:text-action-yellow-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-yellow/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-yellow/20"
           aria-label="Add soundtrack"
           title="Upload a music file as soundtrack for the Final Film"
         >
@@ -10478,7 +10707,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsVoiceoverOpen(true)}
-        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-red-300 transition hover:border-red-400/60 hover:bg-red-500/[0.15] hover:text-red-100"
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-action-rose/40 bg-action-rose/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-rose transition hover:border-action-rose-strong/60 hover:bg-action-rose/[0.15] hover:text-action-rose-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-rose/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-rose/20"
         aria-label={voiceoverUrl ? 'Replace voiceover' : 'Generate AI voiceover'}
         title={voiceoverUrl ? 'Replace AI voiceover' : 'Generate an AI voiceover from text (Gemini)'}
       >
@@ -10494,7 +10723,7 @@ export default function DashboardPage() {
               aria-label="Remove voiceover"
               onClick={(ev) => { ev.stopPropagation(); handleClearVoiceover() }}
               onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); handleClearVoiceover() } }}
-              className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+              className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <X className="h-3 w-3" aria-hidden="true" />
             </span>
@@ -10528,6 +10757,7 @@ export default function DashboardPage() {
         mergedDurationSec={mergedDurationSec}
         waveformRef={voiceoverWaveformRef}
         onClearVoiceover={handleClearVoiceover}
+        resetKey={voiceoverResetKey}
       />
 
 
@@ -10550,10 +10780,10 @@ export default function DashboardPage() {
         userId={userId}
         writeScenario={writeFilmScenario}
         generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet) =>
-          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText, creative, characterSheet)
+          generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
-          void renderApprovedFilm(scenes, perSceneImageUrls, options)
+          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
         }}
       />
 
@@ -10792,7 +11022,7 @@ export default function DashboardPage() {
             it the fixed-centered panel clips top/bottom and content can render
             past the panel border. overflow-x-hidden keeps any over-wide child
             (e.g. the waveform) clipped inside the rounded frame. */}
-        <DialogContent className="max-h-[85vh] overflow-y-auto overflow-x-hidden border-white/10 bg-black text-zinc-100 sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto overflow-x-hidden border-border bg-background text-foreground sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Soundtrack for Final Film</DialogTitle>
             <DialogDescription>
@@ -10802,9 +11032,9 @@ export default function DashboardPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-xs text-zinc-300">
+            <div className="rounded-md border border-border bg-surface-2/60 px-3 py-2 text-xs text-foreground/80">
               <div className="break-all font-medium">{musicName ?? '—'}</div>
-              <div className="mt-0.5 text-zinc-500">
+              <div className="mt-0.5 text-muted-foreground">
                 Duration: {formatTimeMS(musicDuration)}
               </div>
             </div>
@@ -10825,30 +11055,30 @@ export default function DashboardPage() {
                 }}
               />
             ) : (
-              <p className="text-xs text-zinc-500">Loading audio…</p>
+              <p className="text-xs text-muted-foreground">Loading audio…</p>
             )}
 
             {musicDuration > 0 ? (
-              <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-zinc-400">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-muted-foreground">
                 <span>Selection</span>
-                <span className="tabular-nums text-zinc-200">
+                <span className="tabular-nums text-foreground/90">
                   {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
                 </span>
               </div>
             ) : null}
 
             {/* Placement on the video timeline */}
-            <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-zinc-300">
+            <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-foreground/80">
                 <span className="font-medium">Play on video from … to</span>
-                <span className="tabular-nums text-zinc-200">
+                <span className="tabular-nums text-foreground/90">
                   {formatTimeMS(musicTimeline[0])} – {formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}
                 </span>
               </div>
               <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-muted-foreground">
                   <span>Start</span>
-                  <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[0])}</span>
+                  <span className="tabular-nums text-foreground/90">{formatTimeMS(musicTimeline[0])}</span>
                 </div>
                 <Slider
                   value={[Math.round(musicTimeline[0])]}
@@ -10860,9 +11090,9 @@ export default function DashboardPage() {
                     setMusicTimeline([Math.max(0, s), musicTimeline[1] || mergedDurationSec])
                   }}
                 />
-                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-muted-foreground">
                   <span>End</span>
-                  <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}</span>
+                  <span className="tabular-nums text-foreground/90">{formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}</span>
                 </div>
                 <Slider
                   value={[Math.round(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)]}
@@ -10875,17 +11105,17 @@ export default function DashboardPage() {
                   }}
                 />
               </div>
-              <p className="text-[11px] leading-relaxed text-zinc-500">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
                 Outside this window the music is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
               </p>
             </div>
 
 
             {/* Audio mode: music-only vs mix */}
-            <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
+            <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
               <div className="flex items-center">
                 <div
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-500/60 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-emerald-200"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-500/60 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-action-emerald"
                 >
                   <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
                   <span>Mix audio</span>
@@ -10894,9 +11124,9 @@ export default function DashboardPage() {
 
               <div className="space-y-3 pt-1">
                 <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-muted-foreground">
                     <span>Clip audio</span>
-                    <span className="tabular-nums text-zinc-200">{Math.round(clipVolume * 100)}%</span>
+                    <span className="tabular-nums text-foreground/90">{Math.round(clipVolume * 100)}%</span>
                   </div>
                   <Slider
                     value={[Math.round(clipVolume * 100)]}
@@ -10907,9 +11137,9 @@ export default function DashboardPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-muted-foreground">
                     <span>Music</span>
-                    <span className="tabular-nums text-zinc-200">{Math.round(musicVolume * 100)}%</span>
+                    <span className="tabular-nums text-foreground/90">{Math.round(musicVolume * 100)}%</span>
                   </div>
                   <Slider
                     value={[Math.round(musicVolume * 100)]}
@@ -10919,7 +11149,7 @@ export default function DashboardPage() {
                     onValueChange={(v) => setMusicVolume((v[0] ?? 0) / 100)}
                   />
                 </div>
-                <p className="text-[11px] leading-relaxed text-zinc-500">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
                   Both audio sources are mixed and applied to the Final Film at render time.
                 </p>
               </div>
@@ -10942,12 +11172,14 @@ export default function DashboardPage() {
       </div>
 
       <main
+        ref={previewWorkspaceRef}
         className="grid place-items-center px-4"
         aria-live="polite"
-        style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
+        style={{ minHeight: `${previewMaxHeightPx + 76}px`, paddingTop: '76px' }}
       >
         {previewItem ? (
-          previewItem.kind === 'sequence' ? (
+          <DraggablePreview position={previewPosition} frameRef={previewFrameRef}>
+          {previewItem.kind === 'sequence' ? (
             <SequentialClipPlayer
               clips={previewItem.clips.map((c) => {
                 if (c.kind === 'image') {
@@ -10973,6 +11205,7 @@ export default function DashboardPage() {
               ratioToHeight={ratioToHeight}
               ratioToWidth={ratioToWidth}
               maxHeightPx={previewMaxHeightPx}
+              autoPlayAttemptId={previewItem.autoPlayAttemptId}
               onClose={closePreview}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
               musicUrl={musicUrl}
@@ -10992,7 +11225,7 @@ export default function DashboardPage() {
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
               <div
-                className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+                className="overflow-hidden rounded-[22px] border border-border bg-surface/95 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
                 style={{
                   width: ratioToWidth(aspectRatio),
                   maxWidth: 'calc(100vw - 56rem)',
@@ -11018,16 +11251,16 @@ export default function DashboardPage() {
                     onClick={closePreview}
                     aria-label="Close preview"
                     title="Close preview"
-                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-action-rose/40 hover:bg-rose-500/20 hover:text-action-rose-strong"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
-                <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
+                <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-foreground/90">
                     Uploaded image · {previewItem.image.still_duration_seconds}s in Final Film
                   </p>
-                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-accent/40 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
                     <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
                     Image
                   </span>
@@ -11037,7 +11270,7 @@ export default function DashboardPage() {
           ) : (
           <div className="flex w-full justify-center">
             <div
-              className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+              className="overflow-hidden rounded-[22px] border border-border bg-surface/95 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
                 width: 'fit-content',
                 maxWidth: 'calc(100vw - 56rem)',
@@ -11055,7 +11288,7 @@ export default function DashboardPage() {
                           onClick={closePreview}
                           aria-label="Close preview"
                           title="Close preview"
-                          className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                          className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-action-rose/40 hover:bg-rose-500/20 hover:text-action-rose-strong"
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -11064,7 +11297,7 @@ export default function DashboardPage() {
                           onClick={() => void openTranscript(src)}
                           aria-label="Show transcript"
                           title="Transcript"
-                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
+                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-accent-cool/40 hover:bg-accent-cool/20 hover:text-accent-cool"
                         >
                           <FileText className="h-4 w-4" aria-hidden="true" />
                         </button>
@@ -11138,7 +11371,7 @@ export default function DashboardPage() {
 
                         </>
                       )
-                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-foreground/0 hover:ring-foreground/40'}`
                       const panelBg = contactOverlay.panelEnabled
                         ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
                         : 'transparent'
@@ -11213,7 +11446,7 @@ export default function DashboardPage() {
                     onClick={closePreview}
                     aria-label="Close preview"
                     title="Close preview"
-                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-action-rose/40 hover:bg-rose-500/20 hover:text-action-rose-strong"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -11248,7 +11481,7 @@ export default function DashboardPage() {
                                       fill="none"
                                       stroke="currentColor"
                                       strokeWidth="8"
-                                      className="text-white/10"
+                                      className="text-foreground/10"
                                     />
                                     <circle
                                       cx="60" cy="60" r={radius}
@@ -11257,28 +11490,28 @@ export default function DashboardPage() {
                                       strokeWidth="8"
                                       strokeLinecap="round"
                                       strokeDasharray={`${dash} ${circumference}`}
-                                      className="text-amber-300 transition-[stroke-dasharray] duration-500"
+                                      className="text-accent-warm transition-[stroke-dasharray] duration-500"
                                     />
                                   </svg>
                                   <div className="absolute inset-0 grid place-items-center">
-                                    <span className="text-2xl font-semibold tabular-nums text-zinc-100">{pct}%</span>
+                                    <span className="text-2xl font-semibold tabular-nums text-foreground">{pct}%</span>
                                   </div>
                                 </div>
                               )
                             })()
                           ) : (
-                            <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
+                            <Clapperboard className="mx-auto h-10 w-10 text-muted-foreground" aria-hidden="true" />
                           )}
-                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewItem.job.status)}</p>
+                          <p className="mt-4 text-sm font-semibold text-foreground/80">{formatStatusLabel(previewItem.job.status)}</p>
                           {isRendering ? (
-                            <p className="mt-2 text-xs leading-5 text-zinc-500">
+                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
                               {previewItem.job.status_message
                                 ?? (longRender
                                   ? 'Still rendering — provider is taking longer than usual.'
                                   : `About ${Math.max(0, 100 - pct)}% remaining`)}
                             </p>
                           ) : (
-                            <p className="mt-2 text-xs leading-5 text-zinc-600">
+                            <p className="mt-2 text-xs leading-5 text-muted-foreground">
                               {previewItem.job.status_message ?? 'Waiting for render output.'}
                             </p>
                           )}
@@ -11290,7 +11523,7 @@ export default function DashboardPage() {
                                   void deleteCard(previewItem.job.id)
                                 }
                               }}
-                              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-zinc-300 transition hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200"
+                              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-accent/40 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-foreground/80 transition hover:border-red-400/40 hover:bg-red-500/10 hover:text-danger"
                             >
                               <X className="h-3.5 w-3.5" aria-hidden="true" />
                               <span>Cancel rendering</span>
@@ -11309,43 +11542,46 @@ export default function DashboardPage() {
             </div>
           </div>
           )
+          }
+          </DraggablePreview>
         ) : (
           <div className="-translate-y-10 text-center sm:-translate-y-8">
-            <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
+            <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-foreground" aria-hidden="true">
               <Hammer className="h-10 w-10 -rotate-12 stroke-[1.7]" />
-              <Sparkles className="absolute right-0 top-0 h-5 w-5 text-amber-300 stroke-[1.8]" />
+              <Sparkles className="absolute right-0 top-0 h-5 w-5 text-accent-warm stroke-[1.8]" />
             </div>
-            <p className="m-0 text-base font-medium text-zinc-400 sm:text-lg">{emptyStateLabel}</p>
+            <p className="m-0 text-base font-medium text-muted-foreground sm:text-lg">{emptyStateLabel}</p>
           </div>
         )}
       </main>
 
       <aside
-        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
+        ref={previewRightSidebarRef}
+        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-border bg-card p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
         aria-label="Pending"
       >
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="inline-flex items-center gap-2">
-            <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Pending</p>
-            <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+            <History className="h-4 w-4 text-accent-warm" aria-hidden="true" />
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Pending</p>
+            <span className="grid h-6 min-w-6 place-items-center rounded-full border border-border px-2 text-xs font-semibold text-foreground/80">
               {displayedClips.length}
             </span>
           </div>
         </div>
 
         {selectedProjectId ? (
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.05] px-3 py-2">
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-action-emerald/20 bg-action-emerald/[0.05] px-3 py-2">
             <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-emerald-200/70">Showing project</p>
-              <p className="truncate text-xs font-medium text-zinc-100">
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-action-emerald/70">Showing project</p>
+              <p className="truncate text-xs font-medium text-foreground">
                 {visibleVideos.find((v) => v.id === selectedProjectId)?.input_prompt ?? 'Project'}
               </p>
             </div>
             <button
               type="button"
               onClick={() => setSelectedProjectId(null)}
-              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-300 transition hover:border-white/30 hover:bg-white/[0.08]"
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border text-foreground/80 transition hover:border-border hover:bg-accent/80"
               aria-label="Clear project filter"
               title="Clear project filter"
             >
@@ -11356,8 +11592,8 @@ export default function DashboardPage() {
 
         <div className="mt-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-zinc-500">Working clips</p>
-            <h2 className="text-sm font-semibold text-zinc-100">Pending</h2>
+            <p className="text-xs font-medium text-muted-foreground">Working clips</p>
+            <h2 className="text-sm font-semibold text-foreground">Pending</h2>
           </div>
           {!isReadOnlyProject && (
           <div className="flex items-center gap-2">
@@ -11372,7 +11608,7 @@ export default function DashboardPage() {
               type="button"
               onClick={handlePickImage}
               disabled={isUploadingImage}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-action-cyan/25 bg-action-cyan/[0.06] px-3 text-xs font-medium text-action-cyan transition hover:border-action-cyan-strong/50 hover:bg-action-cyan/15 hover:text-action-cyan-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-cyan/50 active:bg-action-cyan/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-action-cyan/25 disabled:hover:bg-action-cyan/[0.06] disabled:hover:text-action-cyan"
               aria-label="Upload image"
               title="Upload image"
             >
@@ -11387,7 +11623,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
               disabled={!coverScopeKey}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-[#141518]/95 disabled:hover:text-zinc-300"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-action-violet/25 bg-action-violet/[0.06] px-3 text-xs font-medium text-action-violet transition hover:border-action-violet-strong/50 hover:bg-action-violet/15 hover:text-action-violet-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-violet/50 active:bg-action-violet/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-action-violet/25 disabled:hover:bg-action-violet/[0.06] disabled:hover:text-action-violet"
               aria-label="Generate film cover with AI"
               title={coverScopeKey ? 'Generate film cover with AI' : 'Open or create a project first'}
             >
@@ -11409,7 +11645,7 @@ export default function DashboardPage() {
               aria-label="Upload film"
               aria-disabled={isUploadingVideo}
               title="Upload film"
-              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-sky-300/30 hover:bg-sky-300/[0.08] hover:text-sky-100 ${isUploadingVideo ? 'pointer-events-none opacity-60' : ''}`}
+              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-accent-warm/25 bg-accent-warm/[0.06] px-3 text-xs font-medium text-accent-warm transition hover:border-accent-warm/50 hover:bg-accent-warm/15 hover:text-accent-warm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 active:bg-accent-warm/20 ${isUploadingVideo ? 'pointer-events-none opacity-40' : ''}`}
             >
               {isUploadingVideo ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -11425,7 +11661,7 @@ export default function DashboardPage() {
         </div>
 
         {videoColumnMessage ? (
-          <div className="mt-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-100">
+          <div className="mt-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-action-rose-strong">
             {videoColumnMessage}
           </div>
         ) : null}
@@ -11434,11 +11670,11 @@ export default function DashboardPage() {
           {currentCover ? (
             <div className="mb-3">
               <article
-                className="w-full min-w-0 rounded-2xl border border-amber-300/30 bg-amber-300/[0.04] p-3 shadow-[0_8px_30px_rgba(252,211,77,0.08)]"
+                className="w-full min-w-0 rounded-2xl border border-accent-warm/30 bg-amber-300/[0.04] p-3 shadow-[0_8px_30px_rgba(252,211,77,0.08)]"
                 aria-label="Film cover"
               >
                 <div
-                  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-amber-300/20 bg-[#15171a]"
+                  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-accent-warm/20 bg-surface-2"
                   style={{ aspectRatio: (lockedProjectRatio ?? aspectRatio) === '9:16' ? '9 / 16' : (lockedProjectRatio ?? aspectRatio) === '16:9' ? '16 / 9' : '1 / 1' }}
                 >
                   <img
@@ -11452,14 +11688,14 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-amber-100">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-accent-warm">
                     Film cover
                   </p>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
-                      className="inline-flex h-7 items-center gap-1 rounded-full border border-white/10 bg-black/30 px-2 text-[11px] font-medium text-zinc-200 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+                      className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface-2 px-2 text-[11px] font-medium text-foreground/90 transition hover:border-accent-warm/40 hover:bg-accent-warm/10 hover:text-accent-warm"
                       aria-label="Regenerate cover"
                       title="Regenerate cover"
                     >
@@ -11476,7 +11712,7 @@ export default function DashboardPage() {
                           return next
                         })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-black/30 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                       aria-label="Remove cover"
                       title="Remove cover"
                     >
@@ -11485,7 +11721,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-amber-300/15 pt-3">
-                  <label className="text-[11px] font-medium text-amber-100/80" htmlFor="cover-duration">
+                  <label className="text-[11px] font-medium text-accent-warm/80" htmlFor="cover-duration">
                     Cover duration (seconds at start of film)
                   </label>
                   <div className="flex shrink-0 items-center gap-1">
@@ -11496,7 +11732,7 @@ export default function DashboardPage() {
                         const nextVal = Math.max(1, currentCoverDuration - 1)
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-black/30 text-zinc-200 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-accent-warm/40 hover:bg-accent-warm/10"
                       aria-label="Decrease cover duration"
                     >
                       −
@@ -11512,7 +11748,7 @@ export default function DashboardPage() {
                         const v = Math.max(1, Math.min(10, Math.round(Number(e.target.value) || DEFAULT_COVER_DURATION)))
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: v }; persistCoverDurations(n); return n })
                       }}
-                      className="h-7 w-12 rounded-md border border-white/10 bg-black/30 text-center text-[12px] font-semibold text-amber-100 outline-none focus:border-amber-300/40"
+                      className="h-7 w-12 rounded-md border border-border bg-surface-2 text-center text-[12px] font-semibold text-accent-warm outline-none focus:border-accent-warm/40"
                     />
                     <button
                       type="button"
@@ -11521,7 +11757,7 @@ export default function DashboardPage() {
                         const nextVal = Math.min(10, currentCoverDuration + 1)
                         setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
                       }}
-                      className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-black/30 text-zinc-200 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      className="grid h-7 w-7 place-items-center rounded-full border border-border bg-surface-2 text-foreground/90 transition hover:border-accent-warm/40 hover:bg-accent-warm/10"
                       aria-label="Increase cover duration"
                     >
                       +
@@ -11542,7 +11778,7 @@ export default function DashboardPage() {
                 if (clip.kind === 'image') {
                   const img = clip.image
                   const isPreviewSelected = previewVideoId === clip.id
-                  const transitionId: TransitionId = transitions[clip.id] ?? 'cut'
+                  const transitionId: TransitionId = transitions[clip.id]?.id ?? 'cut'
                   return (
                     <Fragment key={`img-${img.id}`}>
                       <article
@@ -11551,8 +11787,8 @@ export default function DashboardPage() {
                         onDragOver={handleCardDragOver}
                         onDrop={handleCardDrop(clip.id)}
                         onDragEnd={handleCardDragEnd}
-                        className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
-                          isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
+                        className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-border hover:bg-accent/55 ${
+                          isPreviewSelected ? 'border-border bg-accent/60' : 'border-border bg-accent/35'
                         } ${isDragging ? 'opacity-50' : ''}`}
                         role="button"
                         tabIndex={0}
@@ -11566,7 +11802,7 @@ export default function DashboardPage() {
                         }}
                       >
                         <div
-                          className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                          className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2"
                           style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
                           <UserImageView
@@ -11576,21 +11812,21 @@ export default function DashboardPage() {
                             loading="lazy"
                           />
                           <span
-                            className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                            className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-surface-2 px-1.5 text-xs font-semibold tabular-nums text-foreground shadow-md ring-1 ring-foreground/15"
                             aria-label={`Card ${index + 1}`}
                           >
                             {index + 1}
                           </span>
                         </div>
                         <div className="mt-3 flex items-start justify-between gap-2">
-                          <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">
+                          <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/90">
                             Uploaded image
                           </p>
                           {!isReadOnlyProject && (
                           <div className="flex shrink-0 items-center gap-1.5">
                             <span
                               onClick={(event) => event.stopPropagation()}
-                              className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
+                              className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-muted-foreground transition hover:text-foreground/90 active:cursor-grabbing"
                               title="Drag to reorder"
                               aria-label="Drag to reorder"
                             >
@@ -11604,7 +11840,7 @@ export default function DashboardPage() {
                               }}
                               aria-label="Use as Start frame"
                               title="Use as Start frame"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool"
                             >
                               <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
@@ -11616,7 +11852,7 @@ export default function DashboardPage() {
                               }}
                               aria-label="Delete image"
                               title="Delete image"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                             >
                               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
@@ -11624,18 +11860,18 @@ export default function DashboardPage() {
                           )}
                         </div>
                         <div
-                          className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
+                          className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground"
                           onClick={(event) => event.stopPropagation()}
                         >
                           <div className="inline-flex items-center gap-2">
                             <label htmlFor={`img-dur-${img.id}`}>Duration</label>
-                            <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] font-semibold text-zinc-200">
+                            <div className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2 py-1 text-[11px] font-semibold text-foreground/90">
                               <ImageDurationInput
                                 id={`img-dur-${img.id}`}
                                 value={img.still_duration_seconds || 3}
                                 onCommit={(sec) => updateImageDuration(img.id, sec)}
                               />
-                              <span className="text-zinc-500">s</span>
+                              <span className="text-muted-foreground">s</span>
                             </div>
                           </div>
                           <span>{formatCreatedAt(img.created_at)}</span>
@@ -11643,40 +11879,34 @@ export default function DashboardPage() {
                       </article>
                       {!isLast ? (
                         <div
-                          className="flex items-center gap-2 px-1 text-xs text-zinc-500"
+                          className="flex items-center gap-2 px-1 text-xs text-muted-foreground"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
-                                title="Transition between these clips"
-                                aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
-                              >
-                                <TransitionPreview id={transitionId} size={22} />
-                                <span>{TRANSITION_LABEL[transitionId]}</span>
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="center" className="min-w-[12rem]">
-                              <DropdownMenuLabel>Transition</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              {TRANSITION_OPTIONS.map((opt) => (
-                                <DropdownMenuItem
-                                  key={opt.id}
-                                  onSelect={() => {
-                                    setTransitions((current) => ({ ...current, [clip.id]: opt.id }))
-                                  }}
-                                  className={`flex items-center gap-2 ${transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}`}
-                                >
-                                  <TransitionPreview id={opt.id} size={32} />
-                                  <span>{opt.label}</span>
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                          <span className="h-px flex-1 bg-accent" aria-hidden="true" />
+                          <TransitionPicker
+                            value={transitionId}
+                            durationMs={transitions[clip.id]?.durationMs ?? DEFAULT_TRANSITION_DURATION[transitionId] ?? 0}
+                            gapCount={displayedClips.length - 1}
+                            onSelect={(spec) =>
+                              setTransitions((current) => ({ ...current, [clip.id]: spec }))
+                            }
+                            onApplyToAll={(spec) =>
+                              setTransitions((current) =>
+                                applyTransitionToAll(
+                                  current,
+                                  displayedClips.slice(0, -1).map((c) => c.id),
+                                  spec,
+                                ),
+                              )
+                            }
+                            onReset={() =>
+                              setTransitions((current) => ({
+                                ...current,
+                                [clip.id]: { id: 'cut', durationMs: 0 },
+                              }))
+                            }
+                          />
+                          <span className="h-px flex-1 bg-accent" aria-hidden="true" />
                         </div>
                       ) : null}
                     </Fragment>
@@ -11686,7 +11916,7 @@ export default function DashboardPage() {
                 const video = clip.job
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
-                const transitionId: TransitionId = transitions[video.id] ?? 'cut'
+                const transitionId: TransitionId = transitions[video.id]?.id ?? 'cut'
 
                 return (
                   <Fragment key={video.id}>
@@ -11696,8 +11926,8 @@ export default function DashboardPage() {
                     onDragOver={handleCardDragOver}
                     onDrop={handleCardDrop(video.id)}
                     onDragEnd={handleCardDragEnd}
-                    className={`relative w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
-                      isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
+                    className={`relative w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-border hover:bg-accent/55 ${
+                      isPreviewSelected ? 'border-border bg-accent/60' : 'border-border bg-accent/35'
                     } ${isDragging ? 'opacity-50' : ''}`}
                     role="button"
                     tabIndex={0}
@@ -11711,7 +11941,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <div
-                      className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                      className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2"
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
@@ -11735,12 +11965,12 @@ export default function DashboardPage() {
                           }}
                         />
                       ) : (
-                        <div className="grid h-full w-full place-items-center text-zinc-500">
+                        <div className="grid h-full w-full place-items-center text-muted-foreground">
                           <Clapperboard className="h-8 w-8" aria-hidden="true" />
                         </div>
                       )}
                       <span
-                        className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                        className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-surface-2 px-1.5 text-xs font-semibold tabular-nums text-foreground shadow-md ring-1 ring-foreground/15"
                         aria-label={`Card ${index + 1}`}
                       >
                         {index + 1}
@@ -11760,7 +11990,7 @@ export default function DashboardPage() {
                           }
                         }}
                         title={isReadOnlyProject ? video.input_prompt : 'Edit prompt & regenerate'}
-                        className="max-h-12 min-w-0 flex-1 cursor-pointer overflow-hidden whitespace-normal break-words text-left text-sm font-medium leading-6 text-zinc-200 transition hover:text-zinc-50"
+                        className="max-h-12 min-w-0 flex-1 cursor-pointer overflow-hidden whitespace-normal break-words text-left text-sm font-medium leading-6 text-foreground/90 transition hover:text-foreground"
                       >
                         {video.input_prompt}
                       </button>
@@ -11786,13 +12016,13 @@ export default function DashboardPage() {
                             title={hasNarration ? 'Narration for this card' : 'No narration detected in this card'}
                             className={`relative grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
                               hasNarration
-                                ? 'border-violet-400/40 bg-violet-500/10 text-violet-200 hover:border-violet-300/60 hover:bg-violet-500/20 hover:text-violet-100'
-                                : 'border-white/10 bg-white/[0.03] text-zinc-500 hover:border-white/20 hover:text-zinc-300'
+                                ? 'border-violet-400/40 bg-violet-500/10 text-action-violet hover:border-action-violet/60 hover:bg-violet-500/20 hover:text-action-violet-strong'
+                                : 'border-border bg-accent/30 text-muted-foreground hover:border-border hover:text-foreground/80'
                             }`}
                           >
                             <MessageSquareQuote className="h-3.5 w-3.5" aria-hidden="true" />
                             {hasNarration ? (
-                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-ring" aria-hidden="true" />
                             ) : null}
                           </button>
                         )
@@ -11801,14 +12031,14 @@ export default function DashboardPage() {
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
                           onClick={(event) => event.stopPropagation()}
-                          className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
+                          className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-muted-foreground transition hover:text-foreground/90 active:cursor-grabbing"
                           title="Drag to reorder"
                           aria-label="Drag to reorder"
                         >
                           <GripVertical className="h-4 w-4" aria-hidden="true" />
                         </span>
                         {status === 'processing' ? (
-                          <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
+                          <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-accent-warm" aria-hidden="true" />
                         ) : status === 'completed' && video.video?.storage_path ? (
                           (() => {
                             const isApproved = approvedIds.has(video.id)
@@ -11824,8 +12054,8 @@ export default function DashboardPage() {
                                 title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
                                 className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
                                   isApproved
-                                    ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
-                                    : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-zinc-100'
+                                    ? 'border-action-emerald/40 bg-action-emerald/10 text-action-emerald hover:bg-action-emerald/15'
+                                    : 'border-border bg-accent/30 text-muted-foreground hover:border-border hover:text-foreground'
                                 }`}
                               >
                                 {isApproved ? (
@@ -11845,7 +12075,7 @@ export default function DashboardPage() {
                           }}
                           aria-label="Edit prompt and regenerate"
                           title="Edit prompt and regenerate"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-action-emerald/40 hover:bg-action-emerald/10 hover:text-action-emerald"
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
@@ -11865,7 +12095,7 @@ export default function DashboardPage() {
                                     onClick={(event) => event.stopPropagation()}
                                     aria-label="Regenerate this card"
                                     title="Regenerate this card — choose provider"
-                                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-cool/40 hover:bg-accent-cool/10 hover:text-accent-cool disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     <RefreshCw
                                       className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-spin' : ''}`}
@@ -11896,10 +12126,10 @@ export default function DashboardPage() {
                                           <span className="text-sm">
                                             {choice.label}
                                             {isCurrent ? (
-                                              <span className="ml-1 text-[10px] text-emerald-300">(Current)</span>
+                                              <span className="ml-1 text-[10px] text-action-emerald">(Current)</span>
                                             ) : null}
                                           </span>
-                                          <span className="text-[11px] text-zinc-400">{choice.description}</span>
+                                          <span className="text-[11px] text-muted-foreground">{choice.description}</span>
                                         </DropdownMenuItem>
                                       )
                                     })
@@ -11918,7 +12148,7 @@ export default function DashboardPage() {
                             }}
                             aria-label="Trim clip"
                             title="Trim clip"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-accent-warm/40 hover:bg-accent-warm/10 hover:text-accent-warm"
                           >
                             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -11932,7 +12162,7 @@ export default function DashboardPage() {
                             }}
                             aria-label="Video-to-Video Editing"
                             title="Video-to-Video Editing (AI prompt)"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-rose-400/40 bg-rose-500/15 text-rose-300 transition hover:border-rose-300/60 hover:bg-rose-500/30 hover:text-rose-100"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-rose-400/40 bg-rose-500/15 text-action-rose transition hover:border-action-rose/60 hover:bg-rose-500/30 hover:text-action-rose-strong"
                           >
                             <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -11945,7 +12175,7 @@ export default function DashboardPage() {
                           }}
                           aria-label="Delete card"
                           title="Delete card"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-accent/30 text-muted-foreground transition hover:border-action-rose/40 hover:bg-action-rose/10 hover:text-action-rose"
                         >
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
@@ -11953,13 +12183,13 @@ export default function DashboardPage() {
                       )}
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-2">
                         <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(video.status)}`} />
                         {formatStatusLabel(video.status)}
                         {(status === 'processing' || status === 'pending') ? (
                           <LiveJobProgress job={video}>
-                            {(pct) => (pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null)}
+                            {(pct) => (pct !== null ? <span className="tabular-nums text-accent-warm">{pct}%</span> : null)}
                           </LiveJobProgress>
                         ) : null}
                       </span>
@@ -11970,7 +12200,7 @@ export default function DashboardPage() {
                         {(livePct) => {
                           const pct = livePct ?? 0
                           return (
-                            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-accent">
                               <div className="h-full rounded-full bg-amber-300 transition-all duration-500" style={{ width: `${pct}%` }} />
                             </div>
                           )
@@ -11987,40 +12217,34 @@ export default function DashboardPage() {
                   </article>
                   {!isLast ? (
                     <div
-                      className="flex items-center gap-2 px-1 text-xs text-zinc-500"
+                      className="flex items-center gap-2 px-1 text-xs text-muted-foreground"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
-                            title="Transition between these clips"
-                            aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
-                          >
-                            <TransitionPreview id={transitionId} size={22} />
-                            <span>{TRANSITION_LABEL[transitionId]}</span>
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="center" className="min-w-[12rem]">
-                          <DropdownMenuLabel>Transition</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          {TRANSITION_OPTIONS.map((opt) => (
-                            <DropdownMenuItem
-                              key={opt.id}
-                              onSelect={() => {
-                                setTransitions((current) => ({ ...current, [video.id]: opt.id }))
-                              }}
-                              className={`flex items-center gap-2 ${transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}`}
-                            >
-                              <TransitionPreview id={opt.id} size={32} />
-                              <span>{opt.label}</span>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                      <span className="h-px flex-1 bg-accent" aria-hidden="true" />
+                      <TransitionPicker
+                        value={transitionId}
+                        durationMs={transitions[video.id]?.durationMs ?? DEFAULT_TRANSITION_DURATION[transitionId] ?? 0}
+                        gapCount={displayedClips.length - 1}
+                        onSelect={(spec) =>
+                          setTransitions((current) => ({ ...current, [video.id]: spec }))
+                        }
+                        onApplyToAll={(spec) =>
+                          setTransitions((current) =>
+                            applyTransitionToAll(
+                              current,
+                              displayedClips.slice(0, -1).map((c) => c.id),
+                              spec,
+                            ),
+                          )
+                        }
+                        onReset={() =>
+                          setTransitions((current) => ({
+                            ...current,
+                            [video.id]: { id: 'cut', durationMs: 0 },
+                          }))
+                        }
+                      />
+                      <span className="h-px flex-1 bg-accent" aria-hidden="true" />
                     </div>
                   ) : null}
                   </Fragment>
@@ -12028,18 +12252,18 @@ export default function DashboardPage() {
               })}
             </div>
           ) : (
-            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
               <div>
-                <Film className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                <p className="mt-3 text-sm font-medium text-zinc-300">No renders yet</p>
-                <p className="mt-2 text-xs leading-5 text-zinc-600">New video generations will collect here.</p>
+                <Film className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                <p className="mt-3 text-sm font-medium text-foreground/80">No renders yet</p>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">New video generations will collect here.</p>
               </div>
             </div>
           )}
         </div>
       </aside>
 
-      {/* Left library panel — only opens via the LayoutGrid icon. Shows approved videos. */}
+      {/* Left library panel — only opens via the Library icon. Shows approved videos. */}
       <button
         type="button"
         aria-label="Close library"
@@ -12050,7 +12274,8 @@ export default function DashboardPage() {
       />
 
       <aside
-        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-96 lg:w-[26rem] xl:w-[30rem] 2xl:w-[34rem] ${
+        ref={previewLeftSidebarRef}
+        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-border bg-card p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-96 lg:w-[26rem] xl:w-[30rem] 2xl:w-[34rem] ${
           isApprovedPanelOpen
             ? 'pointer-events-auto visible translate-x-0 opacity-100'
             : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
@@ -12058,17 +12283,17 @@ export default function DashboardPage() {
         aria-label="Library"
         aria-hidden={!isApprovedPanelOpen}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3 pt-12 sm:pt-14">
+        <div className="flex items-center justify-between gap-2 border-b border-border pb-3 pt-12 sm:pt-14">
           <div className="inline-flex items-center gap-2">
-            <Library className="h-4 w-4 text-emerald-300" aria-hidden="true" />
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">Library</p>
-            <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 bg-white/[0.04] px-1.5 text-[11px] font-semibold text-zinc-300">
+            <Library className="h-4 w-4 text-action-emerald" aria-hidden="true" />
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Library</p>
+            <span className="grid h-5 min-w-5 place-items-center rounded-full border border-border bg-accent/40 px-1.5 text-[11px] font-semibold text-foreground/80">
               {libraryItems.length}
             </span>
           </div>
           <button
             type="button"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-border hover:bg-accent/60 hover:text-foreground"
             aria-label="Close library"
             onClick={() => setIsApprovedPanelOpen(false)}
           >
@@ -12077,8 +12302,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-4">
-          <p className="text-xs font-medium text-zinc-500">Saved videos</p>
-          <h2 className="text-sm font-semibold text-zinc-100">Your library</h2>
+          <p className="text-xs font-medium text-muted-foreground">Saved videos</p>
+          <h2 className="text-sm font-semibold text-foreground">Your library</h2>
         </div>
 
         <div className="mt-3 flex-1 overflow-y-auto pr-1">
@@ -12095,13 +12320,26 @@ export default function DashboardPage() {
                   : video.video
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
+              // Status-only theming: Draft = soft yellow, Final Film = soft green.
+              // Kept subtle to stay coherent with the dark theme; the existing
+              // DRAFT / Saved text badges remain the accessible, non-color cue.
+              const variantTheme =
+                variant === 'draft'
+                  ? {
+                      base: 'border-amber-300/25 bg-amber-300/[0.05]',
+                      hover: 'hover:border-accent-warm/40 hover:bg-amber-300/[0.09]',
+                    }
+                  : {
+                      base: 'border-action-emerald/25 bg-action-emerald/[0.05]',
+                      hover: 'hover:border-action-emerald/40 hover:bg-action-emerald/[0.09]',
+                    }
               return (
                 <article
                   key={video.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition ${variantTheme.hover} ${
                     selectMode && isChecked
-                      ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                      ? 'border-action-rose/40 bg-action-rose/[0.06]'
+                      : isPreviewSelected ? 'border-action-emerald/30 bg-action-emerald/[0.04]' : variantTheme.base
                   }`}
                   role="button"
                   tabIndex={0}
@@ -12124,13 +12362,13 @@ export default function DashboardPage() {
                       onClick={(event) => { event.stopPropagation(); toggleSelectId(variant, video.id) }}
                       aria-label={isChecked ? 'Deselect' : 'Select'}
                       className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${
-                        isChecked ? 'border-rose-300/60 bg-rose-300/20 text-rose-200' : 'border-white/20 text-zinc-500'
+                        isChecked ? 'border-action-rose/60 bg-action-rose/20 text-action-rose' : 'border-border text-muted-foreground'
                       }`}
                     >
                       {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
                     </button>
                   ) : null}
-                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-surface-2">
                     {display?.storage_path ? (
                       <PlayableVideo
                         thumbnail
@@ -12151,17 +12389,17 @@ export default function DashboardPage() {
                         }}
                       />
                     ) : (
-                      <div className="grid h-full w-full place-items-center text-zinc-500">
+                      <div className="grid h-full w-full place-items-center text-muted-foreground">
                         <Clapperboard className="h-6 w-6" aria-hidden="true" />
                       </div>
                     )}
                   </div>
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
+                      <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-foreground/90">
                         {video.input_prompt}
                       </p>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         {variant === 'final' && video.video?.storage_path ? (
                           <>
                           <DropdownMenu>
@@ -12172,16 +12410,16 @@ export default function DashboardPage() {
                                  onClick={(event) => event.stopPropagation()}
                                  aria-label="Download video"
                                  title="Download"
-                                 className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                 className="grid h-8 min-w-8 shrink-0 place-items-center rounded-full border border-action-emerald/20 px-1.5 text-action-emerald/70 transition hover:border-action-emerald/50 hover:bg-action-emerald/10 hover:text-action-emerald disabled:opacity-60"
                                >
                                  {downloadingId === video.id ? (
                                    downloadProgress !== null ? (
-                                     <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
+                                     <span className="text-[9px] font-semibold tabular-nums text-action-emerald">{downloadProgress}%</span>
                                    ) : (
-                                     <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                                    )
                                  ) : (
-                                   <Download className="h-3 w-3" aria-hidden="true" />
+                                   <Download className="h-4 w-4" aria-hidden="true" />
                                  )}
                                </button>
                              </DropdownMenuTrigger>
@@ -12219,13 +12457,13 @@ export default function DashboardPage() {
                                   onClick={(event) => event.stopPropagation()}
                                   aria-label="Project audio"
                                   title="Music & voiceover"
-                                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${
+                                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                                     hasAny
-                                      ? 'border-white/10 text-zinc-400 hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200'
-                                      : 'border-white/10 text-zinc-600 hover:border-white/20 hover:text-zinc-400'
+                                      ? 'border-accent-cool/20 text-accent-cool/70 hover:border-accent-cool/50 hover:bg-accent-cool/10 hover:text-accent-cool'
+                                      : 'border-border text-muted-foreground hover:border-border hover:text-muted-foreground'
                                   }`}
                                 >
-                                  <Music2 className="h-3 w-3" aria-hidden="true" />
+                                  <Music2 className="h-4 w-4" aria-hidden="true" />
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent
@@ -12233,11 +12471,11 @@ export default function DashboardPage() {
                                 className="w-72 space-y-3"
                                 onClick={(event) => event.stopPropagation()}
                               >
-                                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                   Project audio
                                 </p>
                                 {!hasAny ? (
-                                  <p className="text-xs text-zinc-500">
+                                  <p className="text-xs text-muted-foreground">
                                     No music or voiceover for this project.
                                   </p>
                                 ) : (
@@ -12277,12 +12515,12 @@ export default function DashboardPage() {
                           const checking = copyrightChecking.has(video.id)
                           const verdict = review?.verdict
                           const tone = verdict === 'approved'
-                            ? { border: 'border-emerald-300/40 bg-emerald-300/10 text-emerald-300', Icon: ShieldCheck, label: 'Content check: Approved' }
+                            ? { border: 'border-action-emerald/40 bg-action-emerald/10 text-action-emerald', Icon: ShieldCheck, label: 'Content check: Approved' }
                             : verdict === 'rejected'
-                              ? { border: 'border-rose-300/40 bg-rose-300/10 text-rose-300', Icon: ShieldX, label: 'Content check: Rejected' }
+                              ? { border: 'border-action-rose/40 bg-action-rose/10 text-action-rose', Icon: ShieldX, label: 'Content check: Rejected' }
                               : verdict === 'caution'
-                                ? { border: 'border-amber-300/40 bg-amber-300/10 text-amber-300', Icon: ShieldAlert, label: 'Content check: Needs review' }
-                                : { border: 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
+                                ? { border: 'border-accent-warm/40 bg-accent-warm/10 text-accent-warm', Icon: ShieldAlert, label: 'Content check: Needs review' }
+                                : { border: 'border-action-violet/20 text-action-violet/70 hover:border-action-violet/50 hover:bg-action-violet/10 hover:text-action-violet', Icon: Shield, label: 'Run content check' }
                           const Icon = tone.Icon
                           return (
                             <button
@@ -12301,12 +12539,12 @@ export default function DashboardPage() {
                               }}
                               aria-label={tone.label}
                               title={tone.label}
-                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
+                              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
                             >
                               {checking ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                               ) : (
-                                <Icon className="h-3 w-3" aria-hidden="true" />
+                                <Icon className="h-4 w-4" aria-hidden="true" />
                               )}
                             </button>
                           )
@@ -12321,9 +12559,9 @@ export default function DashboardPage() {
                             }}
                             aria-label="Reopen for editing"
                             title="Reopen for editing"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/20 text-accent-warm/70 transition hover:border-accent-warm/50 hover:bg-accent-warm/10 hover:text-accent-warm"
                           >
-                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                            <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         {variant === 'final' ? (
@@ -12331,26 +12569,19 @@ export default function DashboardPage() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              setNarrationReview({
-                                cardId: video.id,
-                                storagePath: video.video?.storage_path ?? '',
-                                // narration_text is set on new merged entries at merge time.
-                                // For legacy Final films already saved to localStorage without
-                                // narration_text, fall back to aggregating from source clips.
-                                narrationText:
-                                  video.narration_text ??
-                                  ((projectSourceJobs[video.id] ?? [])
-                                    .map((j) => j.narration_text)
-                                    .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-                                    .join('\n') || null),
-                                prompt: video.input_prompt ?? null,
+                              const storagePath = video.video?.storage_path ?? ''
+                              setLibraryTranscript({ cardId: video.id, videoUrl: null })
+                              void signStorageUrl(storagePath).then((signed) => {
+                                setLibraryTranscript((prev) =>
+                                  prev?.cardId === video.id ? { cardId: video.id, videoUrl: signed ?? storagePath } : prev,
+                                )
                               })
                             }}
-                            aria-label="Review narration"
-                            title="Review narration"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                            aria-label="Transcribe film audio"
+                            title="Transcribe speech from this film"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-action-violet/20 text-action-violet/70 transition hover:border-action-violet/50 hover:bg-action-violet/10 hover:text-action-violet"
                           >
-                            <ScanText className="h-3 w-3" aria-hidden="true" />
+                            <ScanText className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         <button
@@ -12361,22 +12592,22 @@ export default function DashboardPage() {
                           }}
                           aria-label="Delete card"
                           title="Delete card"
-                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-action-rose/20 text-action-rose/70 transition hover:border-action-rose/50 hover:bg-action-rose/10 hover:text-action-rose"
                         >
-                          <Trash2 className="h-3 w-3" aria-hidden="true" />
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                       {variant === 'final' ? (
                         <span className="inline-flex items-center gap-1.5">
-                          <BookmarkCheck className="h-3 w-3 text-emerald-300" aria-hidden="true" />
+                          <BookmarkCheck className="h-3 w-3 text-action-emerald" aria-hidden="true" />
                           Saved
                         </span>
                       ) : (() => {
                         const clipCount = (draftSourceJobs[video.id]?.length ?? 0) + (draftSourceImages[video.id]?.length ?? 0)
                         return (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-warm/30 bg-accent-warm/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm">
                             Draft{clipCount > 0 ? ` · ${clipCount} clip${clipCount === 1 ? '' : 's'}` : ''}
                           </span>
                         )
@@ -12384,14 +12615,13 @@ export default function DashboardPage() {
                       <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
                     </div>
                   </div>
-                  {variant === 'final' ? (
-                    <NarrationReviewPanel
-                      open={narrationReview?.cardId === video.id}
-                      onClose={() => setNarrationReview(null)}
-                      videoStoragePath={narrationReview?.cardId === video.id ? (narrationReview.storagePath || null) : null}
-                      narrationText={narrationReview?.cardId === video.id ? narrationReview.narrationText : null}
-                      prompt={narrationReview?.cardId === video.id ? narrationReview.prompt : null}
-                    />
+                  {variant === 'final' && libraryTranscript?.cardId === video.id && libraryTranscript.videoUrl ? (
+                    <div className="fixed inset-0 z-50">
+                      <TranscriptPanel
+                        videoUrl={libraryTranscript.videoUrl}
+                        onClose={() => setLibraryTranscript(null)}
+                      />
+                    </div>
                   ) : null}
                 </article>
               )
@@ -12399,11 +12629,11 @@ export default function DashboardPage() {
 
             if (finalizedItems.length === 0 && draftItems.length === 0) {
               return (
-                <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
                   <div>
-                    <Library className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                    <p className="mt-3 text-sm font-medium text-zinc-300">No saved videos yet</p>
-                    <p className="mt-2 text-xs leading-5 text-zinc-600">
+                    <Library className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-medium text-foreground/80">No saved videos yet</p>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
                       Approve a render from the right panel to keep it here.
                     </p>
                   </div>
@@ -12415,8 +12645,8 @@ export default function DashboardPage() {
               <div className="grid gap-5">
                 <section className="grid gap-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Final videos</h3>
-                    <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Final videos</h3>
+                    <span className="grid h-5 min-w-5 place-items-center rounded-full border border-border px-1.5 text-[10px] font-semibold text-foreground/80">
                       {finalizedItems.length}
                     </span>
                     {finalizedItems.length > 0 ? (
@@ -12426,7 +12656,7 @@ export default function DashboardPage() {
                             <button
                               type="button"
                               onClick={() => setSelectedFinalIds((prev) => prev.size === finalizedItems.length ? new Set() : new Set(finalizedItems.map((v) => v.id)))}
-                              className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                              className="rounded-full border border-border px-2 py-1 text-[10px] font-semibold text-foreground/80 transition hover:border-border hover:text-foreground"
                             >
                               {selectedFinalIds.size === finalizedItems.length ? 'Deselect all' : 'Select all'}
                             </button>
@@ -12434,7 +12664,7 @@ export default function DashboardPage() {
                               type="button"
                               disabled={selectedFinalIds.size === 0}
                               onClick={() => void bulkDeleteSelected('final')}
-                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                              className="inline-flex items-center gap-1 rounded-full border border-action-rose/30 bg-action-rose/10 px-2 py-1 text-[10px] font-semibold text-action-rose transition hover:bg-action-rose/20 disabled:opacity-40"
                             >
                               <Trash2 className="h-3 w-3" aria-hidden="true" />
                               Delete ({selectedFinalIds.size})
@@ -12443,7 +12673,7 @@ export default function DashboardPage() {
                               type="button"
                               onClick={() => { setFinalSelectMode(false); setSelectedFinalIds(new Set()) }}
                               aria-label="Cancel selection"
-                              className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                              className="grid h-6 w-6 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-border hover:text-foreground"
                             >
                               <X className="h-3 w-3" aria-hidden="true" />
                             </button>
@@ -12454,7 +12684,7 @@ export default function DashboardPage() {
                             onClick={() => setFinalSelectMode(true)}
                             aria-label="Select final videos"
                             title="Select multiple to delete"
-                            className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                            className="grid h-6 w-6 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-border hover:text-foreground"
                           >
                             <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -12463,7 +12693,7 @@ export default function DashboardPage() {
                     ) : null}
                   </div>
                   {finalizedItems.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
+                    <p className="rounded-xl border border-dashed border-border px-3 py-3 text-[11px] text-muted-foreground">
                       No final videos yet. Use Final Film to merge clips.
                     </p>
                   ) : (
@@ -12475,8 +12705,8 @@ export default function DashboardPage() {
 
                 <section className="grid gap-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Drafts</h3>
-                    <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Drafts</h3>
+                    <span className="grid h-5 min-w-5 place-items-center rounded-full border border-border px-1.5 text-[10px] font-semibold text-foreground/80">
                       {draftItems.length}
                     </span>
                     {draftItems.length > 0 ? (
@@ -12486,7 +12716,7 @@ export default function DashboardPage() {
                             <button
                               type="button"
                               onClick={() => setSelectedDraftIds((prev) => prev.size === draftItems.length ? new Set() : new Set(draftItems.map((v) => v.id)))}
-                              className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                              className="rounded-full border border-border px-2 py-1 text-[10px] font-semibold text-foreground/80 transition hover:border-border hover:text-foreground"
                             >
                               {selectedDraftIds.size === draftItems.length ? 'Deselect all' : 'Select all'}
                             </button>
@@ -12494,7 +12724,7 @@ export default function DashboardPage() {
                               type="button"
                               disabled={selectedDraftIds.size === 0}
                               onClick={() => void bulkDeleteSelected('draft')}
-                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                              className="inline-flex items-center gap-1 rounded-full border border-action-rose/30 bg-action-rose/10 px-2 py-1 text-[10px] font-semibold text-action-rose transition hover:bg-action-rose/20 disabled:opacity-40"
                             >
                               <Trash2 className="h-3 w-3" aria-hidden="true" />
                               Delete ({selectedDraftIds.size})
@@ -12503,7 +12733,7 @@ export default function DashboardPage() {
                               type="button"
                               onClick={() => { setDraftSelectMode(false); setSelectedDraftIds(new Set()) }}
                               aria-label="Cancel selection"
-                              className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                              className="grid h-6 w-6 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-border hover:text-foreground"
                             >
                               <X className="h-3 w-3" aria-hidden="true" />
                             </button>
@@ -12514,7 +12744,7 @@ export default function DashboardPage() {
                             onClick={() => setDraftSelectMode(true)}
                             aria-label="Select drafts"
                             title="Select multiple to delete"
-                            className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                            className="grid h-6 w-6 place-items-center rounded-full border border-border text-muted-foreground transition hover:border-border hover:text-foreground"
                           >
                             <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -12523,7 +12753,7 @@ export default function DashboardPage() {
                     ) : null}
                   </div>
                   {draftItems.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
+                    <p className="rounded-xl border border-dashed border-border px-3 py-3 text-[11px] text-muted-foreground">
                       No drafts. Saved clips that aren't merged yet show here.
                     </p>
                   ) : (
@@ -12545,7 +12775,7 @@ export default function DashboardPage() {
       {!isReadOnlyProject && (
       <form
         ref={composerRef}
-        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(100rem,calc(100vw-8rem))] sm:p-4"
+        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-border bg-surface/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(100rem,calc(100vw-8rem))] sm:p-4"
         onSubmit={(e) => {
           e.preventDefault()
           if (isSubmitting || hasUploadingFiles || isEnhancingPrompt) return
@@ -12558,7 +12788,7 @@ export default function DashboardPage() {
         }}
       >
         <div className="flex flex-wrap items-center gap-2" aria-label="Generation mode">
-          <div role="tablist" aria-label="Choose generation mode" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+          <div role="tablist" aria-label="Choose generation mode" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
             <button
               type="button"
               role="tab"
@@ -12567,7 +12797,7 @@ export default function DashboardPage() {
                 setGenerationMode('text-to-video')
                 setComposerError(null)
               }}
-              className={`rounded-full px-3 py-1.5 transition ${isTextToVideo ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`rounded-full px-3 py-1.5 transition ${isTextToVideo ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'}`}
             >
               Text to Video
             </button>
@@ -12579,12 +12809,12 @@ export default function DashboardPage() {
                 setGenerationMode('image-to-video')
                 setComposerError(null)
               }}
-              className={`rounded-full px-3 py-1.5 transition ${!isTextToVideo ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`rounded-full px-3 py-1.5 transition ${!isTextToVideo ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'}`}
             >
               Image to Video
             </button>
           </div>
-          <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+          <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
             {([5, 10, 15, 30, 45, 135] as const).map((sec) => {
               const active = durationSeconds === sec
               // Local RTX models (Wan 2.1 / LTX) only support 5/10/15s clips.
@@ -12598,7 +12828,7 @@ export default function DashboardPage() {
                   disabled={disabled}
                   title={disabled ? 'Local models support up to 15s clips' : undefined}
                   onClick={() => setDurationSeconds(sec)}
-                  className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'} ${disabled ? 'cursor-not-allowed opacity-30' : ''}`}
+                  className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'} ${disabled ? 'cursor-not-allowed opacity-30' : ''}`}
                 >
                   {sec}s
                 </button>
@@ -12606,7 +12836,7 @@ export default function DashboardPage() {
             })}
           </div>
 
-          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
             {([
               { value: '9:16', label: '9:16', hint: 'Reels', icon: RectangleVertical },
               { value: '1:1', label: '1:1', hint: 'Post', icon: Square },
@@ -12633,13 +12863,13 @@ export default function DashboardPage() {
                   title={lockTitle}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
                     active
-                      ? 'bg-zinc-100 text-zinc-950'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-foreground text-background'
+                      : 'text-muted-foreground hover:text-foreground/90'
                   } ${isLocked ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                 >
                   <Icon className="h-3 w-3" aria-hidden="true" />
                   <span>{opt.label}</span>
-                  <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
+                  <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{opt.hint}</span>
                   {(isLocked || isLockedActive) ? (
                     <Lock className="h-3 w-3 opacity-70" aria-hidden="true" />
                   ) : null}
@@ -12691,7 +12921,7 @@ export default function DashboardPage() {
         {!isTextToVideo ? (
           <div id="composer-start-frame" className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
             <button
-              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
+              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-xs font-semibold text-foreground/70 transition hover:border-border hover:bg-accent/45 sm:h-12 sm:min-w-[3.25rem]"
               type="button"
               onClick={() => openFileUpload('Start')}
             >
@@ -12701,12 +12931,12 @@ export default function DashboardPage() {
                   {startUploadCount}
                 </span>
               ) : (
-                <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                <FileUp className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               )}
             </button>
-            <ChevronsRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
+            <ChevronsRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <button
-              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
+              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-xs font-semibold text-foreground/70 transition hover:border-border hover:bg-accent/45 sm:h-12 sm:min-w-[3.25rem]"
               type="button"
               onClick={() => openFileUpload('End')}
             >
@@ -12716,7 +12946,7 @@ export default function DashboardPage() {
                   {endUploadCount}
                 </span>
               ) : (
-                <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                <FileUp className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               )}
             </button>
           </div>
@@ -12735,7 +12965,7 @@ export default function DashboardPage() {
               placeholder="What do you want to forge?"
               rows={2}
               dir="auto"
-              className="min-h-20 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words text-justify border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
+              className="min-h-20 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words text-justify border-0 bg-transparent py-2 text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/70"
             />
 
             {uploadedFiles.length > 0 ? (
@@ -12753,21 +12983,21 @@ export default function DashboardPage() {
                         onClick={() => { if (canPreview && file.url) setPreviewImageUrl(file.url) }}
                         disabled={!canPreview}
                         aria-label={canPreview ? `Preview ${file.name}` : file.name}
-                        className={`grid h-12 w-12 place-items-center overflow-hidden rounded-md border bg-white/[0.04] ${
-                          file.status === 'failed' ? 'border-rose-400/40' : 'border-white/10'
-                        } ${canPreview ? 'cursor-zoom-in hover:border-white/30' : 'cursor-default'}`}
+                        className={`grid h-12 w-12 place-items-center overflow-hidden rounded-md border bg-accent/40 ${
+                          file.status === 'failed' ? 'border-rose-400/40' : 'border-border'
+                        } ${canPreview ? 'cursor-zoom-in hover:border-border' : 'cursor-default'}`}
                       >
                         {file.status === 'ready' && file.url ? (
                           <img src={file.url} alt="" className="h-full w-full object-cover" />
                         ) : file.status === 'uploading' ? (
-                          <LoaderCircle className="h-4 w-4 animate-spin text-zinc-400" aria-hidden="true" />
+                          <LoaderCircle className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
                         ) : (
-                          <Paperclip className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                          <Paperclip className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                         )}
                       </button>
                       <button
                         type="button"
-                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-white/15 bg-black/80 text-zinc-300 shadow transition hover:text-zinc-100"
+                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-border bg-surface-2 text-foreground/80 shadow transition hover:text-foreground"
                         aria-label={`Remove ${file.name}`}
                         onClick={() => removeUploadedFile(file.id)}
                       >
@@ -12780,16 +13010,16 @@ export default function DashboardPage() {
             ) : null}
 
             {composerError ? (
-              <p className="text-xs leading-5 text-rose-300">{composerError}</p>
+              <p className="text-xs leading-5 text-action-rose">{composerError}</p>
             ) : blockedReason && hasComposerInput ? (
-              <p className="text-xs leading-5 text-zinc-500">{blockedReason}</p>
+              <p className="text-xs leading-5 text-muted-foreground">{blockedReason}</p>
             ) : null}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
             <span
               title={`Estimated cost for ${durationSeconds}s on ${selectedModel.label}${costEstimate.clips > 1 ? ` (${costEstimate.clips} × ${costEstimate.perClipSec}s clips)` : ''}`}
-              className="hidden sm:inline-flex h-10 items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-3 text-[11px] font-semibold text-amber-200/90"
+              className="hidden sm:inline-flex h-10 items-center gap-1.5 rounded-full border border-accent-warm/20 bg-amber-300/[0.06] px-3 text-[11px] font-semibold text-accent-warm/90"
             >
               ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} cr
             </span>
@@ -12799,7 +13029,7 @@ export default function DashboardPage() {
                   type="button"
                   aria-label="Choose video model"
                   title={`Model: ${selectedModel.label}`}
-                  className="inline-flex h-10 max-w-[14rem] items-center justify-center gap-2 truncate rounded-full border border-[#2a2d32] bg-black/20 px-3 text-xs font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200"
+                  className="inline-flex h-10 max-w-[14rem] items-center justify-center gap-2 truncate rounded-full border border-border bg-muted/60 px-3 text-xs font-semibold text-foreground/80 transition hover:border-accent-warm/60 hover:bg-accent/50 hover:text-accent-warm"
                 >
                   <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <span className="truncate">{selectedModel.label}</span>
@@ -12808,7 +13038,7 @@ export default function DashboardPage() {
               <PopoverContent
                 side="top"
                 align="end"
-                className="w-72 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+                className="w-72 border-border bg-card p-2 text-foreground/90 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
               >
                 {pickerModels.map((choice) => {
                   const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
@@ -12823,32 +13053,32 @@ export default function DashboardPage() {
                         setSelectedModelId(choice.id)
                         setIsModelMenuOpen(false)
                       }}
-                      className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${isActive ? 'bg-white/[0.05]' : ''}`}
+                      className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40 ${isActive ? 'bg-accent/50' : ''}`}
                     >
-                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
+                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-accent/40 text-foreground/80">
                         {isActive ? <Check className="h-4 w-4" aria-hidden="true" /> : <Cpu className="h-4 w-4" aria-hidden="true" />}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-sm font-semibold text-zinc-100">{choice.label}</span>
+                          <span className="text-sm font-semibold text-foreground">{choice.label}</span>
                           {compatible && choice.badges.map((badge) => (
                             <span
                               key={badge.kind}
                               className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
                                 badge.kind === 'recommended'
-                                  ? 'bg-amber-400/20 text-amber-300'
+                                  ? 'bg-accent-warm/20 text-accent-warm'
                                   : badge.kind === 'fast'
-                                    ? 'bg-sky-400/15 text-sky-300'
+                                    ? 'bg-accent-cool/15 text-accent-cool'
                                     : badge.kind === 'best-quality'
-                                      ? 'bg-violet-400/15 text-violet-300'
-                                      : 'bg-emerald-400/15 text-emerald-300'
+                                      ? 'bg-violet-400/15 text-action-violet'
+                                      : 'bg-emerald-400/15 text-action-emerald'
                               }`}
                             >
                               {badge.label}
                             </span>
                           ))}
                         </span>
-                        <span className="block text-xs leading-5 text-zinc-500">
+                        <span className="block text-xs leading-5 text-muted-foreground">
                           {compatible
                             ? `${choice.description} ${choice.costHint}`
                             : `Not available in ${isTextToVideo ? 'Text to Video' : 'Image to Video'} mode.`}
@@ -12861,10 +13091,10 @@ export default function DashboardPage() {
                   <div
                     className={`mt-1 rounded-lg border px-3 py-2 text-xs leading-5 ${
                       localStatusLoading
-                        ? 'border-white/10 bg-white/[0.03] text-zinc-400'
+                        ? 'border-border bg-accent/30 text-muted-foreground'
                         : localStatus?.status === 'configured'
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                          : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-action-emerald'
+                          : 'border-accent-warm/30 bg-accent-warm/10 text-accent-warm'
                     }`}
                   >
                     {localStatusLoading
@@ -12875,8 +13105,8 @@ export default function DashboardPage() {
                   </div>
                 )}
                 {selectedModel?.providerKey === 'local' && (
-                  <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
-                    <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  <div className="mt-2 rounded-lg border border-border bg-accent/30 p-2">
+                    <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                       Local prompt planner
                     </div>
                     <div className="grid gap-2">
@@ -12887,16 +13117,16 @@ export default function DashboardPage() {
                             key={choice.id}
                             type="button"
                             onClick={() => setLocalPlannerModel(choice.id)}
-                            className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-white/[0.05] ${
-                              active ? 'bg-white/[0.05]' : ''
+                            className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-accent/50 ${
+                              active ? 'bg-accent/50' : ''
                             }`}
                           >
-                            <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-black/20 text-[10px] font-bold text-zinc-200">
+                            <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-muted/60 text-[10px] font-bold text-foreground/90">
                               {active ? '•' : '·'}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-sm font-semibold text-zinc-100">{choice.label}</span>
-                              <span className="block text-xs leading-5 text-zinc-500">{choice.description}</span>
+                              <span className="block text-sm font-semibold text-foreground">{choice.label}</span>
+                              <span className="block text-xs leading-5 text-muted-foreground">{choice.description}</span>
                             </span>
                           </button>
                         )
@@ -12938,8 +13168,8 @@ export default function DashboardPage() {
                   title="Add company contact info (address, phone, website) as an overlay on the film"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     contactActive
-                      ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
-                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                      ? 'border-emerald-400/60 bg-emerald-500/10 text-action-emerald-strong'
+                      : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
                   }`}
                 >
                   <Contact className="h-5 w-5" aria-hidden="true" />
@@ -12948,27 +13178,27 @@ export default function DashboardPage() {
               </PopoverTrigger>
               <PopoverContent align="end" className="w-80 p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-zinc-100">Contact overlay</span>
+                  <span className="text-sm font-semibold text-foreground">Contact overlay</span>
                   <button
                     type="button"
                     onClick={() => updateContact({ website: '', phone: '', address: '' })}
-                    className="text-[11px] text-zinc-400 hover:text-rose-300"
+                    className="text-[11px] text-muted-foreground hover:text-action-rose"
                   >
                     Clear
                   </button>
                 </div>
-                <p className="mb-3 text-xs leading-5 text-zinc-500">
+                <p className="mb-3 text-xs leading-5 text-muted-foreground">
                   This text is shown as a layer on top of the generated film.
                 </p>
                 <div className="space-y-2.5">
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Website</label>
                       <button
                         type="button"
                         onClick={() => updateContact({ websiteEnabled: !contactOverlay.websiteEnabled })}
                         title={contactOverlay.websiteEnabled ? 'Hide on video' : 'Show on video'}
-                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.websiteEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.websiteEnabled ? 'text-action-emerald hover:text-action-emerald' : 'text-muted-foreground hover:text-muted-foreground'}`}
                       >
                         {contactOverlay.websiteEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                       </button>
@@ -12982,12 +13212,12 @@ export default function DashboardPage() {
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Phone</label>
                       <button
                         type="button"
                         onClick={() => updateContact({ phoneEnabled: !contactOverlay.phoneEnabled })}
                         title={contactOverlay.phoneEnabled ? 'Hide on video' : 'Show on video'}
-                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.phoneEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.phoneEnabled ? 'text-action-emerald hover:text-action-emerald' : 'text-muted-foreground hover:text-muted-foreground'}`}
                       >
                         {contactOverlay.phoneEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                       </button>
@@ -13001,12 +13231,12 @@ export default function DashboardPage() {
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Address</label>
                       <button
                         type="button"
                         onClick={() => updateContact({ addressEnabled: !contactOverlay.addressEnabled })}
                         title={contactOverlay.addressEnabled ? 'Hide on video' : 'Show on video'}
-                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.addressEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.addressEnabled ? 'text-action-emerald hover:text-action-emerald' : 'text-muted-foreground hover:text-muted-foreground'}`}
                       >
                         {contactOverlay.addressEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                       </button>
@@ -13021,7 +13251,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="mt-3 space-y-2">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Theme</label>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Theme</label>
                   <div className="grid grid-cols-3 gap-2">
                     {CONTACT_THEMES.map((theme) => {
                       const active =
@@ -13043,13 +13273,13 @@ export default function DashboardPage() {
                           })}
                           className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
                             active
-                              ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
-                              : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                              ? 'border-emerald-400/60 bg-emerald-500/10 text-action-emerald-strong'
+                              : 'border-border bg-accent/30 text-foreground/80 hover:border-border'
                           }`}
                           style={{ fontFamily: theme.fontFamily }}
                         >
                           <span
-                            className="h-3 w-3 shrink-0 rounded-full border border-white/30"
+                            className="h-3 w-3 shrink-0 rounded-full border border-border"
                             style={{ backgroundColor: theme.swatch }}
                           />
                           <span className="truncate">{theme.label}</span>
@@ -13061,20 +13291,20 @@ export default function DashboardPage() {
 
 
                 <div className="mt-3 space-y-2">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Logo</label>
                   <div className="flex items-center gap-2">
                     {contactOverlay.logoUrl ? (
                       <img
                         src={contactOverlay.logoUrl}
                         alt="Company logo"
-                        className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                        className="h-10 w-10 rounded-md border border-border bg-accent/50 object-contain p-0.5"
                       />
                     ) : (
-                      <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-white/[0.03] text-zinc-500">
+                      <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-border bg-accent/30 text-muted-foreground">
                         <ImageIcon className="h-4 w-4" aria-hidden="true" />
                       </div>
                     )}
-                    <label className="cursor-pointer rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                    <label className="cursor-pointer rounded-lg border border-border bg-accent/30 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border">
                       {contactOverlay.logoUrl ? 'Replace' : 'Upload'}
                       <input
                         type="file"
@@ -13087,15 +13317,15 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         onClick={() => updateContactLogo('')}
-                        className="text-[11px] text-zinc-400 hover:text-rose-300"
+                        className="text-[11px] text-muted-foreground hover:text-action-rose"
                       >
                         Remove
                       </button>
                     ) : null}
                   </div>
                   {contactOverlay.logoUrl ? (
-                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-                      <span className="text-xs font-medium text-zinc-200">Show logo on video</span>
+                    <div className="flex items-center justify-between rounded-lg border border-border bg-accent/30 px-3 py-2">
+                      <span className="text-xs font-medium text-foreground/90">Show logo on video</span>
                       <Switch
                         checked={contactOverlay.logoEnabled}
                         onCheckedChange={(v) => updateContact({ logoEnabled: v })}
@@ -13103,8 +13333,8 @@ export default function DashboardPage() {
                     </div>
                   ) : null}
                 </div>
-                <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-                  <span className="text-xs font-medium text-zinc-200">Show on video</span>
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-accent/30 px-3 py-2">
+                  <span className="text-xs font-medium text-foreground/90">Show on video</span>
                   <Switch
                     checked={contactOverlay.enabled}
                     onCheckedChange={(v) => updateContact({ enabled: v })}
@@ -13118,8 +13348,8 @@ export default function DashboardPage() {
                       onClick={() => updateContact({ position: pos, offset: null })}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
                         !contactOverlay.offset && contactOverlay.position === pos
-                          ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
-                          : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                          ? 'border-emerald-400/60 bg-emerald-500/10 text-action-emerald-strong'
+                          : 'border-border bg-accent/30 text-foreground/80 hover:border-border'
                       }`}
                     >
                       {pos}
@@ -13127,14 +13357,14 @@ export default function DashboardPage() {
                   ))}
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-                  <span className="text-zinc-400">
+                  <span className="text-muted-foreground">
                     {contactOverlay.offset ? 'Custom position (drag on video)' : 'Tip: drag the overlay on the video'}
                   </span>
                   {contactOverlay.offset ? (
                     <button
                       type="button"
                       onClick={() => updateContact({ offset: null })}
-                      className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                      className="rounded-md border border-border bg-accent/30 px-2 py-1 font-medium text-foreground/80 transition hover:border-border"
                     >
                       Reset position
                     </button>
@@ -13142,14 +13372,14 @@ export default function DashboardPage() {
                 </div>
                 <div className="mt-3 space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-zinc-200">Size</span>
+                    <span className="font-medium text-foreground/90">Size</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-zinc-400">{Math.round((contactOverlay.scale ?? 1) * 100)}%</span>
+                      <span className="text-muted-foreground">{Math.round((contactOverlay.scale ?? 1) * 100)}%</span>
                       {(contactOverlay.scale ?? 1) !== 1 ? (
                         <button
                           type="button"
                           onClick={() => updateContact({ scale: 1 })}
-                          className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                          className="rounded-md border border-border bg-accent/30 px-2 py-1 font-medium text-foreground/80 transition hover:border-border"
                         >
                           Reset
                         </button>
@@ -13165,34 +13395,34 @@ export default function DashboardPage() {
                   />
                 </div>
 
-                <div className="mt-3 space-y-2 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                <div className="mt-3 space-y-2 rounded-lg border border-border bg-accent/40 p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-zinc-200">Background layer</span>
+                    <span className="text-xs font-medium text-foreground/90">Background layer</span>
                     <Switch
                       checked={contactOverlay.panelEnabled}
                       onCheckedChange={(v) => updateContact({ panelEnabled: v })}
                     />
                   </div>
-                  <p className="text-[11px] leading-snug text-zinc-500">
+                  <p className="text-[11px] leading-snug text-muted-foreground">
                     The shaded layer behind the logo, website, phone and address.
                   </p>
                   {contactOverlay.panelEnabled ? (
                     <>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-zinc-300">Color</span>
+                        <span className="text-xs text-foreground/80">Color</span>
                         <div className="flex items-center gap-2">
                           <input
                             type="color"
                             value={contactOverlay.panelColor ?? '#000000'}
                             onChange={(e) => updateContact({ panelColor: e.target.value })}
-                            className="h-7 w-10 cursor-pointer rounded-md border border-white/15 bg-transparent p-0.5"
+                            className="h-7 w-10 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
                             aria-label="Background color"
                           />
                           {(contactOverlay.panelColor ?? '#000000').toLowerCase() !== '#000000' ? (
                             <button
                               type="button"
                               onClick={() => updateContact({ panelColor: '#000000' })}
-                              className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/30"
+                              className="rounded-md border border-border bg-accent/30 px-2 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border"
                             >
                               Reset
                             </button>
@@ -13201,8 +13431,8 @@ export default function DashboardPage() {
                       </div>
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-zinc-300">Opacity</span>
-                          <span className="text-zinc-400">{Math.round((contactOverlay.panelOpacity ?? 0.45) * 100)}%</span>
+                          <span className="text-foreground/80">Opacity</span>
+                          <span className="text-muted-foreground">{Math.round((contactOverlay.panelOpacity ?? 0.45) * 100)}%</span>
                         </div>
                         <Slider
                           value={[contactOverlay.panelOpacity ?? 0.45]}
@@ -13235,8 +13465,8 @@ export default function DashboardPage() {
                   title="Add a character as a reference for this project"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     selectedCharacter
-                      ? 'border-fuchsia-400/60 bg-fuchsia-500/10 text-fuchsia-100'
-                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                      ? 'border-action-violet/60 bg-fuchsia-500/10 text-action-violet-strong'
+                      : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
                   }`}
                 >
                   {selectedCharacter ? (
@@ -13266,7 +13496,7 @@ export default function DashboardPage() {
                             updateContinuity({ characterRef: null })
                           }
                         }}
-                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-action-violet/80 transition hover:bg-fuchsia-500/20 hover:text-action-violet-strong"
                       >
                         <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </span>
@@ -13281,23 +13511,23 @@ export default function DashboardPage() {
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 p-2">
                 <div className="mb-1.5 flex items-center justify-between px-1">
-                  <span className="text-xs font-semibold text-zinc-300">Project character</span>
+                  <span className="text-xs font-semibold text-foreground/80">Project character</span>
                   {selectedCharacter ? (
                     <button
                       type="button"
                       onClick={() => { setSelectedCharacter(null); updateContinuity({ characterRef: null }); setCharacterMenuOpen(false) }}
-                      className="text-[11px] text-zinc-400 hover:text-rose-300"
+                      className="text-[11px] text-muted-foreground hover:text-action-rose"
                     >
                       Remove
                     </button>
                   ) : null}
                 </div>
                 {characterListLoading ? (
-                  <div className="flex items-center justify-center py-6 text-zinc-500">
+                  <div className="flex items-center justify-center py-6 text-muted-foreground">
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                   </div>
                 ) : characterList.length === 0 ? (
-                  <div className="px-1 py-4 text-center text-xs text-zinc-500">
+                  <div className="px-1 py-4 text-center text-xs text-muted-foreground">
                     No characters yet. Upload one in Character Sheet.
                   </div>
                 ) : (
@@ -13309,8 +13539,8 @@ export default function DashboardPage() {
                         onClick={() => { setSelectedCharacter(c); updateContinuity({ characterRef: c }); setCharacterMenuOpen(false) }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
                           selectedCharacter?.id === c.id
-                            ? 'border-fuchsia-400'
-                            : 'border-white/10 hover:border-white/30'
+                            ? 'border-action-violet'
+                            : 'border-border hover:border-border'
                         }`}
                         title={c.title ?? 'Character'}
                       >
@@ -13320,8 +13550,8 @@ export default function DashboardPage() {
                   </div>
                 )}
                 {selectedCharacter ? (
-                  <div className="mt-2 border-t border-white/10 px-1 pt-2">
-                    <p className="mb-1 text-[11px] font-medium text-zinc-400">
+                  <div className="mt-2 border-t border-border px-1 pt-2">
+                    <p className="mb-1 text-[11px] font-medium text-muted-foreground">
                       Start-frame view (baked from the sheet)
                     </p>
                     <div className="grid grid-cols-4 gap-1">
@@ -13332,15 +13562,15 @@ export default function DashboardPage() {
                           onClick={() => setCharacterView(v)}
                           className={`rounded-md border px-1.5 py-1 text-[11px] capitalize transition ${
                             characterView === v
-                              ? 'border-fuchsia-400/70 bg-fuchsia-500/10 text-fuchsia-200'
-                              : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20'
+                              ? 'border-action-violet/70 bg-fuchsia-500/10 text-action-violet'
+                              : 'border-border bg-accent/30 text-foreground/80 hover:border-border'
                           }`}
                         >
                           {v}
                         </button>
                       ))}
                     </div>
-                    <p className="mt-1 text-[10px] text-zinc-500">
+                    <p className="mt-1 text-[10px] text-muted-foreground">
                       A clean single-view frame is generated from the Character Sheet so the
                       character stays consistent (Image-to-Video).
                     </p>
@@ -13363,8 +13593,8 @@ export default function DashboardPage() {
                   title="Pin the product so it stays identical in every card"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     selectedProduct
-                      ? 'border-amber-400/60 bg-amber-500/10 text-amber-100'
-                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                      ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm'
+                      : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
                   }`}
                 >
                   {selectedProduct ? (
@@ -13393,7 +13623,7 @@ export default function DashboardPage() {
                             setSelectedProduct(null)
                           }
                         }}
-                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-amber-200/80 transition hover:bg-amber-500/20 hover:text-amber-50"
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-accent-warm/80 transition hover:bg-accent-warm/20 hover:text-accent-warm"
                       >
                         <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </span>
@@ -13408,23 +13638,23 @@ export default function DashboardPage() {
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 p-2">
                 <div className="mb-1.5 flex items-center justify-between px-1">
-                  <span className="text-xs font-semibold text-zinc-300">Project product</span>
+                  <span className="text-xs font-semibold text-foreground/80">Project product</span>
                   {selectedProduct ? (
                     <button
                       type="button"
                       onClick={() => { setSelectedProduct(null); setProductMenuOpen(false) }}
-                      className="text-[11px] text-zinc-400 hover:text-rose-300"
+                      className="text-[11px] text-muted-foreground hover:text-action-rose"
                     >
                       Remove
                     </button>
                   ) : null}
                 </div>
                 {archiveLoading && archiveProductImages.length === 0 ? (
-                  <div className="flex items-center justify-center py-6 text-zinc-500">
+                  <div className="flex items-center justify-center py-6 text-muted-foreground">
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                   </div>
                 ) : archiveProductImages.length === 0 ? (
-                  <div className="px-1 py-4 text-center text-xs text-zinc-500">
+                  <div className="px-1 py-4 text-center text-xs text-muted-foreground">
                     No products yet. Add one in Product AD.
                   </div>
                 ) : (
@@ -13440,7 +13670,7 @@ export default function DashboardPage() {
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
                           selectedProduct?.id === p.id
                             ? 'border-amber-400'
-                            : 'border-white/10 hover:border-white/30'
+                            : 'border-border hover:border-border'
                         }`}
                         title={p.title ?? 'Product'}
                       >
@@ -13480,7 +13710,7 @@ export default function DashboardPage() {
                   type="button"
                   disabled={isEnhancingPrompt || isSubmitting}
                   aria-label="Enhance prompt with AI"
-                  className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-zinc-200/80"
+                  className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-border bg-muted/60 px-4 text-sm font-semibold text-foreground/80 transition hover:border-accent-warm/60 hover:bg-accent/50 hover:text-accent-warm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-muted/60 disabled:hover:text-foreground/80"
                 >
                   {isEnhancingPrompt ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -13493,20 +13723,20 @@ export default function DashboardPage() {
               <PopoverContent
                 side="top"
                 align="end"
-                className={`${styleMode === 'input' || scenarioMode === 'input' ? 'w-[min(26rem,calc(100vw-2rem))]' : 'w-80'} border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
+                className={`${styleMode === 'input' || scenarioMode === 'input' ? 'w-[min(26rem,calc(100vw-2rem))]' : 'w-80'} border-border bg-card p-2 text-foreground/90 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
               >
                 <button
                   type="button"
                   onClick={() => runEnhancePrompt({ mode: 'silent' })}
                   disabled={isEnhancingPrompt || promptText.trim().length === 0}
-                  className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-accent/40 text-foreground/80">
                     <MicOff className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-zinc-100">No narrator</span>
-                    <span className="block text-xs leading-5 text-zinc-500">
+                    <span className="block text-sm font-semibold text-foreground">No narrator</span>
+                    <span className="block text-xs leading-5 text-muted-foreground">
                       Enhance the prompt so the video has no voice-over, dialogue, or talking.
                     </span>
                   </span>
@@ -13516,24 +13746,24 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => setNarratorMode('input')}
                   disabled={isEnhancingPrompt}
-                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
-                    narratorMode === 'input' ? 'bg-white/[0.04]' : ''
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    narratorMode === 'input' ? 'bg-accent/40' : ''
                   }`}
                 >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
                     <Mic className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-zinc-100">With narrator</span>
-                    <span className="block text-xs leading-5 text-zinc-500">
+                    <span className="block text-sm font-semibold text-foreground">With narrator</span>
+                    <span className="block text-xs leading-5 text-muted-foreground">
                       Provide the script — the prompt will be built around the narrator's words.
                     </span>
                   </span>
                 </button>
 
                 {narratorMode === 'input' ? (
-                  <div className="mt-2 space-y-2 border-t border-white/10 px-1 pt-3">
-                    <label htmlFor="narrator-script" className="block text-xs font-medium text-zinc-400">
+                  <div className="mt-2 space-y-2 border-t border-border px-1 pt-3">
+                    <label htmlFor="narrator-script" className="block text-xs font-medium text-muted-foreground">
                       Narrator script
                     </label>
                     <textarea
@@ -13543,10 +13773,10 @@ export default function DashboardPage() {
                       rows={4}
                       maxLength={1500}
                       placeholder="Type the exact words the narrator should say…"
-                      className="w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-amber-300/40"
+                      className="w-full rounded-md border border-border bg-surface-2/60 px-3 py-2 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus:border-accent-warm/40"
                     />
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-zinc-600">{narratorScript.length}/1500</span>
+                      <span className="text-[10px] text-muted-foreground">{narratorScript.length}/1500</span>
                       <button
                         type="button"
                         onClick={() => runEnhancePrompt({ mode: 'narrated', narratorScript })}
@@ -13568,11 +13798,11 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => setScenarioMode((m) => (m === 'input' ? 'idle' : 'input'))}
                   disabled={isEnhancingPrompt || !selectedProduct}
-                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
-                    scenarioMode === 'input' ? 'bg-white/[0.04]' : ''
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    scenarioMode === 'input' ? 'bg-accent/40' : ''
                   }`}
                 >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
                     {selectedProduct ? (
                       <img src={selectedProduct.url} alt="" className="h-full w-full object-cover" />
                     ) : (
@@ -13580,7 +13810,7 @@ export default function DashboardPage() {
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
                       Scenario for this product
                       {selectedProduct && selectedStyleCount > 0 ? (
                         <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-zinc-950">
@@ -13588,7 +13818,7 @@ export default function DashboardPage() {
                         </span>
                       ) : null}
                     </span>
-                    <span className="block text-xs leading-5 text-zinc-500">
+                    <span className="block text-xs leading-5 text-muted-foreground">
                       {selectedProduct
                         ? `Pick styles, then write a ${durationSeconds}s ad scenario for the pinned product.`
                         : 'Pin a product first (Add product) to write its scenario.'}
@@ -13596,14 +13826,14 @@ export default function DashboardPage() {
                   </span>
                   {selectedProduct ? (
                     <ChevronDown
-                      className={`mt-1 h-4 w-4 shrink-0 text-zinc-500 transition ${scenarioMode === 'input' ? 'rotate-180' : ''}`}
+                      className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition ${scenarioMode === 'input' ? 'rotate-180' : ''}`}
                       aria-hidden="true"
                     />
                   ) : null}
                 </button>
 
                 {scenarioMode === 'input' ? (
-                  <div className="mt-2 space-y-3 border-t border-white/10 px-1 pt-3">
+                  <div className="mt-2 space-y-3 border-t border-border px-1 pt-3">
                     <div className="max-h-[44vh] space-y-3 overflow-y-auto pr-1">
                       <StyleSection
                         title="Camera style"
@@ -13636,12 +13866,12 @@ export default function DashboardPage() {
                         />
                       ))}
                     </div>
-                    <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2">
+                    <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
                       <button
                         type="button"
                         onClick={() => setSelectedStyles(emptyStyleSelection())}
                         disabled={isEnhancingPrompt || selectedStyleCount === 0}
-                        className="text-[11px] text-zinc-500 transition hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="text-[11px] text-muted-foreground transition hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Clear
                       </button>
@@ -13670,15 +13900,15 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => setStyleMode((m) => (m === 'input' ? 'idle' : 'input'))}
                   disabled={isEnhancingPrompt}
-                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
-                    styleMode === 'input' ? 'bg-white/[0.04]' : ''
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    styleMode === 'input' ? 'bg-accent/40' : ''
                   }`}
                 >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
                     <Wand2 className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
                       Styles
                       {selectedStyleCount > 0 ? (
                         <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-zinc-950">
@@ -13686,18 +13916,18 @@ export default function DashboardPage() {
                         </span>
                       ) : null}
                     </span>
-                    <span className="block text-xs leading-5 text-zinc-500">
+                    <span className="block text-xs leading-5 text-muted-foreground">
                       Pick camera, genre, scene or template styles — the prompt is optimized for them.
                     </span>
                   </span>
                   <ChevronDown
-                    className={`mt-1 h-4 w-4 shrink-0 text-zinc-500 transition ${styleMode === 'input' ? 'rotate-180' : ''}`}
+                    className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition ${styleMode === 'input' ? 'rotate-180' : ''}`}
                     aria-hidden="true"
                   />
                 </button>
 
                 {styleMode === 'input' ? (
-                  <div className="mt-2 space-y-3 border-t border-white/10 px-1 pt-3">
+                  <div className="mt-2 space-y-3 border-t border-border px-1 pt-3">
                     <div className="max-h-[44vh] space-y-3 overflow-y-auto pr-1">
                       <StyleSection
                         title="Camera style"
@@ -13730,12 +13960,12 @@ export default function DashboardPage() {
                         />
                       ))}
                     </div>
-                    <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2">
+                    <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
                       <button
                         type="button"
                         onClick={() => setSelectedStyles(emptyStyleSelection())}
                         disabled={isEnhancingPrompt || selectedStyleCount === 0}
-                        className="text-[11px] text-zinc-500 transition hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="text-[11px] text-muted-foreground transition hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Clear
                       </button>
@@ -13759,7 +13989,7 @@ export default function DashboardPage() {
             </Popover>
 
             <button
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-foreground text-background transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               type="submit"
               disabled={isSubmitting || hasUploadingFiles || isEnhancingPrompt || isPlanningPrompt}
               aria-label="Generate video"
@@ -13777,14 +14007,14 @@ export default function DashboardPage() {
 
 
       {isReadOnlyProject && (
-        <div className="fixed bottom-4 left-1/2 z-30 flex w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-center gap-2 rounded-[22px] border border-white/10 bg-[#111214]/95 p-4 text-center text-xs text-zinc-400 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))]">
+        <div className="fixed bottom-4 left-1/2 z-30 flex w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-center gap-2 rounded-[22px] border border-border bg-surface/95 p-4 text-center text-xs text-muted-foreground shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))]">
           <Lock className="h-3.5 w-3.5" aria-hidden="true" />
           <span>This final video is read-only. Use Start over to create a new project.</span>
         </div>
       )}
 
       <Dialog open={!!previewImageUrl} onOpenChange={(o) => { if (!o) setPreviewImageUrl(null) }}>
-        <DialogContent className="w-fit max-w-[95vw] border-white/10 bg-black/90 p-3">
+        <DialogContent className="w-fit max-w-[95vw] border-border bg-card p-3">
           <DialogHeader className="sr-only">
             <DialogTitle>Image preview</DialogTitle>
           </DialogHeader>
@@ -13798,11 +14028,11 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
       <Dialog open={promptViewer !== null} onOpenChange={(o) => { if (!o) setPromptViewer(null) }}>
-        <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95">
+        <DialogContent className="max-w-2xl border-border bg-card">
           <DialogHeader>
             <DialogTitle>Prompt</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-zinc-200">
+          <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-foreground/90">
             {promptViewer}
           </div>
         </DialogContent>
@@ -13820,10 +14050,10 @@ export default function DashboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95">
+        <DialogContent className="max-w-2xl border-border bg-card">
           <DialogHeader>
             <DialogTitle>Edit prompt & regenerate</DialogTitle>
-            <DialogDescription className="text-zinc-400">
+            <DialogDescription className="text-muted-foreground">
               Change the prompt and regenerate. The old card is permanently replaced by the new one.
             </DialogDescription>
           </DialogHeader>
@@ -13831,7 +14061,7 @@ export default function DashboardPage() {
             value={editPromptText}
             onChange={(e) => setEditPromptText(e.target.value)}
             rows={8}
-            className="w-full resize-y rounded-lg border border-white/10 bg-black/40 p-3 text-sm leading-6 text-zinc-100 outline-none focus:border-sky-300/40"
+            className="w-full resize-y rounded-lg border border-border bg-surface-2/60 p-3 text-sm leading-6 text-foreground outline-none focus:border-accent-cool/40"
             placeholder="Describe what you want to generate…"
           />
           <DialogFooter>
@@ -13877,13 +14107,13 @@ export default function DashboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-lg border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+        <DialogContent className="max-w-lg border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-violet-300" aria-hidden="true" />
+              <Shield className="h-4 w-4 text-action-violet" aria-hidden="true" />
               Copyright check
             </DialogTitle>
-            <DialogDescription className="text-zinc-400">
+            <DialogDescription className="text-muted-foreground">
               An AI review of the final video and its music/voiceover for copyright risk.
             </DialogDescription>
           </DialogHeader>
@@ -13891,9 +14121,9 @@ export default function DashboardPage() {
           {copyrightResult && !copyrightLoading && !copyrightError ? (
             <div className="flex items-center justify-end gap-2 pb-1">
               {copyrightTranslating ? (
-                <LoaderCircle className="h-3.5 w-3.5 animate-spin text-violet-300" aria-hidden="true" />
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin text-action-violet" aria-hidden="true" />
               ) : null}
-              <Languages className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" />
+              <Languages className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               <select
                 value={copyrightLang}
                 onChange={(e) => {
@@ -13902,10 +14132,10 @@ export default function DashboardPage() {
                   if (next) void translateCopyrightResult(next)
                 }}
                 disabled={copyrightTranslating}
-                className="h-8 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs text-zinc-200 outline-none focus:border-violet-300/40"
+                className="h-8 rounded-md border border-border bg-accent/40 px-2 text-xs text-foreground/90 outline-none focus:border-action-violet/40"
               >
                 {COPYRIGHT_LANGS.map((l) => (
-                  <option key={l.value} value={l.value} className="bg-[#0b0c0e]">
+                  <option key={l.value} value={l.value} className="bg-card">
                     {l.label}
                   </option>
                 ))}
@@ -13915,16 +14145,16 @@ export default function DashboardPage() {
 
           {copyrightLoading ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <LoaderCircle className="h-7 w-7 animate-spin text-violet-300" aria-hidden="true" />
-              <p className="text-sm text-zinc-300">Analyzing video and music…</p>
-              <p className="text-xs text-zinc-500">This can take up to a minute.</p>
+              <LoaderCircle className="h-7 w-7 animate-spin text-action-violet" aria-hidden="true" />
+              <p className="text-sm text-foreground/80">Analyzing video and music…</p>
+              <p className="text-xs text-muted-foreground">This can take up to a minute.</p>
             </div>
           ) : copyrightError ? (
             <div className="space-y-3 py-2">
-              <p className="text-sm text-rose-300">{copyrightError}</p>
+              <p className="text-sm text-action-rose">{copyrightError}</p>
               <Button
                 variant="outline"
-                className="border-white/10"
+                className="border-border"
                 onClick={() => { if (copyrightJob) void runCopyrightCheck(copyrightJob) }}
               >
                 Try again
@@ -13934,27 +14164,27 @@ export default function DashboardPage() {
             (() => {
               const tone = (status: string | undefined) =>
                 status === 'approved'
-                  ? { text: 'text-emerald-300', bg: 'bg-emerald-300/10 border-emerald-300/30', Icon: ShieldCheck, label: 'Approved' }
+                  ? { text: 'text-action-emerald', bg: 'bg-action-emerald/10 border-action-emerald/30', Icon: ShieldCheck, label: 'Approved' }
                   : status === 'rejected'
-                    ? { text: 'text-rose-300', bg: 'bg-rose-300/10 border-rose-300/30', Icon: ShieldX, label: 'Rejected' }
+                    ? { text: 'text-action-rose', bg: 'bg-action-rose/10 border-action-rose/30', Icon: ShieldX, label: 'Rejected' }
                     : status === 'not_provided'
-                      ? { text: 'text-zinc-400', bg: 'bg-white/5 border-white/10', Icon: Shield, label: 'Not provided' }
-                      : { text: 'text-amber-300', bg: 'bg-amber-300/10 border-amber-300/30', Icon: ShieldAlert, label: 'Caution' }
+                      ? { text: 'text-muted-foreground', bg: 'bg-accent/50 border-border', Icon: Shield, label: 'Not provided' }
+                      : { text: 'text-accent-warm', bg: 'bg-accent-warm/10 border-accent-warm/30', Icon: ShieldAlert, label: 'Caution' }
               const Section = ({ title, section }: { title: string; section?: CopyrightSection }) => {
                 const t = tone(section?.status)
                 return (
                   <div className={`rounded-xl border p-3 ${t.bg}`}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-300">{title}</span>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/80">{title}</span>
                       <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${t.text}`}>
                         <t.Icon className="h-3.5 w-3.5" aria-hidden="true" /> {t.label}
                       </span>
                     </div>
                     {section?.reason ? (
-                      <p className="mt-2 text-xs leading-5 text-zinc-300">{section.reason}</p>
+                      <p className="mt-2 text-xs leading-5 text-foreground/80">{section.reason}</p>
                     ) : null}
                     {section?.risks && section.risks.length > 0 ? (
-                      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-zinc-400">
+                      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-muted-foreground">
                         {section.risks.map((r, i) => <li key={i}>{r}</li>)}
                       </ul>
                     ) : null}
@@ -13971,13 +14201,13 @@ export default function DashboardPage() {
                     <div>
                       <p className={`text-sm font-semibold ${overall.text}`}>{overall.label}</p>
                       {display.summary ? (
-                        <p className="text-xs leading-5 text-zinc-300">{display.summary}</p>
+                        <p className="text-xs leading-5 text-foreground/80">{display.summary}</p>
                       ) : null}
                     </div>
                   </div>
                   <Section title="Video" section={display.video} />
                   <Section title="Music & voiceover" section={display.music} />
-                  <p className="text-[11px] leading-5 text-zinc-500">
+                  <p className="text-[11px] leading-5 text-muted-foreground">
                     This is an AI-based estimate, not legal advice or definitive song matching.
                   </p>
                 </div>
@@ -13991,20 +14221,20 @@ export default function DashboardPage() {
 
 
       <Dialog open={confirmCostOpen} onOpenChange={setConfirmCostOpen}>
-        <DialogContent className="max-w-md border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+        <DialogContent className="max-w-md border-border bg-card text-foreground">
           <DialogHeader>
             <DialogTitle>Confirm generation cost</DialogTitle>
-            <DialogDescription className="text-zinc-400">
+            <DialogDescription className="text-muted-foreground">
               Review the estimated cost before generating. Credits are deducted only if generation succeeds.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2.5 rounded-lg border border-white/10 bg-black/30 p-4 text-sm">
+          <div className="space-y-2.5 rounded-lg border border-border bg-surface-2 p-4 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Model</span>
+              <span className="text-muted-foreground">Model</span>
               <span className="font-semibold">{selectedModel.label}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Duration</span>
+              <span className="text-muted-foreground">Duration</span>
               <span className="font-semibold">
                 {costEstimate.clips > 1
                   ? `${costEstimate.clips} × ${costEstimate.perClipSec}s = ${durationSeconds}s`
@@ -14012,19 +14242,19 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Per clip</span>
+              <span className="text-muted-foreground">Per clip</span>
               <span className="font-semibold">
                 ${costEstimate.perClipUsd.toFixed(2)} ({Math.round(costEstimate.perClipUsd * 100)} cr)
               </span>
             </div>
-            <div className="mt-1 flex items-center justify-between border-t border-white/10 pt-2.5">
-              <span className="text-zinc-300">Estimated total</span>
-              <span className="text-base font-bold text-amber-300">
+            <div className="mt-1 flex items-center justify-between border-t border-border pt-2.5">
+              <span className="text-foreground/80">Estimated total</span>
+              <span className="text-base font-bold text-accent-warm">
                 ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} credits
               </span>
             </div>
           </div>
-          <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
               className="h-3.5 w-3.5 accent-amber-300"
@@ -14044,7 +14274,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setConfirmCostOpen(false)}
-              className="inline-flex h-9 items-center justify-center rounded-full border border-white/10 px-4 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05]"
+              className="inline-flex h-9 items-center justify-center rounded-full border border-border px-4 text-xs font-semibold text-foreground/90 hover:bg-accent/50"
             >
               Cancel
             </button>

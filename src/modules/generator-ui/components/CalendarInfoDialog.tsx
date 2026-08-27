@@ -6,6 +6,13 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/integrations/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import {
+  getOccasionsForDate,
+  getOccasionsForMonth,
+  toDateKey,
+  type DatedOccasion,
+  type OccasionCategory,
+} from '@/modules/generator-ui/lib/occasions'
 
 interface CalendarInfoDialogProps {
   open: boolean
@@ -14,25 +21,22 @@ interface CalendarInfoDialogProps {
   todayOnly?: boolean
 }
 
-type Category = 'canada' | 'international' | 'religious'
+type Category = OccasionCategory
 
-interface Occasion {
-  title: string
+// WHICH occasions exist, and WHEN, is decided locally by
+// `lib/occasions.ts` - deterministic, instant, and identical for the day
+// panel and the month panel. The `day-info` edge function is now only asked
+// for PROSE about an occasion the client already picked. It is never asked
+// what day something falls on.
+type Occasion = DatedOccasion
+type MonthOccasion = DatedOccasion
+
+interface OccasionDetail {
   whatItIs: string
   history: string
-  category: Category
 }
 
-interface MonthOccasion extends Occasion {
-  date: string // YYYY-MM-DD
-}
-
-const fmt = (d: Date) => {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+const fmt = (d: Date) => toDateKey(d)
 const fmtMonth = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
 const labels = {
@@ -61,12 +65,9 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
   const [lang, setLang] = useState<'en'>('en')
-  const [dayCache, setDayCache] = useState<Record<string, Occasion[]>>({})
-  const [monthCache, setMonthCache] = useState<Record<string, MonthOccasion[]>>({})
-  const [loading, setLoading] = useState(false)
-  const [monthLoading, setMonthLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [monthError, setMonthError] = useState<string | null>(null)
+  const [detailCache, setDetailCache] = useState<Record<string, OccasionDetail>>({})
+  const [detailLoadingKey, setDetailLoadingKey] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
   const [activeFilters, setActiveFilters] = useState<Set<Category>>(() => new Set(ALL_CATEGORIES))
   const [selectedOccasion, setSelectedOccasion] = useState<Occasion | null>(null)
@@ -77,10 +78,17 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
   const monthKey = useMemo(() => fmtMonth(visibleMonth), [visibleMonth])
-  const dayCacheKey = `v2:${dateKey}:${lang}`
-  const monthCacheKey = `v1:${monthKey}:${lang}`
-  const occasions = dayCache[dayCacheKey] ?? null
-  const monthOccasions = monthCache[monthCacheKey] ?? null
+  // Cache keys bumped (day v2 -> v3, month v1 -> v2) so anything persisted
+  // from the LLM-dated era is not read back.
+  const dayCacheKey = `v3:${dateKey}:${lang}`
+  const monthCacheKey = `v2:${monthKey}:${lang}`
+
+  // Deterministic, synchronous, no network. Both panels read one source.
+  const occasions = useMemo<Occasion[]>(() => getOccasionsForDate(selectedDate), [selectedDate])
+  const monthOccasions = useMemo<MonthOccasion[]>(
+    () => getOccasionsForMonth(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1),
+    [visibleMonth],
+  )
   const t = labels[lang]
   useEffect(() => {
     setExpandedIndex(null)
@@ -97,64 +105,39 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   }, [open, todayOnly])
 
 
-  // Day fetch
-  useEffect(() => {
-    if (!open) return
-    if (dayCache[dayCacheKey]) return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    ;(async () => {
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke('day-info', {
-          body: { date: dateKey, lang },
-        })
-        if (cancelled) return
-        if (fnError) throw fnError
-        const list: Occasion[] = Array.isArray((data as { occasions?: Occasion[] })?.occasions)
-          ? (data as { occasions: Occasion[] }).occasions
-          : []
-        setDayCache((c) => ({ ...c, [dayCacheKey]: list }))
-      } catch (err) {
-        if (cancelled) return
-        const msg = err instanceof Error ? err.message : 'Failed to load day info'
-        setError(msg)
-        toast({ title: 'Could not load day info', description: msg, variant: 'destructive' })
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [open, dateKey, lang, dayCacheKey, dayCache, toast])
+  const detailKey = (occ: Occasion) => `v3:${occ.date}:${occ.title}:${lang}`
 
-  // Month fetch
-  useEffect(() => {
-    if (!open) return
-    if (monthCache[monthCacheKey]) return
-    let cancelled = false
-    setMonthLoading(true)
-    setMonthError(null)
-    ;(async () => {
-      try {
-        const { data, error: fnError } = await supabase.functions.invoke('day-info', {
-          body: { month: monthKey, lang },
-        })
-        if (cancelled) return
-        if (fnError) throw fnError
-        const list: MonthOccasion[] = Array.isArray((data as { occasions?: MonthOccasion[] })?.occasions)
-          ? (data as { occasions: MonthOccasion[] }).occasions
-          : []
-        setMonthCache((c) => ({ ...c, [monthCacheKey]: list }))
-      } catch (err) {
-        if (cancelled) return
-        const msg = err instanceof Error ? err.message : 'Failed to load month info'
-        setMonthError(msg)
-      } finally {
-        if (!cancelled) setMonthLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [open, monthKey, lang, monthCacheKey, monthCache])
+  // Prose only. The occasion and its date are already known and were never
+  // asked of a model, so there is nothing here that can drift by a day.
+  const loadDetail = async (occ: Occasion) => {
+    const key = detailKey(occ)
+    if (detailCache[key] || detailLoadingKey === key) return
+    setDetailLoadingKey(key)
+    setDetailError(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('day-info', {
+        body: { occasion: { title: occ.title, date: occ.date, category: occ.category }, lang },
+      })
+      if (fnError) throw fnError
+      const detail = (data as { occasion?: OccasionDetail })?.occasion
+      setDetailCache((c) => ({
+        ...c,
+        [key]: {
+          whatItIs: detail?.whatItIs?.trim() || '',
+          history: detail?.history?.trim() || '',
+        },
+      }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load occasion detail'
+      setDetailError(msg)
+      toast({ title: 'Could not load occasion detail', description: msg, variant: 'destructive' })
+    } finally {
+      setDetailLoadingKey((k) => (k === key ? null : k))
+    }
+  }
+
+  // (The month list is derived above, synchronously, from the same source as
+  // the day list. There is no month fetch any more.)
 
   const longLabel = useMemo(
     () => selectedDate.toLocaleDateString('en-US', {
@@ -211,7 +194,8 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setScenarioLoading(true)
     setScenarioError(null)
     try {
-      const seed = `A cinematic 10-second scene about "${occ.title}". ${occ.whatItIs}`
+      const about = detailCache[detailKey(occ)]?.whatItIs ?? ''
+      const seed = `A cinematic 10-second scene about "${occ.title}" (${occ.category}). ${about}`.trim()
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
         body: { prompt: seed, mode: 'silent' },
       })
@@ -230,6 +214,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   const pickOccasion = (occ: Occasion) => {
     setSelectedOccasion(occ)
+    void loadDetail(occ)
     void generateScenario(occ)
   }
 
@@ -241,17 +226,17 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn('border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100', todayOnly ? 'max-w-4xl' : 'max-w-7xl')}>
-        <DialogHeader className="border-b border-white/10 px-6 py-4">
+      <DialogContent className={cn('border-border bg-card p-0 text-foreground', todayOnly ? 'max-w-4xl' : 'max-w-7xl')}>
+        <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
-            <CalendarDays className="h-4 w-4 text-amber-300" />
+            <CalendarDays className="h-4 w-4 text-accent-warm" />
             <span>{todayOnly ? "Today's Occasions" : 'Calendar'}</span>
           </DialogTitle>
         </DialogHeader>
         <div className={cn('grid gap-0', todayOnly ? 'md:grid-cols-[1fr,1fr]' : 'md:grid-cols-[auto,1fr,1fr,1fr]')}>
           {/* Column 1: calendar */}
           {!todayOnly && (
-          <div className="border-white/10 p-4 md:border-r">
+          <div className="border-border p-4 md:border-r">
 
             <Calendar
               mode="single"
@@ -265,67 +250,74 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           )}
 
           {/* Column 2: day details */}
-          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-white/10">
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
-              <div className="text-sm font-medium text-zinc-200" dir="auto">{longLabel}</div>
+          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-border">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
+              <div className="text-sm font-medium text-foreground/90" dir="auto">{longLabel}</div>
 
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
-              {loading && (
-                <div className="flex items-center gap-2 px-2 text-sm text-zinc-400">
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  {t.loading}
-                </div>
+              {occasions.length === 0 && (
+                <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.empty}</div>
               )}
-              {!loading && error && (
-                <div className="px-2 text-sm text-rose-300">{error}</div>
-              )}
-              {!loading && !error && occasions && occasions.length === 0 && (
-                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.empty}</div>
-              )}
-              {!loading && !error && occasions && occasions.length > 0 && (
+              {occasions.length > 0 && (
                 <ul className="flex flex-col gap-1.5">
                   {occasions.map((occ, i) => {
                     const isOpen = expandedIndex === i
                     return (
-                      <li key={i} className="rounded-md border border-white/5 bg-white/[0.02]">
+                      <li key={i} className="rounded-md border border-border/50 bg-accent/20">
                         <button
                           type="button"
                           onClick={() => { setExpandedIndex(isOpen ? null : i); pickOccasion(occ) }}
                           className={cn(
-                            'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]',
-                            isOpen && 'bg-white/[0.04]',
+                            'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent/40',
+                            isOpen && 'bg-accent/40',
                           )}
                           dir="auto"
                         >
-                          <span className="text-sm font-medium text-amber-300">{occ.title}</span>
+                          <span className="text-sm font-medium text-accent-warm">{occ.title}</span>
                           <ChevronDown
                             className={cn(
-                              'h-4 w-4 shrink-0 text-zinc-500 transition-transform',
+                              'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
                               isOpen && 'rotate-180',
                             )}
                           />
                         </button>
-                        {isOpen && (
-                          <div className="space-y-3 border-t border-white/5 px-3 py-3 text-sm text-zinc-200" dir="auto">
-                            <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.whatItIs}</div>
-                              <p className="leading-relaxed">{occ.whatItIs}</p>
+                        {isOpen && (() => {
+                          const key = detailKey(occ)
+                          const detail = detailCache[key]
+                          const isLoadingDetail = detailLoadingKey === key
+                          return (
+                            <div className="space-y-3 border-t border-border/50 px-3 py-3 text-sm text-foreground/90" dir="auto">
+                              {isLoadingDetail && (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                                  {t.loading}
+                                </div>
+                              )}
+                              {!isLoadingDetail && !detail && detailError && (
+                                <div className="text-sm text-rose-300">{detailError}</div>
+                              )}
+                              {detail && (
+                                <>
+                                  <div>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.whatItIs}</div>
+                                    <p className="leading-relaxed">{detail.whatItIs}</p>
+                                  </div>
+                                  <div>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.history}</div>
+                                    <p className="leading-relaxed">{detail.history}</p>
+                                  </div>
+                                </>
+                              )}
                             </div>
-                            <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.history}</div>
-                              <p className="leading-relaxed">{occ.history}</p>
-                            </div>
-                          </div>
-                        )}
+                          )
+                        })()}
                       </li>
                     )
                   })}
                 </ul>
               )}
-              {!loading && !error && !occasions && (
-                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.pick}</div>
-              )}
+
             </div>
           </div>
 
@@ -333,10 +325,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           {!todayOnly && (
           <div className="flex max-h-[70vh] min-h-[420px] flex-col">
 
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
               <div className="flex flex-col leading-tight">
-                <div className="text-[10px] uppercase tracking-wide text-zinc-500">{t.monthTitle}</div>
-                <div className="text-sm font-medium text-zinc-200" dir="auto">{monthLabel}</div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t.monthTitle}</div>
+                <div className="text-sm font-medium text-foreground/90" dir="auto">{monthLabel}</div>
               </div>
               <div className="flex items-center gap-1">
                 {filterIcons.map(({ cat, Icon, label }) => {
@@ -353,7 +345,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                         'flex h-8 w-8 items-center justify-center rounded-md border transition-colors',
                         on
                           ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/15'
-                          : 'border-white/10 bg-transparent text-zinc-600 hover:text-zinc-400',
+                          : 'border-border bg-transparent text-muted-foreground hover:text-muted-foreground',
                       )}
                     >
                       <Icon className="h-4 w-4" />
@@ -363,19 +355,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
               </div>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
-              {monthLoading && (
-                <div className="flex items-center gap-2 px-2 text-sm text-zinc-400">
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  {t.loading}
-                </div>
+              {filteredMonthOccasions && filteredMonthOccasions.length === 0 && (
+                <div className="px-2 text-sm text-muted-foreground" dir="auto">{t.monthEmpty}</div>
               )}
-              {!monthLoading && monthError && (
-                <div className="px-2 text-sm text-rose-300">{monthError}</div>
-              )}
-              {!monthLoading && !monthError && filteredMonthOccasions && filteredMonthOccasions.length === 0 && (
-                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.monthEmpty}</div>
-              )}
-              {!monthLoading && !monthError && filteredMonthOccasions && filteredMonthOccasions.length > 0 && (
+              {filteredMonthOccasions && filteredMonthOccasions.length > 0 && (
                 <ul className="flex flex-col gap-0.5">
                   {filteredMonthOccasions.map((occ, i) => {
                     const day = Number(occ.date.split('-')[2])
@@ -386,12 +369,12 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                           type="button"
                           onClick={() => { handleMonthOccasionClick(occ.date); pickOccasion(occ) }}
                           className={cn(
-                            'flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.04]',
-                            isSelected && 'bg-white/[0.04]',
+                            'flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40',
+                            isSelected && 'bg-accent/40',
                           )}
                           dir="auto"
                         >
-                          <span className="mt-0.5 inline-flex h-6 w-7 shrink-0 items-center justify-center rounded text-xs font-medium text-zinc-400">
+                          <span className="mt-0.5 inline-flex h-6 w-7 shrink-0 items-center justify-center rounded text-xs font-medium text-muted-foreground">
                             {day}
                           </span>
                           <span className="text-sm font-medium leading-snug text-emerald-400 hover:text-emerald-300">
@@ -411,25 +394,25 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
 
           {/* Column 4: AI scenario */}
-          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-white/10">
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
+          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-border">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
               <div className="flex items-center gap-2">
-                <Clapperboard className="h-4 w-4 text-amber-300" />
-                <div className="text-sm font-medium text-zinc-200">{t.scenarioTitle}</div>
+                <Clapperboard className="h-4 w-4 text-accent-warm" />
+                <div className="text-sm font-medium text-foreground/90">{t.scenarioTitle}</div>
               </div>
-              <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+              <span className="rounded-full border border-accent-warm/30 bg-accent-warm/10 px-2 py-0.5 text-[10px] font-semibold text-accent-warm">
                 {t.badge10s}
               </span>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-3">
               {!selectedOccasion && (
-                <div className="px-1 text-sm text-zinc-400" dir="auto">{t.pickOccasion}</div>
+                <div className="px-1 text-sm text-muted-foreground" dir="auto">{t.pickOccasion}</div>
               )}
               {selectedOccasion && (
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-amber-300" dir="auto">{selectedOccasion.title}</div>
+                  <div className="text-sm font-medium text-accent-warm" dir="auto">{selectedOccasion.title}</div>
                   {scenarioLoading && (
-                    <div className="flex items-center gap-2 text-sm text-zinc-400">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <LoaderCircle className="h-4 w-4 animate-spin" />
                       {t.generating}
                     </div>
@@ -438,7 +421,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                     <div className="text-sm text-rose-300">{scenarioError}</div>
                   )}
                   {!scenarioLoading && currentScenario && (
-                    <p className="whitespace-pre-wrap rounded-md border border-white/5 bg-white/[0.02] p-3 text-sm leading-relaxed text-zinc-100" dir="auto">
+                    <p className="whitespace-pre-wrap rounded-md border border-border/50 bg-accent/20 p-3 text-sm leading-relaxed text-foreground" dir="auto">
                       {currentScenario}
                     </p>
                   )}
@@ -446,13 +429,13 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
               )}
             </div>
             {selectedOccasion && (
-              <div className="flex items-center justify-end gap-2 border-t border-white/10 px-4 py-2">
+              <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => generateScenario(selectedOccasion, true)}
                   disabled={scenarioLoading}
-                  className="h-8 gap-1.5 text-xs text-zinc-300 hover:text-zinc-100"
+                  className="h-8 gap-1.5 text-xs text-foreground/80 hover:text-foreground"
                 >
                   <RefreshCw className={cn('h-3.5 w-3.5', scenarioLoading && 'animate-spin')} />
                   {t.regenerate}

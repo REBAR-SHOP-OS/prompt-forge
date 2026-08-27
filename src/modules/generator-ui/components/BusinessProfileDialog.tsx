@@ -123,20 +123,20 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+      <DialogContent className="max-w-xl border-border bg-card text-foreground">
         <div className="flex items-center gap-2">
           {contactLogo ? (
             <img
               src={contactLogo}
               alt="Company logo"
-              className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+              className="h-10 w-10 rounded-md border border-border bg-accent/50 object-contain p-0.5"
             />
           ) : (
-            <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-black/30 text-zinc-500">
+            <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-border bg-surface-2 text-muted-foreground">
               <ImagePlus className="h-4 w-4" aria-hidden="true" />
             </div>
           )}
-          <label className="cursor-pointer rounded-md border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+          <label className="cursor-pointer rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border">
             {contactLogo ? 'Replace' : 'Company logo'}
             <input
               type="file"
@@ -149,7 +149,7 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
             <button
               type="button"
               onClick={() => { setContactLogo(''); setSaved(false) }}
-              className="text-[11px] text-zinc-400 transition hover:text-rose-300"
+              className="text-[11px] text-muted-foreground transition hover:text-rose-300"
             >
               ✕
             </button>
@@ -157,10 +157,10 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
         </div>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-amber-300" aria-hidden="true" />
-            About your business <span className="text-amber-300 text-sm font-normal">(required)</span>
+            <Building2 className="h-5 w-5 text-accent-warm" aria-hidden="true" />
+            About your business <span className="text-accent-warm text-sm font-normal">(required)</span>
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription className="text-muted-foreground">
             Tell us about your business and how the narration should sound. This is used to keep every
             generated ad relevant and to close the voiceover with a short promo for your brand.
           </DialogDescription>
@@ -168,35 +168,35 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
 
         <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-              About your business <span className="text-amber-300">(required)</span>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
+              About your business <span className="text-accent-warm">(required)</span>
             </div>
             <Textarea
               value={businessInfo}
               onChange={(e) => { setBusinessInfo(e.target.value); setSaved(false); if (error) setError(null) }}
               rows={6}
               placeholder="Describe your business: what you sell, your products/services, target audience, and brand tone…"
-              className="min-h-[140px] resize-y border-white/10 bg-black/30 text-sm text-zinc-100"
+              className="min-h-[140px] resize-y border-border bg-surface-2 text-sm text-foreground"
               disabled={loading}
             />
           </div>
 
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-              Narration instructions <span className="text-zinc-500">(optional)</span>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
+              Narration instructions <span className="text-muted-foreground">(optional)</span>
             </div>
             <Textarea
               value={narrationInstructions}
               onChange={(e) => { setNarrationInstructions(e.target.value); setSaved(false) }}
               rows={4}
               placeholder="How should the voiceover sound? e.g. formal and confident tone, emphasize quality and trust, speak slowly, mention our brand name warmly…"
-              className="min-h-[100px] resize-y border-white/10 bg-black/30 text-sm text-zinc-100"
+              className="min-h-[100px] resize-y border-border bg-surface-2 text-sm text-foreground"
               disabled={loading}
             />
           </div>
 
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
               Contact details (shown on video)
             </div>
             <div className="space-y-2">
@@ -204,21 +204,21 @@ export function BusinessProfileDialog({ open, onOpenChange, userId, onSaved }: B
                 value={contactWebsite}
                 onChange={(e) => { setContactWebsite(e.target.value); setSaved(false) }}
                 placeholder="Website"
-                className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                className="h-9 border-border bg-surface-2 text-sm text-foreground"
                 disabled={loading}
               />
               <Input
                 value={contactPhone}
                 onChange={(e) => { setContactPhone(e.target.value); setSaved(false) }}
                 placeholder="Phone"
-                className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                className="h-9 border-border bg-surface-2 text-sm text-foreground"
                 disabled={loading}
               />
               <Input
                 value={contactAddress}
                 onChange={(e) => { setContactAddress(e.target.value); setSaved(false) }}
                 placeholder="Address"
-                className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                className="h-9 border-border bg-surface-2 text-sm text-foreground"
                 disabled={loading}
               />
             </div>

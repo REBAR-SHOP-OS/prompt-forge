@@ -166,7 +166,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-white/15 bg-white/[0.03] px-4 py-6 text-sm text-zinc-300 transition hover:border-white/30 hover:bg-white/[0.06]"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border bg-accent/30 px-4 py-6 text-sm text-foreground/80 transition hover:border-border hover:bg-accent/60"
             >
               <UploadCloud className="h-4 w-4" />
               {file ? `Selected: ${file.name}` : 'Click to upload an image (jpg, png, webp — max 10MB)'}
@@ -174,8 +174,8 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
           </div>
 
           <div>
-            <div className="mb-2 text-xs uppercase tracking-wider text-zinc-400">Target aspect ratio</div>
-            <div role="radiogroup" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+            <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">Target aspect ratio</div>
+            <div role="radiogroup" className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold">
               {RATIOS.map((opt) => {
                 const active = ratio === opt.value
                 return (
@@ -186,11 +186,11 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
                     aria-checked={active}
                     onClick={() => setRatio(opt.value)}
                     className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
-                      active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                      active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'
                     }`}
                   >
                     <span>{opt.label}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">{opt.hint}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{opt.hint}</span>
                   </button>
                 )
               })}
@@ -199,18 +199,18 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <div className="mb-1 text-xs text-zinc-500">Original</div>
-              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-white/10 bg-black/40 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
+              <div className="mb-1 text-xs text-muted-foreground">Original</div>
+              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-border bg-surface-2/60 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
                 {safeMediaUrl(previewUrl) ? (
                   <img src={safeMediaUrl(previewUrl) ?? ''} alt="Original" className="max-h-full max-w-full object-contain" />
                 ) : (
-                  <span className="text-xs text-zinc-600">No image yet</span>
+                  <span className="text-xs text-muted-foreground">No image yet</span>
                 )}
               </div>
             </div>
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-xs text-zinc-500">Reframed ({ratio})</span>
+                <span className="text-xs text-muted-foreground">Reframed ({ratio})</span>
                 {file ? (
                   <button
                     type="button"
@@ -218,19 +218,19 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
                     disabled={loading}
                     title="Regenerate"
                     aria-label="Regenerate"
-                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100 disabled:opacity-50"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
                   </button>
                 ) : null}
               </div>
-              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-white/10 bg-black/40 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
+              <div className={`flex items-center justify-center overflow-hidden rounded-md border border-border bg-surface-2/60 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
                 {loading ? (
-                  <LoaderCircle className="h-6 w-6 animate-spin text-zinc-400" />
+                  <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" />
                 ) : resultUrl ? (
                   <img src={resultUrl} alt="Reframed" className="max-h-full max-w-full object-contain" />
                 ) : (
-                  <span className="text-xs text-zinc-600">Click Convert to generate</span>
+                  <span className="text-xs text-muted-foreground">Click Convert to generate</span>
                 )}
               </div>
             </div>

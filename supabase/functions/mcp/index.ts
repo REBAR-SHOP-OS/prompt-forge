@@ -2,9 +2,6 @@
 // To take ownership, delete this banner line; the plugin then leaves the file alone.
 // supabase function: mcp
 // Bundled from src/lib/mcp/index.ts by @lovable.dev/mcp-js.
-// <define:import.meta.env>
-var define_import_meta_env_default = { MODE: "production", BASE_URL: "/", DEV: false, PROD: true, SSR: false };
-
 // src/lib/mcp/index.ts
 import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@0.20.1";
 
@@ -113,43 +110,41 @@ function supabaseForUser4(ctx) {
 var get_credit_balance_default = defineTool4({
   name: "get_credit_balance",
   title: "Get credit balance",
-  description: "Get the signed-in user's credit quota: daily and monthly limits and how much has been used.",
+  description: "Get the signed-in user's wallet credit balance and, when initialized, daily and monthly quota limits and usage.",
   inputSchema: {},
-  annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   handler: async (_input, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
     const userId = ctx.getUserId();
     const client = supabaseForUser4(ctx);
-    const quotaResult = await client.from("billing_user_quotas").select("daily_limit_credits, monthly_limit_credits, used_today, used_this_month, last_reset_day, last_reset_month").eq("user_id", userId).maybeSingle();
-    let { data } = quotaResult;
-    const { error } = quotaResult;
-    if (error) return { content: [{ type: "text", text: error.message }], isError: true };
-    if (!data) {
-      const { data: newData, error: insertError } = await client.from("billing_user_quotas").insert({ user_id: userId }).select("daily_limit_credits, monthly_limit_credits, used_today, used_this_month, last_reset_day, last_reset_month").single();
-      if (insertError) {
-        if (insertError.code === "23505") {
-          const { data: retryData, error: retryError } = await client.from("billing_user_quotas").select("daily_limit_credits, monthly_limit_credits, used_today, used_this_month, last_reset_day, last_reset_month").eq("user_id", userId).maybeSingle();
-          if (retryError) return { content: [{ type: "text", text: retryError.message }], isError: true };
-          data = retryData;
-        } else {
-          return { content: [{ type: "text", text: insertError.message }], isError: true };
-        }
-      } else {
-        data = newData;
-      }
+    const [profileResult, quotaResult] = await Promise.all([
+      client.from("core_user_profiles").select("credits_balance").eq("id", userId).maybeSingle(),
+      client.from("billing_user_quotas").select("daily_limit_credits, monthly_limit_credits, used_today, used_this_month, last_reset_day, last_reset_month").eq("user_id", userId).maybeSingle()
+    ]);
+    if (profileResult.error) {
+      return { content: [{ type: "text", text: profileResult.error.message }], isError: true };
     }
-    if (!data)
-      return { content: [{ type: "text", text: "Unable to retrieve quota for this user." }] };
+    if (quotaResult.error) {
+      return { content: [{ type: "text", text: quotaResult.error.message }], isError: true };
+    }
+    const summary = {
+      balance: {
+        credits: profileResult.data?.credits_balance ?? null,
+        status: profileResult.data ? "available" : "profile_not_found"
+      },
+      quota: quotaResult.data,
+      quotaStatus: quotaResult.data ? "initialized" : "not_initialized"
+    };
     return {
-      content: [{ type: "text", text: JSON.stringify(data) }],
-      structuredContent: { quota: data }
+      content: [{ type: "text", text: JSON.stringify(summary) }],
+      structuredContent: summary
     };
   }
 });
 
 // src/lib/mcp/index.ts
-var projectRef = define_import_meta_env_default.VITE_SUPABASE_PROJECT_ID ?? "project-ref-unset";
+var projectRef = "sacxoanuyetjfrfllkzx";
 var mcp_default = defineMcp({
   name: "prompt-forge-mcp",
   title: "Prompt Forge MCP",

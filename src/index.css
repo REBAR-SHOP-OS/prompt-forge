@@ -8,51 +8,78 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Warm ivory/cream Light Theme — no pure white, no cold blue-grey. */
+    --background: 43 37% 95%;
+    --foreground: 220 20% 18%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 45 67% 99%;
+    --card-foreground: 220 20% 18%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 45 67% 99%;
+    --popover-foreground: 220 20% 18%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 220 20% 18%;
+    --primary-foreground: 45 67% 99%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 39 37% 91%;
+    --secondary-foreground: 220 20% 18%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 39 33% 90%;
+    --muted-foreground: 220 10% 42%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 39 33% 88%;
+    --accent-foreground: 220 20% 18%;
 
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 40 20% 80%;
+    --input: 40 20% 80%;
+    --ring: 220 20% 18%;
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Theme-aware warm/cool accent text — dark amber on light, bright amber on dark. */
+    --accent-warm: 32 85% 38%;
+    --accent-cool: 205 80% 35%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    /* Semantic action colors (toolbar buttons) — dark on light, bright on dark. */
+    --action-cyan: 190 80% 32%;
+    --action-cyan-strong: 190 85% 24%;
+    --action-violet: 258 60% 42%;
+    --action-violet-strong: 258 65% 32%;
+    --action-orange: 27 90% 38%;
+    --action-orange-strong: 27 95% 30%;
+    --action-emerald: 160 70% 26%;
+    --action-emerald-strong: 160 75% 20%;
+    --action-yellow: 45 90% 32%;
+    --action-yellow-strong: 45 95% 26%;
+    --action-rose: 350 80% 42%;
+    --action-rose-strong: 350 85% 34%;
 
-    --sidebar-primary: 240 5.9% 10%;
+    /* Semantic danger/error text — dark red on light, bright red on dark. */
+    --danger: 0 72% 45%;
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-background: 39 37% 91%;
 
-    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-foreground: 220 16% 27%;
 
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-primary: 220 20% 18%;
 
-    --sidebar-border: 220 13% 91%;
+    --sidebar-primary-foreground: 45 67% 99%;
 
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 39 33% 88%;
+
+    --sidebar-accent-foreground: 220 20% 18%;
+
+    --sidebar-border: 40 20% 80%;
+
+    --sidebar-ring: 220 16% 27%;
+
+    /* Semantic surface tokens (UI-only; palette swaps, never layout). */
+    --surface: 45 67% 99%;
+    --surface-2: 39 37% 91%;
+    --surface-3: 43 37% 95%;
   }
 
   .dark {
@@ -91,6 +118,142 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Semantic surface tokens (UI-only; palette swaps, never layout). */
+    --surface: 220 12% 5%;
+    --surface-2: 220 10% 9%;
+    --surface-3: 220 12% 3%;
+
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
+
+  }
+
+  /* Dynamic themes — palette-only overrides of the dark base. */
+  .midnight {
+    --background: 226 40% 6%;
+    --foreground: 210 40% 98%;
+    --card: 226 35% 9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 226 35% 9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 226 70% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 226 30% 15%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 226 30% 15%;
+    --muted-foreground: 220 15% 65%;
+    --accent: 226 40% 20%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 226 30% 18%;
+    --input: 226 30% 18%;
+    --ring: 226 70% 60%;
+    --surface: 226 35% 9%;
+    --surface-2: 226 30% 13%;
+    --surface-3: 226 40% 4%;
+    --sidebar-background: 226 35% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 226 70% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 226 30% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 226 30% 18%;
+    --sidebar-ring: 226 70% 60%;
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
+  }
+
+  .neon {
+    --background: 240 20% 3%;
+    --foreground: 0 0% 98%;
+    --card: 240 15% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 15% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 190 100% 50%;
+    --primary-foreground: 240 20% 3%;
+    --secondary: 240 12% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 12% 12%;
+    --muted-foreground: 240 8% 65%;
+    --accent: 300 100% 60%;
+    --accent-foreground: 240 20% 3%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 12% 16%;
+    --input: 240 12% 16%;
+    --ring: 190 100% 50%;
+    --surface: 240 15% 6%;
+    --surface-2: 240 12% 10%;
+    --surface-3: 240 20% 2%;
+    --sidebar-background: 240 15% 5%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 190 100% 50%;
+    --sidebar-primary-foreground: 240 20% 3%;
+    --sidebar-accent: 240 12% 12%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 240 12% 16%;
+    --sidebar-ring: 190 100% 50%;
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
+  }
+
+  .slate {
+    --background: 215 25% 10%;
+    --foreground: 210 40% 98%;
+    --card: 215 20% 13%;
+    --card-foreground: 210 40% 98%;
+    --popover: 215 20% 13%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 33% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 18% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 215 18% 17%;
+    --muted-foreground: 215 12% 65%;
+    --accent: 215 20% 22%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 215 18% 20%;
+    --input: 215 18% 20%;
+    --ring: 217 33% 60%;
+    --surface: 215 20% 13%;
+    --surface-2: 215 18% 17%;
+    --surface-3: 215 25% 7%;
+    --sidebar-background: 215 20% 11%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 33% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 18% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 215 18% 20%;
+    --sidebar-ring: 217 33% 60%;
+    --accent-warm: 38 92% 50%;
+    --accent-cool: 199 89% 48%;
+  }
+
+  /* Dark-oriented themes share one bright action palette (preserves the
+     previous look across dark / midnight / neon / slate). */
+  .dark,
+  .midnight,
+  .neon,
+  .slate {
+    --action-cyan: 187 92% 69%;
+    --action-cyan-strong: 186 94% 82%;
+    --action-violet: 258 90% 66%;
+    --action-violet-strong: 256 92% 76%;
+    --action-orange: 27 96% 61%;
+    --action-orange-strong: 31 97% 72%;
+    --action-emerald: 160 84% 39%;
+    --action-emerald-strong: 152 69% 72%;
+    --action-yellow: 45 93% 47%;
+    --action-yellow-strong: 53 98% 77%;
+    --action-rose: 350 89% 60%;
+    --action-rose-strong: 351 96% 82%;
+    --danger: 0 84% 60%;
   }
 }
 

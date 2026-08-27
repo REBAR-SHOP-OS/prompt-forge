@@ -36,133 +36,372 @@ const TRACKED_PREFIXES = [
   "preview-state",
 ] as const;
 
-type LibraryDoc = Record<string, string>;
+export type LibraryDoc = Record<string, string>;
 
-function trackedKeysFor(userId: string): string[] {
-  return TRACKED_PREFIXES.map((p) => `${p}:${userId}`);
+export interface LibraryStateRow {
+  state: LibraryDoc;
+  version: number;
 }
 
-function snapshotLocal(userId: string): LibraryDoc {
+export type LibraryBackendResult<T> =
+  | { status: "success"; value: T }
+  | { status: "conflict" }
+  | { status: "error"; error?: unknown };
+
+export type LibrarySyncResult =
+  | { status: "success" }
+  | { status: "conflict"; conflictingKeys: string[] }
+  | { status: "error" };
+
+export interface LibraryStateBackend {
+  read(userId: string): Promise<LibraryBackendResult<LibraryStateRow | null>>;
+  insert(
+    userId: string,
+    state: LibraryDoc,
+    version: number,
+  ): Promise<LibraryBackendResult<void>>;
+  updateIfVersion(
+    userId: string,
+    state: LibraryDoc,
+    expectedVersion: number,
+    nextVersion: number,
+  ): Promise<LibraryBackendResult<void>>;
+}
+
+type LibraryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+interface LibraryBaseline {
+  state: LibraryDoc;
+  version: number;
+}
+
+function trackedKeysFor(userId: string): string[] {
+  return TRACKED_PREFIXES.map((prefix) => `${prefix}:${userId}`);
+}
+
+function cloneDoc(doc: LibraryDoc): LibraryDoc {
+  return { ...doc };
+}
+
+function snapshotLocal(userId: string, storage: LibraryStorage): LibraryDoc {
   const doc: LibraryDoc = {};
-  if (typeof window === "undefined") return doc;
   for (const key of trackedKeysFor(userId)) {
-    const raw = window.localStorage.getItem(key);
+    const raw = storage.getItem(key);
     if (raw != null) doc[key] = raw;
   }
   return doc;
 }
 
-function hasAnyLocal(userId: string): boolean {
-  if (typeof window === "undefined") return false;
-  return trackedKeysFor(userId).some((k) => window.localStorage.getItem(k) != null);
+function hasAnyLocal(userId: string, storage: LibraryStorage): boolean {
+  return trackedKeysFor(userId).some((key) => storage.getItem(key) != null);
 }
 
-function writeLocalFromDoc(userId: string, doc: LibraryDoc) {
-  if (typeof window === "undefined" || !doc) return;
-  const valid = new Set(trackedKeysFor(userId));
-  for (const [key, value] of Object.entries(doc)) {
-    if (valid.has(key) && typeof value === "string") {
-      try {
-        window.localStorage.setItem(key, value);
-      } catch {
-        /* ignore quota errors */
+function replaceLocalFromDoc(userId: string, doc: LibraryDoc, storage: LibraryStorage) {
+  for (const key of trackedKeysFor(userId)) {
+    const value = doc[key];
+    try {
+      if (typeof value === "string") {
+        storage.setItem(key, value);
+      } else {
+        storage.removeItem(key);
       }
+    } catch {
+      // Keep hydration best-effort for storage quota/security errors.
     }
   }
 }
 
-let loadedVersion = 0;
+function sameEntry(left: LibraryDoc, right: LibraryDoc, key: string): boolean {
+  const leftHasKey = Object.prototype.hasOwnProperty.call(left, key);
+  const rightHasKey = Object.prototype.hasOwnProperty.call(right, key);
+  return leftHasKey === rightHasKey && (!leftHasKey || left[key] === right[key]);
+}
 
-/**
- * Load server state into localStorage. If the server has nothing yet but this
- * browser already has library data (existing user), push the local data up once
- * so it isn't lost. Returns true on success.
- */
-export async function hydrateLibraryFromServer(userId: string): Promise<boolean> {
-  if (!userId || typeof window === "undefined") return false;
-  try {
+export function mergeLibraryDocs(
+  userId: string,
+  base: LibraryDoc,
+  local: LibraryDoc,
+  server: LibraryDoc,
+): { state: LibraryDoc; conflictingKeys: string[] } {
+  const state: LibraryDoc = {};
+  const conflictingKeys: string[] = [];
+
+  for (const key of trackedKeysFor(userId)) {
+    const localChanged = !sameEntry(base, local, key);
+    const serverChanged = !sameEntry(base, server, key);
+
+    if (localChanged && serverChanged && !sameEntry(local, server, key)) {
+      conflictingKeys.push(key);
+      continue;
+    }
+
+    const source = localChanged ? local : server;
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      state[key] = source[key];
+    }
+  }
+
+  return { state, conflictingKeys };
+}
+
+function aborted(signal?: AbortSignal): boolean {
+  return signal?.aborted === true;
+}
+
+export function createLibraryStateSync(
+  backend: LibraryStateBackend,
+  storage: LibraryStorage,
+) {
+  const baselines = new Map<string, LibraryBaseline>();
+  const pushInFlight = new Set<string>();
+
+  const reconcileConflict = async (
+    userId: string,
+    baseline: LibraryBaseline,
+    localState: LibraryDoc,
+    signal?: AbortSignal,
+  ): Promise<LibrarySyncResult> => {
+    const latestResult = await backend.read(userId);
+    if (aborted(signal)) return { status: "error" };
+    if (latestResult.status === "error") return { status: "error" };
+    if (latestResult.status === "conflict" || !latestResult.value) {
+      return { status: "conflict", conflictingKeys: [] };
+    }
+
+    const latest = latestResult.value;
+    const merged = mergeLibraryDocs(
+      userId,
+      baseline.state,
+      localState,
+      latest.state ?? {},
+    );
+    if (merged.conflictingKeys.length > 0) {
+      return { status: "conflict", conflictingKeys: merged.conflictingKeys };
+    }
+
+    // A conflict recovery gets one CAS against the freshly-read version. A
+    // second race remains observable and retryable instead of busy-looping.
+    const saved = await backend.updateIfVersion(
+      userId,
+      merged.state,
+      latest.version,
+      latest.version + 1,
+    );
+    if (aborted(signal)) return { status: "error" };
+    if (saved.status === "error") return { status: "error" };
+    if (saved.status === "conflict") {
+      return { status: "conflict", conflictingKeys: [] };
+    }
+
+    replaceLocalFromDoc(userId, merged.state, storage);
+    baselines.set(userId, {
+      state: cloneDoc(merged.state),
+      version: latest.version + 1,
+    });
+    return { status: "success" };
+  };
+
+  const push = async (
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<LibrarySyncResult> => {
+    const baseline = baselines.get(userId);
+    if (!userId || !baseline || aborted(signal) || pushInFlight.has(userId)) {
+      return { status: "error" };
+    }
+
+    pushInFlight.add(userId);
+    try {
+      const localState = snapshotLocal(userId, storage);
+      const nextVersion = baseline.version + 1;
+      const saved = baseline.version === 0
+        ? await backend.insert(userId, localState, nextVersion)
+        : await backend.updateIfVersion(
+            userId,
+            localState,
+            baseline.version,
+            nextVersion,
+          );
+
+      if (aborted(signal)) return { status: "error" };
+      if (saved.status === "error") return { status: "error" };
+      if (saved.status === "conflict") {
+        return reconcileConflict(userId, baseline, localState, signal);
+      }
+
+      baselines.set(userId, { state: cloneDoc(localState), version: nextVersion });
+      return { status: "success" };
+    } catch {
+      return { status: "error" };
+    } finally {
+      pushInFlight.delete(userId);
+    }
+  };
+
+  const hydrate = async (
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<LibrarySyncResult> => {
+    if (!userId || aborted(signal)) return { status: "error" };
+
+    // A retry after a sync failure/conflict must reconcile the preserved local
+    // edits; re-hydrating from scratch would silently discard them.
+    if (baselines.has(userId)) return push(userId, signal);
+
+    try {
+      const readResult = await backend.read(userId);
+      if (aborted(signal)) return { status: "error" };
+      if (readResult.status !== "success") {
+        return readResult.status === "conflict"
+          ? { status: "conflict", conflictingKeys: [] }
+          : { status: "error" };
+      }
+
+      const row = readResult.value;
+      if (row) {
+        replaceLocalFromDoc(userId, row.state ?? {}, storage);
+        baselines.set(userId, {
+          state: cloneDoc(row.state ?? {}),
+          version: row.version ?? 0,
+        });
+        return { status: "success" };
+      }
+
+      const localState = snapshotLocal(userId, storage);
+      if (hasAnyLocal(userId, storage)) {
+        const inserted = await backend.insert(userId, localState, 1);
+        if (aborted(signal)) return { status: "error" };
+        if (inserted.status === "error") return { status: "error" };
+        if (inserted.status === "conflict") {
+          return reconcileConflict(
+            userId,
+            { state: {}, version: 0 },
+            localState,
+            signal,
+          );
+        }
+        baselines.set(userId, { state: cloneDoc(localState), version: 1 });
+      } else {
+        baselines.set(userId, { state: {}, version: 0 });
+      }
+      return { status: "success" };
+    } catch {
+      return { status: "error" };
+    }
+  };
+
+  return { hydrate, push };
+}
+
+const supabaseBackend: LibraryStateBackend = {
+  async read(userId) {
     const { data, error } = await supabase
       .from("generator_library_state")
       .select("state, version")
       .eq("user_id", userId)
       .maybeSingle();
-
-    if (error) return false;
-
-    if (data && data.state && Object.keys(data.state as LibraryDoc).length > 0) {
-      loadedVersion = (data.version as number) ?? 0;
-      writeLocalFromDoc(userId, data.state as LibraryDoc);
-      return true;
-    }
-
-    // Server empty: migrate existing local data up (one-time) if present.
-    if (hasAnyLocal(userId)) {
-      await pushLibraryToServer(userId);
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-let pushInFlight = false;
-
-/** Upsert the current localStorage snapshot to the server. */
-export async function pushLibraryToServer(userId: string): Promise<void> {
-  if (!userId || typeof window === "undefined" || pushInFlight) return;
-  pushInFlight = true;
-  try {
-    const state = snapshotLocal(userId);
-    const nextVersion = loadedVersion + 1;
+    if (error) return { status: "error", error };
+    if (!data) return { status: "success", value: null };
+    return {
+      status: "success",
+      value: {
+        state: (data.state as LibraryDoc | null) ?? {},
+        version: (data.version as number | null) ?? 0,
+      },
+    };
+  },
+  async insert(userId, state, version) {
     const { error } = await supabase
       .from("generator_library_state")
-      .upsert(
-        { user_id: userId, state, version: nextVersion },
-        { onConflict: "user_id" },
-      );
-    if (!error) loadedVersion = nextVersion;
-  } catch {
-    /* ignore network errors; next tick retries */
-  } finally {
-    pushInFlight = false;
+      .insert({ user_id: userId, state, version });
+    if (!error) return { status: "success", value: undefined };
+    if (error.code === "23505") return { status: "conflict" };
+    return { status: "error", error };
+  },
+  async updateIfVersion(userId, state, expectedVersion, nextVersion) {
+    const { data, error } = await supabase
+      .from("generator_library_state")
+      .update({ state, version: nextVersion })
+      .eq("user_id", userId)
+      .eq("version", expectedVersion)
+      .select("version")
+      .maybeSingle();
+    if (error) return { status: "error", error };
+    if (data?.version !== nextVersion) return { status: "conflict" };
+    return { status: "success", value: undefined };
+  },
+};
+
+let browserSync: ReturnType<typeof createLibraryStateSync> | null = null;
+
+function getBrowserSync() {
+  if (typeof window === "undefined") return null;
+  if (!browserSync) {
+    browserSync = createLibraryStateSync(supabaseBackend, window.localStorage);
   }
+  return browserSync;
+}
+
+export async function hydrateLibraryFromServer(
+  userId: string,
+  signal?: AbortSignal,
+): Promise<LibrarySyncResult> {
+  return (await getBrowserSync()?.hydrate(userId, signal)) ?? { status: "error" };
+}
+
+export async function pushLibraryToServer(userId: string): Promise<LibrarySyncResult> {
+  return (await getBrowserSync()?.push(userId)) ?? { status: "error" };
 }
 
 /**
  * Start watching localStorage for library changes and push them up (debounced).
- * Returns a cleanup function. Uses lightweight snapshot diffing so the
- * dashboard's existing localStorage writes are picked up without refactoring
- * every call site.
+ * The first failed/conflicted push is reported to the gate, which owns stopping
+ * this watcher and showing the retry UI.
  */
-export function startLibrarySync(userId: string): () => void {
+export function startLibrarySync(
+  userId: string,
+  onIssue?: (result: Exclude<LibrarySyncResult, { status: "success" }>) => void,
+): () => void {
   if (!userId || typeof window === "undefined") return () => {};
 
-  let lastSerialized = JSON.stringify(snapshotLocal(userId));
+  let lastSerialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
   let debounceTimer: number | undefined;
+  let pushing = false;
+  let stopped = false;
+
+  const runPush = async () => {
+    if (pushing || stopped) return;
+    pushing = true;
+    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
+    const result = await pushLibraryToServer(userId);
+    pushing = false;
+    if (stopped) return;
+    if (result.status === "success") {
+      lastSerialized = serialized;
+    } else {
+      onIssue?.(result);
+    }
+  };
 
   const schedulePush = () => {
+    if (pushing || stopped) return;
     if (debounceTimer) window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(() => {
-      void pushLibraryToServer(userId);
+      debounceTimer = undefined;
+      void runPush();
     }, 800);
   };
 
   const tick = () => {
-    const serialized = JSON.stringify(snapshotLocal(userId));
-    if (serialized !== lastSerialized) {
-      lastSerialized = serialized;
-      schedulePush();
-    }
+    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
+    if (serialized !== lastSerialized) schedulePush();
   };
 
   const intervalId = window.setInterval(tick, 1500);
 
   const flushNow = () => {
-    const serialized = JSON.stringify(snapshotLocal(userId));
-    if (serialized !== lastSerialized) {
-      lastSerialized = serialized;
-      void pushLibraryToServer(userId);
-    }
+    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
+    if (serialized !== lastSerialized) void runPush();
   };
 
   const onVisibility = () => {
@@ -173,6 +412,7 @@ export function startLibrarySync(userId: string): () => void {
   window.addEventListener("beforeunload", flushNow);
 
   return () => {
+    stopped = true;
     if (debounceTimer) window.clearTimeout(debounceTimer);
     window.clearInterval(intervalId);
     document.removeEventListener("visibilitychange", onVisibility);

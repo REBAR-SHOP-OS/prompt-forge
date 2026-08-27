@@ -41,15 +41,15 @@ function SceneText({ text, narrationLabel, dir }: { text: string; narrationLabel
   const { body, narration } = splitNarration(text)
   return (
     <div className="space-y-2">
-      <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+      <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-foreground">
         {body}
       </p>
       {narration ? (
-        <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
-          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+        <div className="rounded-md border border-accent-warm/30 bg-amber-400/5 px-2.5 py-2">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-warm/90">
             {narrationLabel}
           </div>
-          <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-amber-50/90">
+          <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-accent-warm/90">
             {narration}
           </p>
         </div>
@@ -365,10 +365,10 @@ export default function ScenarioWriterDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+      <DialogContent dir={dir} className="max-w-2xl border-border bg-card text-foreground">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Clapperboard className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            <Clapperboard className="h-5 w-5 text-accent-warm" aria-hidden="true" />
             {t.title}
             <div className="ms-auto flex items-center gap-2">
               <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
@@ -380,7 +380,7 @@ export default function ScenarioWriterDialog({
                     className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
                       businessInfo.trim()
                         ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                        : 'border-accent-warm/40 bg-accent-warm/10 text-accent-warm'
                     }`}
                   >
                     <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -389,9 +389,9 @@ export default function ScenarioWriterDialog({
                     )}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 border-white/10 bg-[#0b0c0e] text-zinc-100">
-                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-                    {t.businessLabel} <span className="text-amber-300">{t.businessRequired}</span>
+                <PopoverContent align="end" className="w-80 border-border bg-card text-foreground">
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/80">
+                    {t.businessLabel} <span className="text-accent-warm">{t.businessRequired}</span>
                   </div>
                   <Textarea
                     value={businessInfo}
@@ -402,7 +402,7 @@ export default function ScenarioWriterDialog({
                     }}
                     rows={4}
                     placeholder={t.businessPlaceholder}
-                    className="min-h-[96px] border-white/10 bg-black/30 text-sm text-zinc-100"
+                    className="min-h-[96px] border-border bg-surface-2 text-sm text-foreground"
                   />
                   <div className="mt-2 flex justify-end">
                     <Button
@@ -422,10 +422,10 @@ export default function ScenarioWriterDialog({
               </Popover>
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
                 <SelectTrigger
-                  className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
+                  className="h-7 w-auto gap-1.5 rounded-full border-border bg-muted/60 px-2.5 text-[11px] font-semibold text-foreground/80"
                   aria-label="Language"
                 >
-                  <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                  <Languages className="h-3.5 w-3.5 text-accent-cool" aria-hidden="true" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -438,20 +438,20 @@ export default function ScenarioWriterDialog({
               </Select>
             </div>
           </DialogTitle>
-          <DialogDescription className="text-zinc-400">
+          <DialogDescription className="text-muted-foreground">
             {t.description}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t.duration}
             </div>
             <div
               role="radiogroup"
               aria-label="Scenario duration"
-              className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold"
+              className="inline-flex rounded-full border border-border bg-muted/60 p-1 text-xs font-semibold"
             >
               {DURATIONS.map((sec) => {
                 const active = duration === sec
@@ -464,8 +464,8 @@ export default function ScenarioWriterDialog({
                     onClick={() => setDuration(sec)}
                     className={`rounded-full px-3 py-1.5 transition ${
                       active
-                        ? 'bg-zinc-100 text-zinc-950'
-                        : 'text-zinc-400 hover:text-zinc-200'
+                        ? 'bg-foreground text-background'
+                        : 'text-muted-foreground hover:text-foreground/90'
                     }`}
                   >
                     {sec}s
@@ -474,7 +474,7 @@ export default function ScenarioWriterDialog({
               })}
             </div>
             {SPLIT_DURATIONS.includes(duration) ? (
-              <p className="mt-2 text-xs text-zinc-500">
+              <p className="mt-2 text-xs text-muted-foreground">
                 Will be split into {duration / 15} sequential 15s scenes and sent as {duration / 15} cards.
               </p>
             ) : null}
@@ -482,14 +482,14 @@ export default function ScenarioWriterDialog({
 
           <div>
             <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t.yourIdea}
               </div>
               {uploadedImageUrl ? (
                 <div
                   role="radiogroup"
                   aria-label="Idea mode"
-                  className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
+                  className="inline-flex rounded-full border border-border bg-muted/60 p-0.5 text-[11px] font-semibold"
                 >
                   <button
                     type="button"
@@ -497,7 +497,7 @@ export default function ScenarioWriterDialog({
                     aria-checked={ideaMode === 'auto'}
                     onClick={() => setIdeaMode('auto')}
                     className={`rounded-full px-2.5 py-1 transition ${
-                      ideaMode === 'auto' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                      ideaMode === 'auto' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'
                     }`}
                   >
                     {t.autoFromImage}
@@ -508,7 +508,7 @@ export default function ScenarioWriterDialog({
                     aria-checked={ideaMode === 'manual'}
                     onClick={() => setIdeaMode('manual')}
                     className={`rounded-full px-2.5 py-1 transition ${
-                      ideaMode === 'manual' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                      ideaMode === 'manual' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground/90'
                     }`}
                   >
                     {t.writeMyOwn}
@@ -527,7 +527,7 @@ export default function ScenarioWriterDialog({
                     ? t.ideaPlaceholderAuto
                     : t.ideaPlaceholder
                 }
-                className="min-h-[100px] border-white/10 bg-black/30 pb-12 text-zinc-100 disabled:opacity-60"
+                className="min-h-[100px] border-border bg-surface-2 pb-12 text-foreground disabled:opacity-60"
               />
               <div className="absolute bottom-2 left-2 flex items-center gap-2">
                 <input
@@ -543,7 +543,7 @@ export default function ScenarioWriterDialog({
                   disabled={isUploadingImage}
                   title={t.attachImage}
                   aria-label={t.attachImage}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-2/60 text-foreground/80 transition hover:bg-accent hover:text-foreground disabled:opacity-50"
                 >
                   {isUploadingImage ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -556,13 +556,13 @@ export default function ScenarioWriterDialog({
                     <img
                       src={safeMediaUrl(imagePreviewUrl) ?? ''}
                       alt="Reference"
-                      className="h-8 w-8 rounded-md border border-white/10 object-cover"
+                      className="h-8 w-8 rounded-md border border-border object-cover"
                     />
                     <button
                       type="button"
                       onClick={clearImage}
                       aria-label={t.removeImage}
-                      className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-card text-foreground/90 ring-1 ring-foreground/20 hover:bg-surface-2"
                     >
                       <X className="h-3 w-3" aria-hidden="true" />
                     </button>
@@ -586,10 +586,10 @@ export default function ScenarioWriterDialog({
               {scenes.map((text, i) => (
                 <div
                   key={i}
-                  className="rounded-md border border-white/10 bg-black/30 p-3"
+                  className="rounded-md border border-border bg-surface-2 p-3"
                 >
                   <div className="mb-1.5 flex items-center justify-between">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {t.scene} {i + 1} ({sceneRange(i)})
                     </div>
                     <Button
@@ -612,8 +612,8 @@ export default function ScenarioWriterDialog({
               ))}
             </div>
           ) : scenes.length > 0 ? (
-            <div className="rounded-md border border-white/10 bg-black/30 p-3">
-              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            <div className="rounded-md border border-border bg-surface-2 p-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t.scenario} ({duration}s)
               </div>
               <SceneText text={scenes[0]} narrationLabel={t.narration} dir={dir} />

@@ -965,7 +965,7 @@ export default function AiImageDialog({
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-300" />
+            <Sparkles className="h-4 w-4 text-accent-warm" />
             Generate image with AI
           </DialogTitle>
           <DialogDescription>
@@ -976,7 +976,7 @@ export default function AiImageDialog({
         {!imageDataUrl ? (
           <div className="space-y-4">
             <div>
-              <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">Aspect ratio</div>
+              <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Aspect ratio</div>
               <div className="grid grid-cols-3 gap-2">
                 {ASPECT_OPTIONS.map((opt) => {
                   const active = aspect === opt.value
@@ -987,19 +987,19 @@ export default function AiImageDialog({
                       onClick={() => setAspect(opt.value)}
                       className={`rounded-xl border px-3 py-3 text-left transition ${
                         active
-                          ? 'border-amber-300/60 bg-amber-300/10 text-amber-100'
-                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:bg-white/[0.06]'
+                          ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm'
+                          : 'border-border bg-accent/30 text-foreground/80 hover:border-border hover:bg-accent/60'
                       }`}
                     >
                       <div className="text-sm font-medium">{opt.label}</div>
-                      <div className="text-[11px] text-zinc-400">{opt.sub}</div>
+                      <div className="text-[11px] text-muted-foreground">{opt.sub}</div>
                     </button>
                   )
                 })}
               </div>
             </div>
             <div>
-              <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">Prompt</div>
+              <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Prompt</div>
               <div className="relative">
                 <Textarea
                   value={prompt}
@@ -1018,7 +1018,7 @@ export default function AiImageDialog({
                         disabled={!prompt.trim() || isOptimizingPrompt || isLoading}
                         aria-label="Optimize prompt with AI"
                         title="Optimize prompt with AI"
-                        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-black/50 text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-surface-2/80 text-foreground/80 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {isOptimizingPrompt ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -1067,7 +1067,7 @@ export default function AiImageDialog({
                     type="button"
                     onClick={undoOptimize}
                     disabled={isOptimizingPrompt}
-                    className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5 font-medium text-emerald-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded border border-border bg-accent/50 px-2 py-0.5 font-medium text-emerald-100 transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <RefreshCw className="h-3 w-3" aria-hidden="true" />
                     Undo
@@ -1079,7 +1079,7 @@ export default function AiImageDialog({
                   type="button"
                   onClick={() => referenceInputRef.current?.click()}
                   disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   title="Upload reference images"
                 >
                   <ImagePlus className="h-4 w-4" />
@@ -1092,8 +1092,8 @@ export default function AiImageDialog({
                       disabled={isLoading}
                       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         selectedTheme
-                          ? 'border-amber-300/60 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20'
-                          : 'border-white/10 bg-black/40 text-zinc-200 hover:border-white/20 hover:bg-white/[0.08] hover:text-white'
+                          ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm hover:bg-accent-warm/20'
+                          : 'border-border bg-surface-2/60 text-foreground/90 hover:border-border hover:bg-accent/80 hover:text-foreground'
                       }`}
                       title="Pick a visual theme"
                     >
@@ -1107,7 +1107,7 @@ export default function AiImageDialog({
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-[24rem] p-3">
                     <div className="mb-2 flex items-center justify-between px-1">
-                      <span className="text-xs font-medium text-zinc-300">Choose a theme</span>
+                      <span className="text-xs font-medium text-foreground/80">Choose a theme</span>
                       {selectedTheme ? (
                         <button
                           type="button"
@@ -1135,7 +1135,7 @@ export default function AiImageDialog({
                             className={`group relative block overflow-hidden rounded-xl border text-left transition ${
                               active
                                 ? 'border-amber-300/80 ring-2 ring-amber-300/50'
-                                : 'border-white/10 hover:border-white/30'
+                                : 'border-border hover:border-border'
                             }`}
                           >
                             <span className="relative block aspect-[4/5] w-full overflow-hidden">
@@ -1155,7 +1155,7 @@ export default function AiImageDialog({
                               ) : null}
                               <span
                                 className={`absolute inset-x-0 bottom-0 truncate px-2.5 pb-2 pt-6 text-xs font-semibold tracking-tight ${
-                                  active ? 'text-amber-100' : 'text-white'
+                                  active ? 'text-accent-warm' : 'text-white'
                                 }`}
                               >
                                 {t.enLabel}
@@ -1173,7 +1173,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                       title="Use one of your saved products as a reference"
                     >
                       <Package className="h-4 w-4" />
@@ -1181,15 +1181,15 @@ export default function AiImageDialog({
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-[22rem] p-3">
-                    <div className="mb-2 px-1 text-xs font-medium text-zinc-300">
+                    <div className="mb-2 px-1 text-xs font-medium text-foreground/80">
                       Choose a product
                     </div>
                     {productsLoading && products.length === 0 ? (
-                      <div className="flex items-center justify-center py-6 text-zinc-500">
+                      <div className="flex items-center justify-center py-6 text-muted-foreground">
                         <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                       </div>
                     ) : products.length === 0 ? (
-                      <p className="px-1 py-4 text-center text-[11px] text-zinc-500">
+                      <p className="px-1 py-4 text-center text-[11px] text-muted-foreground">
                         No saved products yet. Add product photos in Storage → Products first.
                       </p>
                     ) : (
@@ -1202,11 +1202,11 @@ export default function AiImageDialog({
                               type="button"
                               disabled={busy || productLoadingId !== null}
                               onClick={() => void handleSelectProduct(p)}
-                              className="group flex flex-col gap-1.5 rounded-xl border border-white/10 p-1.5 text-left transition hover:border-white/25 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="group flex flex-col gap-1.5 rounded-xl border border-border p-1.5 text-left transition hover:border-border hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <span className="relative block h-20 w-full overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                              <span className="relative block h-20 w-full overflow-hidden rounded-lg border border-border bg-surface-2">
                                 {brokenProductIds.has(p.id) ? (
-                                  <span className="absolute inset-0 grid place-items-center bg-black/30 text-zinc-500">
+                                  <span className="absolute inset-0 grid place-items-center bg-surface-2 text-muted-foreground">
                                     <Package className="h-5 w-5" aria-hidden="true" />
                                   </span>
                                 ) : (
@@ -1223,7 +1223,7 @@ export default function AiImageDialog({
                                   </span>
                                 ) : null}
                               </span>
-                              <span className="block truncate text-xs font-medium text-zinc-200">
+                              <span className="block truncate text-xs font-medium text-foreground/90">
                                 {p.title || 'Product'}
                               </span>
                             </button>
@@ -1237,7 +1237,7 @@ export default function AiImageDialog({
                   type="button"
                   onClick={() => void handleUseFilmFrame()}
                   disabled={isLoading || isGrabbingFrame || !filmFrameSourceUrl || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   title={filmFrameSourceUrl ? "Use the first frame of your film as a reference" : "No film clip available yet"}
                 >
                   {isGrabbingFrame ? (
@@ -1261,7 +1261,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading || isWritingPrompt}
-                      className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-accent-warm/40 bg-accent-warm/10 px-3 py-1.5 text-xs font-medium text-accent-warm transition hover:border-accent-warm/70 hover:bg-accent-warm/20 disabled:cursor-not-allowed disabled:opacity-50"
                       title="Write a professional prompt from your references & theme"
                     >
                       {isWritingPrompt ? (
@@ -1274,8 +1274,8 @@ export default function AiImageDialog({
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-80 space-y-3">
                     <div>
-                      <div className="text-sm font-semibold text-zinc-100">Add text on the image?</div>
-                      <p className="mt-0.5 text-xs text-zinc-400">
+                      <div className="text-sm font-semibold text-foreground">Add text on the image?</div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         Choose whether the generated image should include an advertising tagline.
                       </p>
                     </div>
@@ -1311,12 +1311,12 @@ export default function AiImageDialog({
                     {taglines.length > 0 ? (
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-zinc-300">Pick a tagline</span>
+                          <span className="text-xs font-medium text-foreground/80">Pick a tagline</span>
                           <button
                             type="button"
                             onClick={() => void loadTaglines()}
                             disabled={isLoadingTaglines || isWritingPrompt}
-                            className="inline-flex items-center gap-1 text-xs text-amber-200 hover:text-amber-100 disabled:opacity-50"
+                            className="inline-flex items-center gap-1 text-xs text-accent-warm hover:text-accent-warm disabled:opacity-50"
                           >
                             <RefreshCw className={`h-3 w-3 ${isLoadingTaglines ? 'animate-spin' : ''}`} />
                             Regenerate
@@ -1329,7 +1329,7 @@ export default function AiImageDialog({
                               type="button"
                               disabled={isWritingPrompt}
                               onClick={() => void writePromptInternal({ includeAdCopy: true, tagline: t })}
-                              className="block w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-xs text-zinc-100 transition hover:border-amber-300/50 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="block w-full rounded-lg border border-border bg-accent/30 px-3 py-2 text-left text-xs text-foreground transition hover:border-accent-warm/50 hover:bg-accent-warm/10 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               “{t}”
                             </button>
@@ -1345,7 +1345,7 @@ export default function AiImageDialog({
                   {referenceImages.map((ref, index) => (
                     <div
                       key={`${ref.name}-${index}`}
-                      className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                      className="flex items-center gap-3 rounded-xl border border-border bg-accent/30 px-3 py-2"
                     >
                       <img
                         src={ref.dataUrl}
@@ -1353,14 +1353,14 @@ export default function AiImageDialog({
                         className="h-11 w-11 rounded-lg object-cover"
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-zinc-100">{ref.name}</div>
-                        <div className="text-[11px] text-zinc-500">Using this image as a reference for generation.</div>
+                        <div className="truncate text-sm text-foreground">{ref.name}</div>
+                        <div className="text-[11px] text-muted-foreground">Using this image as a reference for generation.</div>
                       </div>
                       <button
                         type="button"
                         onClick={() => handleRemoveReference(index)}
                         disabled={isLoading}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         title="Remove reference image"
                       >
                         <X className="h-4 w-4" />
@@ -1368,12 +1368,12 @@ export default function AiImageDialog({
                       </button>
                     </div>
                   ))}
-                  <p className="text-[11px] text-zinc-500">
+                  <p className="text-[11px] text-muted-foreground">
                     {referenceImages.length} of {MAX_REFERENCE_IMAGES} reference images added.
                   </p>
                 </div>
               ) : (
-                <p className="mt-3 text-xs text-zinc-500">
+                <p className="mt-3 text-xs text-muted-foreground">
                   Add up to {MAX_REFERENCE_IMAGES} reference images if you want the result to follow existing shots, products, or frames.
                 </p>
               )}
@@ -1405,7 +1405,7 @@ export default function AiImageDialog({
         ) : (
           <div className="space-y-4">
             <div
-              className={`relative w-full overflow-hidden rounded-xl border border-white/10 bg-black ${aspectBoxClass(
+              className={`relative w-full overflow-hidden rounded-xl border border-border bg-black ${aspectBoxClass(
                 aspect,
               )}`}
             >
@@ -1437,7 +1437,7 @@ export default function AiImageDialog({
                 onPointerLeave={() => { isDrawingRef.current = false }}
               />
               {isLoading ? (
-                <div className="absolute inset-0 grid place-items-center bg-black/60 backdrop-blur-sm">
+                <div className="absolute inset-0 grid place-items-center bg-surface-2/80 backdrop-blur-sm">
                   <LoaderCircle className="h-8 w-8 animate-spin text-white" />
                 </div>
               ) : null}
@@ -1445,7 +1445,7 @@ export default function AiImageDialog({
 
             <div>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="text-xs uppercase tracking-wide text-zinc-400">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
                   Refine with AI (Nano Banana edit)
                 </div>
                 <div className="flex items-center gap-2">
@@ -1461,7 +1461,7 @@ export default function AiImageDialog({
                     type="button"
                     onClick={() => refineReferenceInputRef.current?.click()}
                     disabled={isLoading || isSaving || isMaskMode || refineReferenceImages.length >= MAX_REFERENCE_IMAGES}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-accent/40 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-40"
                     title={isMaskMode ? 'Exit edit-area mode to add reference images' : 'Add reference images'}
                   >
                     <ImagePlus className="h-3.5 w-3.5" />
@@ -1473,7 +1473,7 @@ export default function AiImageDialog({
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                       isMaskMode
                         ? 'border-rose-300/50 bg-rose-400/15 text-rose-100'
-                        : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/20 hover:bg-white/[0.08]'
+                        : 'border-border bg-accent/40 text-foreground/80 hover:border-border hover:bg-accent/80'
                     }`}
                     title={isMaskMode ? 'Exit edit-area mode' : 'Mark an area to edit'}
                   >
@@ -1482,7 +1482,7 @@ export default function AiImageDialog({
                   </button>
                   {isMaskMode ? (
                     <>
-                      <label className="flex items-center gap-1 text-[11px] text-zinc-400">
+                      <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         Size
                         <input
                           type="range"
@@ -1498,7 +1498,7 @@ export default function AiImageDialog({
                         type="button"
                         onClick={handleClearMask}
                         disabled={!hasMask}
-                        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] disabled:opacity-40"
+                        className="inline-flex items-center gap-1 rounded-full border border-border bg-accent/40 px-2 py-1 text-[11px] text-foreground/80 transition hover:border-border hover:bg-accent/80 disabled:opacity-40"
                         title="Clear mask"
                       >
                         <Eraser className="h-3.5 w-3.5" />
@@ -1520,7 +1520,7 @@ export default function AiImageDialog({
                   {refineReferenceImages.map((ref, index) => (
                     <div
                       key={`${ref.name}-${index}`}
-                      className="group relative h-14 w-14 overflow-hidden rounded-lg border border-white/10"
+                      className="group relative h-14 w-14 overflow-hidden rounded-lg border border-border"
                       title={ref.name}
                     >
                       <img src={ref.dataUrl} alt="Reference" className="h-full w-full object-cover" />
@@ -1528,7 +1528,7 @@ export default function AiImageDialog({
                         type="button"
                         onClick={() => handleRemoveRefineReference(index)}
                         disabled={isLoading || isSaving}
-                        className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-zinc-200 transition hover:bg-black/90 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-surface-2/80 text-foreground/90 transition hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         title="Remove reference image"
                       >
                         <X className="h-3 w-3" />
@@ -1539,7 +1539,7 @@ export default function AiImageDialog({
                 </div>
               ) : null}
               <div className="mt-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-zinc-500">
+                <span className="text-[11px] text-muted-foreground">
                   {hasMask ? 'Edit applied only inside the painted area.' : 'Tip: paint an area to edit only that region.'}
                 </span>
                 <Button
@@ -1568,7 +1568,7 @@ export default function AiImageDialog({
 
             {inspection ? (
               <div className="space-y-3 rounded-xl border border-amber-300/25 bg-amber-300/[0.04] p-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-100">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-warm">
                   <ShieldCheck className="h-4 w-4" />
                   Cover text guardian
                 </div>
@@ -1590,33 +1590,33 @@ export default function AiImageDialog({
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                           inspection.isAdSuitable
                             ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/30'
-                            : 'bg-amber-500/15 text-amber-200 border border-amber-400/30'
+                            : 'bg-amber-500/15 text-accent-warm border border-accent-warm/30'
                         }`}
                       >
                         {inspection.isAdSuitable ? 'Ad / cover suitable' : 'Not cover-suitable'}
                       </span>
                       {inspection.language ? (
-                        <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-zinc-300">
+                        <span className="inline-flex items-center rounded-full border border-border bg-accent/40 px-2 py-0.5 text-[11px] text-foreground/80">
                           {inspection.language}
                         </span>
                       ) : null}
                     </div>
 
                     <div>
-                      <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Text on image</div>
-                      <p className="select-text whitespace-pre-wrap rounded-md border border-white/10 bg-black/30 px-2.5 py-2 text-sm text-zinc-100">
+                      <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Text on image</div>
+                      <p className="select-text whitespace-pre-wrap rounded-md border border-border bg-surface-2 px-2.5 py-2 text-sm text-foreground">
                         {inspection.text}
                       </p>
                     </div>
 
                     {inspection.reason ? (
-                      <p className="text-xs text-zinc-300">{inspection.reason}</p>
+                      <p className="text-xs text-foreground/80">{inspection.reason}</p>
                     ) : null}
 
                     {inspection.suggestions.length > 0 ? (
                       <div>
-                        <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Better tagline ideas</div>
-                        <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-200">
+                        <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Better tagline ideas</div>
+                        <ul className="list-disc space-y-0.5 pl-5 text-xs text-foreground/90">
                           {inspection.suggestions.map((s, i) => (
                             <li key={i}>{s}</li>
                           ))}
@@ -1625,12 +1625,12 @@ export default function AiImageDialog({
                     ) : null}
 
                     <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <Languages className="h-3.5 w-3.5 text-zinc-400" />
+                      <Languages className="h-3.5 w-3.5 text-muted-foreground" />
                       <select
                         value={translateLang}
                         onChange={(e) => setTranslateLang(e.target.value)}
                         disabled={isTranslating}
-                        className="rounded-md border border-white/10 bg-black/40 px-2 py-1 text-xs text-zinc-200 outline-none"
+                        className="rounded-md border border-border bg-surface-2/60 px-2 py-1 text-xs text-foreground/90 outline-none"
                       >
                         {GUARDIAN_LANGS.map((l) => (
                           <option key={l.code} value={l.code}>{l.label}</option>
@@ -1649,10 +1649,10 @@ export default function AiImageDialog({
 
                     {translatedText ? (
                       <div>
-                        <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Translation</div>
+                        <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">Translation</div>
                         <p
                           dir="auto"
-                          className="select-text whitespace-pre-wrap rounded-md border border-white/10 bg-black/30 px-2.5 py-2 text-sm text-zinc-100"
+                          className="select-text whitespace-pre-wrap rounded-md border border-border bg-surface-2 px-2.5 py-2 text-sm text-foreground"
                         >
                           {translatedText}
                         </p>
@@ -1660,7 +1660,7 @@ export default function AiImageDialog({
                     ) : null}
                   </>
                 ) : (
-                  <p className="text-xs text-zinc-300">No readable text was found composited on this image.</p>
+                  <p className="text-xs text-foreground/80">No readable text was found composited on this image.</p>
                 )}
               </div>
             ) : null}

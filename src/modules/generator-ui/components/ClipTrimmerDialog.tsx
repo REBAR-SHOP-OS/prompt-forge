@@ -229,7 +229,7 @@ export default function ClipTrimmerDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="overflow-hidden rounded-lg border border-white/10 bg-black">
+          <div className="overflow-hidden rounded-lg border border-border bg-black">
             <video
               ref={videoRef}
               src={videoUrl}
@@ -253,9 +253,9 @@ export default function ClipTrimmerDialog({
           </div>
 
           <div>
-            <div className="mb-1 flex items-center justify-between text-xs text-zinc-400 tabular-nums">
+            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground tabular-nums">
               <span>{fmtTime(currentTime)} / {fmtTime(duration)}</span>
-              <span>New length: <span className="font-medium text-zinc-200">{fmtTime(newDuration)}</span></span>
+              <span>New length: <span className="font-medium text-foreground/90">{fmtTime(newDuration)}</span></span>
             </div>
 
             {/* Seconds ruler */}
@@ -267,7 +267,7 @@ export default function ClipTrimmerDialog({
                   style={{ left: `${tk.pct}%` }}
                 >
                   {tk.label ? (
-                    <span className="mb-0.5 text-[10px] leading-none text-zinc-400 tabular-nums">{tk.label}</span>
+                    <span className="mb-0.5 text-[10px] leading-none text-muted-foreground tabular-nums">{tk.label}</span>
                   ) : null}
                   <span className={tk.major ? 'h-2 w-px bg-zinc-500' : 'h-1 w-px bg-zinc-700'} />
                 </div>
@@ -285,13 +285,13 @@ export default function ClipTrimmerDialog({
               aria-valuemin={0}
               aria-valuemax={duration}
               aria-valuenow={currentTime}
-              className="relative h-10 w-full touch-none cursor-pointer overflow-hidden rounded-md border border-white/10 bg-white/5"
+              className="relative h-10 w-full touch-none cursor-pointer overflow-hidden rounded-md border border-border bg-accent/50"
             >
               {/* tick grid lines */}
               {ticks.map((tk, i) => (
                 <div
                   key={i}
-                  className={tk.major ? 'absolute inset-y-0 w-px bg-white/10' : 'absolute inset-y-2 w-px bg-white/[0.04]'}
+                  className={tk.major ? 'absolute inset-y-0 w-px bg-accent' : 'absolute inset-y-2 w-px bg-accent/40'}
                   style={{ left: `${tk.pct}%` }}
                 />
               ))}
@@ -327,7 +327,7 @@ export default function ClipTrimmerDialog({
               >
                 <span className="absolute -top-0.5 left-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
                 {scrubbing ? (
-                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-100 ring-1 ring-white/15">
+                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-card px-1.5 py-0.5 text-[10px] tabular-nums text-foreground ring-1 ring-foreground/15">
                     {fmtTime(currentTime)}
                   </span>
                 ) : null}
@@ -367,17 +367,17 @@ export default function ClipTrimmerDialog({
           </div>
 
           {norm.length > 0 ? (
-            <ul className="max-h-32 space-y-1 overflow-auto rounded-md border border-white/10 bg-white/[0.02] p-2 text-xs">
+            <ul className="max-h-32 space-y-1 overflow-auto rounded-md border border-border bg-accent/20 p-2 text-xs">
               {norm.map((c, i) => (
-                <li key={i} className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-white/5">
-                  <span className="tabular-nums text-zinc-300">
+                <li key={i} className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-accent/50">
+                  <span className="tabular-nums text-foreground/80">
                     {fmtTime(c.start)} → {fmtTime(c.end)}
-                    <span className="ml-2 text-zinc-500">({fmtTime(c.end - c.start)})</span>
+                    <span className="ml-2 text-muted-foreground">({fmtTime(c.end - c.start)})</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => removeCut(i)}
-                    className="grid h-6 w-6 place-items-center rounded text-zinc-400 hover:bg-rose-500/10 hover:text-rose-300"
+                    className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-rose-500/10 hover:text-rose-300"
                     aria-label="Remove range"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -386,7 +386,7 @@ export default function ClipTrimmerDialog({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-muted-foreground">
               Use the timeline + “Mark cut start / Set cut end” to mark ranges. Marked ranges play through during preview as if removed.
             </p>
           )}

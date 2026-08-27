@@ -89,7 +89,7 @@ export default function OAuthConsent() {
             Sign in to authorize this app to connect to your account.
           </p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-card/40 p-6 shadow-2xl backdrop-blur-xl">
+        <div className="rounded-2xl border border-border bg-card/40 p-6 shadow-2xl backdrop-blur-xl">
           <AuthForm mode="login" />
         </div>
       </main>
@@ -101,7 +101,7 @@ export default function OAuthConsent() {
   const clientName = details.client?.name ?? "an application";
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
-      <div className="rounded-2xl border border-white/10 bg-card/40 p-8 shadow-2xl backdrop-blur-xl">
+      <div className="rounded-2xl border border-border bg-card/40 p-8 shadow-2xl backdrop-blur-xl">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Connect {clientName}
         </h1>
@@ -120,7 +120,7 @@ export default function OAuthConsent() {
           <button
             disabled={busy}
             onClick={() => decide(false)}
-            className="flex-1 rounded-lg border border-white/10 bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition hover:bg-white/5 disabled:opacity-50"
+            className="flex-1 rounded-lg border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition hover:bg-accent/50 disabled:opacity-50"
           >
             Deny
           </button>

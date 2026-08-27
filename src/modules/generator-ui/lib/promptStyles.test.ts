@@ -1,3 +1,5 @@
+import { readFileSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   CAMERA_STYLES,
@@ -9,6 +11,28 @@ import {
   buildWizardCameraOptions,
   buildWizardThemeOptions,
 } from './promptStyles'
+
+function readJpegDimensions(bytes: Buffer): { width: number; height: number } | undefined {
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined
+  let offset = 2
+  while (offset + 8 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1
+      continue
+    }
+    const marker = bytes[offset + 1]
+    const segmentLength = bytes.readUInt16BE(offset + 2)
+    if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker)) {
+      return {
+        height: bytes.readUInt16BE(offset + 5),
+        width: bytes.readUInt16BE(offset + 7),
+      }
+    }
+    if (segmentLength < 2) return undefined
+    offset += segmentLength + 2
+  }
+  return undefined
+}
 
 describe('buildWizardCameraOptions', () => {
   it('includes Auto plus every shared camera style (all 10)', () => {
@@ -27,11 +51,12 @@ describe('buildWizardCameraOptions', () => {
     }
   })
 
-  it('carries the preview clip as imageUrl for each camera style', () => {
+  it('separates the static poster from the opt-in video URL for each camera style', () => {
     const opts = buildWizardCameraOptions()
     for (const s of CAMERA_STYLES) {
       const o = opts.find((x) => x.value === s.id)!
-      expect(o.imageUrl).toBe(s.preview ?? '/placeholder.svg')
+      expect(o.videoUrl).toBe(s.preview)
+      expect(o.posterUrl).toMatch(/\/src\/assets\/style-posters\/.+\.jpg|style-posters\/.+\.jpg/)
     }
   })
 })
@@ -84,6 +109,32 @@ describe('buildWizardThemeOptions', () => {
     expect(construction.length).toBeGreaterThan(0)
     // The rebar site scene is present.
     expect(construction.some((o) => o.value === 'rebar-site')).toBe(true)
+  })
+
+  it('gives every Construction & Civil Works scene a distinct local poster and its project video', () => {
+    const construction = buildWizardThemeOptions().filter((o) => o.group === 'Scene · Construction & Civil Works')
+    expect(construction).toHaveLength(38)
+
+    for (const option of construction) {
+      expect(option.posterUrl).toMatch(/style-posters\/scene-.+\.jpg/)
+      expect(option.videoUrl).toMatch(/^\/__l5e\/assets-v1\/.+\/scene-.+\.mp4$/)
+    }
+
+    expect(new Set(construction.map((option) => option.posterUrl)).size).toBe(construction.length)
+    expect(new Set(construction.map((option) => option.videoUrl)).size).toBe(construction.length)
+  })
+
+  it('ships every Construction & Civil Works poster as a valid lightweight 16:9 JPEG', () => {
+    const construction = buildWizardThemeOptions().filter((o) => o.group === 'Scene · Construction & Civil Works')
+
+    for (const option of construction) {
+      const posterPath = resolve(process.cwd(), 'src/assets/style-posters', `scene-${option.value}.jpg`)
+      const bytes = readFileSync(posterPath)
+      expect(bytes.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]))
+      expect(bytes.subarray(-2)).toEqual(Buffer.from([0xff, 0xd9]))
+      expect(readJpegDimensions(bytes)).toEqual({ width: 320, height: 180 })
+      expect(statSync(posterPath).size).toBeLessThan(50_000)
+    }
   })
 
   it('labels genres, scenes and templates with their subgroup', () => {

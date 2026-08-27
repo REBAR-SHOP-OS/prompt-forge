@@ -1,0 +1,97 @@
+import { describe, it, expect } from 'vitest'
+// ?raw import is resolved by Vite at bundle/transform time — no node:fs, node:path,
+// or __dirname needed at runtime. Works identically in jsdom and node environments.
+import source from './DashboardPage.tsx?raw'
+
+// Regression coverage for the top-left account control: the Avatar is the first
+// member of the same flex row as the Library icon, not an independently fixed element.
+describe('DashboardPage account avatar header control', () => {
+  it('renders a circular avatar as the first header control', () => {
+    expect(source).toContain('aria-label="Open account menu"')
+    expect(source).toContain('<Avatar className="h-10 w-10 ring-1 ring-border">')
+    expect(source).toContain('rounded-full')
+  })
+
+  it('derives initials from first/last name with email fallback', () => {
+    expect(source).toContain('initialsForName(')
+    expect(source).toContain('profile?.first_name')
+    expect(source).toContain('profile?.last_name')
+    expect(source).toContain('profile?.email ?? session?.user.email')
+  })
+
+  it('shows the avatar image when avatar_url is present', () => {
+    expect(source).toContain('profile?.avatar_url')
+    expect(source).toContain('<AvatarImage src={profile.avatar_url}')
+  })
+
+  it('keeps the Account Center trigger on the existing state', () => {
+    expect(source).toContain('onSelect={() => setIsAccountCenterOpen(true)}')
+    expect(source).toContain('const [isAccountCenterOpen, setIsAccountCenterOpen] = useState(false)')
+  })
+
+  it('keeps sign-out in the same dropdown', () => {
+    expect(source).toContain('Sign out')
+    expect(source).toContain('void signOut()')
+  })
+
+  it('does not render the old LayoutGrid account icon', () => {
+    expect(source).not.toContain('<LayoutGrid')
+  })
+
+  // ── Structural tests: Avatar and Library share the same flex container ──
+
+  it('Avatar is NOT independently fixed — no standalone fixed positioning on the trigger button', () => {
+    // The old code had `fixed left-4 top-4` on the avatar button itself.
+    // Now the button should have no `fixed` class; the wrapper div carries it.
+    const triggerMatch = source.match(/aria-label="Open account menu"[\s\S]*?<\/button>/)
+    expect(triggerMatch).not.toBeNull()
+    expect(triggerMatch![0]).not.toContain('fixed')
+    expect(triggerMatch![0]).not.toContain('left-4')
+    expect(triggerMatch![0]).not.toContain('top-4')
+  })
+
+  it('Avatar and Library are inside the same flex container div', () => {
+    // Find the flex container that holds the top-left icon row.
+    // After the fix it starts with `fixed left-4 top-4 flex items-center gap-2`.
+    const containerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
+    expect(containerStart).toBeGreaterThan(-1)
+
+    // Extract a generous slice of the file from that point to capture the container body.
+    const slice = source.slice(containerStart, containerStart + 4000)
+
+    // Both the Avatar DropdownMenu and the Library button must be inside this region.
+    const avatarIdx = slice.indexOf('aria-label="Open account menu"')
+    const libraryIdx = slice.indexOf('aria-label="Library"')
+
+    expect(avatarIdx).toBeGreaterThan(-1)
+    expect(libraryIdx).toBeGreaterThan(-1)
+    // Avatar must come before Library in the container.
+    expect(avatarIdx).toBeLessThan(libraryIdx)
+  })
+
+  it('the flex container wraps both Avatar dropdown and Library button (no separate fixed div for icons)', () => {
+    // There should be exactly ONE `fixed left-4 top-4` occurrence in the file —
+    // the combined container. The old separate icon-row div (`fixed left-14 top-4`)
+    // must be gone.
+    const fixedLeft4Count = (source.match(/fixed left-4 top-4/g) || []).length
+    expect(fixedLeft4Count).toBe(1)
+
+    const oldIconRowCount = (source.match(/fixed left-14 top-4/g) || []).length
+    expect(oldIconRowCount).toBe(0)
+  })
+
+  it('Avatar dropdown is the first child and Library is the second child in the flex row', () => {
+    // Extract the flex container content and verify child order.
+    const containerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
+    const containerSlice = source.slice(containerStart, containerStart + 4000)
+
+    // First child: the DropdownMenu wrapping the Avatar button
+    const dropdownMenuIdx = containerSlice.indexOf('<DropdownMenu>')
+    // Second child: the TooltipProvider wrapping the Library button
+    const tooltipProviderIdx = containerSlice.indexOf('<TooltipProvider')
+
+    expect(dropdownMenuIdx).toBeGreaterThan(-1)
+    expect(tooltipProviderIdx).toBeGreaterThan(-1)
+    expect(dropdownMenuIdx).toBeLessThan(tooltipProviderIdx)
+  })
+})

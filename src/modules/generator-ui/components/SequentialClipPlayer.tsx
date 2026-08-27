@@ -44,6 +44,8 @@ type Props = {
   ratioToHeight: (r: '9:16' | '1:1' | '16:9') => string
   ratioToWidth: (r: '9:16' | '1:1' | '16:9') => string
   maxHeightPx: number
+  /** Stable id for one automatic play attempt when a user-created batch opens. */
+  autoPlayAttemptId?: string
   onClose?: () => void
   /** Called when a clip becomes active so the parent can highlight a card. */
   onActiveClipChange?: (clipId: string) => void
@@ -66,6 +68,7 @@ export function SequentialClipPlayer({
   ratioToHeight,
   ratioToWidth,
   maxHeightPx,
+  autoPlayAttemptId,
   onClose,
   onActiveClipChange,
   musicUrl,
@@ -95,6 +98,8 @@ export function SequentialClipPlayer({
   // clip's source after a playback error, so a permanently-bad source skips
   // instead of looping forever.
   const erroredOnceRef = useRef<string | null>(null)
+  const autoPlayAttemptedRef = useRef<string | null>(null)
+  const preparedAutoPlayIdRef = useRef<string | null>(null)
 
   // ── Playhead (decoupled from React render) ──────────────────────────────
   // The live film-wide playhead is written to DOM refs every frame WITHOUT
@@ -194,32 +199,6 @@ export function SequentialClipPlayer({
     s.handleSeek(offsetBeforeIndex(index) + Math.max(0, localTime))
   }
 
-  // Preload every video clip's duration so the scrub bar math is accurate even
-  // before a clip has been played. This is the SINGLE metadata-probing path
-  // (the total-duration display reads from `filmTotal`, derived from this map).
-  useEffect(() => {
-    let cancelled = false
-    const videos = clips.filter((c): c is SeqVideoClip => c.kind === 'video')
-    const missing = videos.filter((v) => !(v.id in clipDurations))
-    if (missing.length === 0) return
-    missing.forEach((v) => {
-      const el = document.createElement('video')
-      el.preload = 'metadata'
-      el.muted = true
-      el.src = v.src
-      const done = (dur: number) => {
-        if (cancelled) return
-        if (Number.isFinite(dur) && dur > 0) {
-          setClipDurations((prev) => (prev[v.id] === dur ? prev : { ...prev, [v.id]: dur }))
-        }
-      }
-      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
-      el.addEventListener('error', () => done(0), { once: true })
-    })
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clips.map((c) => `${c.kind}:${c.id}`).join('|')])
-
   // Keep index inside bounds when clips change.
   useEffect(() => {
     if (clips.length === 0) {
@@ -244,6 +223,54 @@ export function SequentialClipPlayer({
     [clips.map((c) => `${c.kind}:${c.id}:${c.src}`).join('|')],
   )
   const { urls: resolvedAllSrcs } = usePlayableVideoUrls(allVideoSrcs)
+
+  // Preload every video clip's duration so the scrub bar math is accurate even
+  // before a clip has been played. This is the SINGLE metadata-probing path
+  // (the total-duration display reads from `filmTotal`, derived from this map).
+  // Each clip is probed with its RESOLVED (signed/proxied) URL — not the raw
+  // storage path — because private clips' raw srcs never load, which would
+  // leave their duration (and thus filmTotal) missing. If a URL is not resolved
+  // yet, the clip is skipped and re-probed once `resolvedAllSrcs` updates.
+  useEffect(() => {
+    let cancelled = false
+    const videos = clips
+      .map((c, i) => ({ clip: c, index: i }))
+      .filter((x): x is { clip: SeqVideoClip; index: number } => x.clip.kind === 'video')
+    const missing = videos.filter(({ clip }) => !(clip.id in clipDurations))
+    if (missing.length === 0) return
+    missing.forEach(({ clip, index }) => {
+      const resolved = resolvedAllSrcs[index]
+      if (!resolved) return
+      const el = document.createElement('video')
+      el.preload = 'metadata'
+      el.muted = true
+      el.src = resolved
+      const done = (dur: number) => {
+        if (cancelled) return
+        if (Number.isFinite(dur) && dur > 0) {
+          setClipDurations((prev) => (prev[clip.id] === dur ? prev : { ...prev, [clip.id]: dur }))
+        }
+      }
+      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
+      el.addEventListener('error', () => done(0), { once: true })
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips.map((c) => `${c.kind}:${c.id}`).join('|'), resolvedAllSrcs])
+
+  // A new user-created batch is a new film playback session. Reset the player
+  // before its one automatic play attempt, even when the previous film was
+  // paused or had already ended. Refs make this idempotent under Strict Mode.
+  useEffect(() => {
+    if (!autoPlayAttemptId || preparedAutoPlayIdRef.current === autoPlayAttemptId) return
+    preparedAutoPlayIdRef.current = autoPlayAttemptId
+    pendingLocalRef.current = 0
+    setIndex(0)
+    renderPlayhead(0)
+    soundtrackRef.current?.handleSeek(0)
+    setPrefetchNext(false)
+    setIsPlaying(true)
+  }, [autoPlayAttemptId])
 
   // Look-ahead: resolved URL of the NEXT video clip, used to pre-buffer its
   // bytes in a hidden <video> so the swap at the clip boundary is instant.
@@ -317,13 +344,28 @@ export function SequentialClipPlayer({
     const startLocal = pendingLocalRef.current || 0
     pendingLocalRef.current = 0
     try { v.currentTime = startLocal } catch { v.currentTime = 0 }
-    if (isPlaying) {
-      v.play().catch(() => {
-        /* autoplay may be blocked — user can click play */
-      })
+    if (
+      isPlaying &&
+      autoPlayAttemptId &&
+      preparedAutoPlayIdRef.current === autoPlayAttemptId
+    ) {
+      if (index === 0) {
+        if (autoPlayAttemptedRef.current !== autoPlayAttemptId) {
+          autoPlayAttemptedRef.current = autoPlayAttemptId
+          v.play().catch(() => {
+            // Keep Preview open, but show the explicit Play control when browser
+            // autoplay policy rejects this single automatic attempt.
+            setIsPlaying(false)
+          })
+        }
+      } else if (autoPlayAttemptedRef.current === autoPlayAttemptId) {
+        // Normal sequence continuation is not a new autoplay attempt; it keeps
+        // the already-started film moving from one successful clip to the next.
+        v.play().catch(() => setIsPlaying(false))
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id, current?.kind, resolvedVideoSrc])
+  }, [current?.id, current?.kind, resolvedVideoSrc, autoPlayAttemptId, index])
 
   // Mirror the play/pause state onto the active video WITHOUT touching
   // currentTime, so clicking the icon stops exactly at the current frame.
@@ -331,14 +373,16 @@ export function SequentialClipPlayer({
     const v = videoRef.current
     if (!v || !current || current.kind !== 'video') return
     if (!resolvedVideoSrc) return
-    if (isPlaying) {
+    if (autoPlayAttemptId) {
+      if (!isPlaying) v.pause()
+    } else if (isPlaying) {
       v.play().catch(() => {
         /* autoplay may be blocked — user can click play */
       })
     } else {
       v.pause()
     }
-  }, [isPlaying, current?.id, current?.kind, resolvedVideoSrc])
+  }, [isPlaying, current?.id, current?.kind, resolvedVideoSrc, autoPlayAttemptId])
 
   // Apply clip volume to the active video element.
   useEffect(() => {
@@ -377,7 +421,13 @@ export function SequentialClipPlayer({
   }
 
   function togglePlay() {
-    setIsPlaying((p) => !p)
+    const next = !isPlaying
+    setIsPlaying(next)
+    if (next && autoPlayAttemptId) {
+      // This runs inside the user's click gesture, so it is intentionally not
+      // blocked by the one-shot automatic-attempt guard above.
+      videoRef.current?.play().catch(() => setIsPlaying(false))
+    }
   }
 
   // Choose the chrome ratio from the first clip so the frame stays stable.
@@ -396,7 +446,7 @@ export function SequentialClipPlayer({
   return (
     <div className="flex w-full justify-center">
       <div
-        className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+        className="overflow-hidden rounded-[22px] border border-border bg-card/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
         style={{
           width: 'fit-content',
           maxWidth: 'calc(100vw - 56rem)',
@@ -418,7 +468,7 @@ export function SequentialClipPlayer({
               onClick={onClose}
               aria-label="Close preview"
               title="Close preview"
-              className="absolute right-2 top-2 z-20 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+              className="absolute right-2 top-2 z-20 grid h-8 w-8 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground/90 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -426,7 +476,7 @@ export function SequentialClipPlayer({
 
           {current.kind === 'video' ? (
             srcLoading || !resolvedVideoSrc ? (
-              <div className="grid h-full w-full place-items-center bg-black text-zinc-500">
+              <div className="grid h-full w-full place-items-center bg-black text-muted-foreground">
                 <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
               </div>
             ) : (
@@ -437,7 +487,6 @@ export function SequentialClipPlayer({
                 className="h-full w-full bg-black object-contain"
                 preload="auto"
                 playsInline
-                autoPlay={isPlaying}
                 controls={false}
                 onLoadedMetadata={(e) => {
                   // Apply clip volume as soon as the element is ready — the
@@ -522,14 +571,14 @@ export function SequentialClipPlayer({
               type="button"
               onClick={togglePlay}
               aria-label={isPlaying ? 'Pause' : 'Play'}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/15 bg-black/70 text-zinc-100 transition hover:border-white/30 hover:bg-white/10"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground transition hover:border-border hover:bg-accent"
             >
               {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
 
             <span
               ref={timeLabelRef}
-              className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200"
+              className="shrink-0 text-[11px] font-semibold tabular-nums text-foreground/90"
             >
               {formatDuration(globalTimeRef.current)}
             </span>
@@ -570,7 +619,7 @@ export function SequentialClipPlayer({
               }}
               className="group relative flex h-6 flex-1 cursor-pointer items-center"
             >
-              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-accent">
                 <div
                   ref={fillRef}
                   className="absolute inset-y-0 left-0 rounded-full bg-emerald-400"
@@ -584,7 +633,7 @@ export function SequentialClipPlayer({
               />
             </div>
 
-            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-foreground/90">
               {formatDuration(filmTotal)}
             </span>
           </div>
