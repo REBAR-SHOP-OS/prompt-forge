@@ -35,10 +35,6 @@ export function brokeredPreviewStorage() {
     new Promise((resolve) => {
       const requestId = newId();
       let done = false;
-      // `timer` is assigned below, after `finish`/`onMessage` are defined; `finish` reads it
-      // through the closure, so it cannot carry its initializer here without introducing a
-      // temporal-dead-zone reference.
-      // eslint-disable-next-line prefer-const
       let timer: ReturnType<typeof setTimeout>;
       const finish = (r: { ok: boolean; value?: string | null } | null) => {
         if (done) return;
