@@ -1,7 +1,7 @@
 project_id = "sacxoanuyetjfrfllkzx"
 
 [functions.video-proxy]
-verify_jwt = true
+verify_jwt = false
 
 [functions.jobs-delete]
 verify_jwt = true
