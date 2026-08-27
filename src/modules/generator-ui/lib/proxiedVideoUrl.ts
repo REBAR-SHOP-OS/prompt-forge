@@ -9,6 +9,10 @@
 // Returned unchanged:
 //   - blob: / data: URLs
 //   - same-origin relative paths (already CORS-safe)
+//
+// Fail-closed: when signing or auth fails the function throws — it never
+// returns a raw private-bucket URL. This prevents the caller from caching
+// a broken URL that would blank the card forever.
 
 import { supabase } from "@/integrations/supabase/client";
 import { FUNCTIONS_BASE } from "@/core/api/client";
@@ -34,15 +38,64 @@ function parseOwnStorage(parsed: URL): { bucket: string; path: string } | null {
   }
 }
 
+/**
+ * Try to parse a bucket-relative path ("merged-videos/user/file.mp4") into
+ * { bucket, path }. Returns null if the format doesn't match a known
+ * private-bucket prefix.
+ */
+function parseBucketRelative(input: string): { bucket: string; path: string } | null {
+  for (const b of PRIVATE_STORAGE_BUCKETS) {
+    if (input === b || input.startsWith(b + "/")) {
+      const path = input.slice(b.length + 1);
+      if (!path) return null;
+      return { bucket: b, path };
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve a private-bucket object to a playable URL. Mints a fresh signed
+ * URL and optionally wraps it in the same-origin video-proxy for CORS/Range.
+ * Throws on signing failure — never returns a raw private URL.
+ */
+async function resolvePrivateBucket(bucket: string, path: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (error || !data?.signedUrl) {
+    throw new Error(`Failed to sign ${bucket}/${path}: ${error?.message ?? "unknown"}`);
+  }
+  const { data: sessionData } = await supabase.auth.getSession();
+  const proxyToken = sessionData.session?.access_token;
+  if (proxyToken) {
+    const pq = new URLSearchParams({ url: data.signedUrl, token: proxyToken });
+    return `${FUNCTIONS_BASE}/video-proxy?${pq.toString()}`;
+  }
+  // Signed URL without proxy token — the signed URL itself is CORS-enabled
+  // and Range-capable, so it can feed a <video> element directly.
+  return data.signedUrl;
+}
+
 export async function proxiedVideoUrl(url: string): Promise<string> {
   if (!url) return url;
   if (url.startsWith("blob:") || url.startsWith("data:")) return url;
+
+  // ── 1. Bucket-relative paths ("merged-videos/user/file.mp4") ──────────
+  // These are stored in the DB without a full URL. Resolve them to a signed
+  // URL via the Supabase client.
+  const rel = parseBucketRelative(url);
+  if (rel) {
+    return resolvePrivateBucket(rel.bucket, rel.path);
+  }
 
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    return url;
+    // Not a valid URL and not a bucket-relative path — throw so the caller
+    // does not cache a broken string.
+    throw new Error(`Invalid video URL: ${url}`);
   }
 
   // Same-origin (e.g. relative URLs already on our domain) — no proxy needed.
@@ -50,40 +103,30 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     return url;
   }
 
-  // Our own Supabase Storage objects in a PRIVATE bucket: mint a fresh signed
-  // URL. This covers playback, downloads, and merge inputs that go through this
-  // helper. If signing fails (not signed in / not owner), fall back to the raw
-  // URL so behavior degrades gracefully rather than throwing.
+  // ── 2. Own Supabase Storage — private bucket ───────────────────────────
+  // Mint a fresh signed URL. Fail-closed: if signing fails (not signed in,
+  // not owner, RLS denial), throw — never return the raw private URL, which
+  // would produce a 400/403 and leave the card blank forever.
   const own = parseOwnStorage(parsed);
   if (own && PRIVATE_STORAGE_BUCKETS.includes(own.bucket)) {
-    const { data, error } = await supabase.storage
-      .from(own.bucket)
-      .createSignedUrl(own.path, SIGNED_URL_TTL_SECONDS);
-    if (!error && data?.signedUrl) {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const proxyToken = sessionData.session?.access_token;
-      if (proxyToken) {
-        const pq = new URLSearchParams({ url: data.signedUrl, token: proxyToken });
-        return `${FUNCTIONS_BASE}/video-proxy?${pq.toString()}`;
-      }
-      return data.signedUrl;
-    }
-    return url;
+    return resolvePrivateBucket(own.bucket, own.path);
   }
 
-  // Other own-storage PUBLIC objects (e.g. user-images, wan-frames) are already
-  // CORS-enabled and Range-capable, and crucially require NO auth token. Routing
-  // them through the auth'd video-proxy would bake a short-lived access token
-  // into the URL; once that expires the card goes blank. Play directly.
+  // ── 3. Own Supabase Storage — public bucket ───────────────────────────
+  // Already CORS-enabled and Range-capable, requires NO auth token. Play
+  // directly — routing through the auth'd proxy would bake a short-lived
+  // access token into the URL that expires and blanks the card.
   if (parsed.pathname.includes("/storage/v1/object/public/")) {
     return url;
   }
 
+  // ── 4. External URLs (e.g. Aliyun OSS) — route through video-proxy ───
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
-    // Not signed in — fall back to the raw URL.
-    return url;
+    // Not signed in — throw so the caller shows a proper failure instead of
+    // returning a raw URL that will fail with CORS errors.
+    throw new Error("Not authenticated: cannot proxy video URL");
   }
 
   const qs = new URLSearchParams({ url, token });

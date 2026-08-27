@@ -10,6 +10,14 @@
 //     proxy and the resolved URL is returned once ready.
 //   - while resolving, returns { url: undefined, loading: true } so callers
 //     can render a loading state instead of a broken/grey <video>.
+//
+// Cache model:
+//   - On SUCCESS the resolved URL is cached so subsequent components with the
+//     same src get it instantly.
+//   - On FAILURE the src is NOT cached. The error is stored so the caller can
+//     render a failure state, and a later retry (via reload()) will re-attempt
+//     with fresh tokens. This prevents a broken raw URL from being cached and
+//     handed back forever, which was the root cause of permanently blank cards.
 
 import { useEffect, useState } from "react";
 import { proxiedVideoUrl } from "./proxiedVideoUrl";
@@ -42,10 +50,11 @@ function resolve(src: string): Promise<string> {
       inflight.delete(src);
       return u;
     })
-    .catch(() => {
+    .catch((err) => {
+      // Do NOT cache the failure — caching the raw src would hand back a
+      // broken URL forever. Just clear the inflight so a retry can re-attempt.
       inflight.delete(src);
-      cache.set(src, src);
-      return src;
+      throw err;
     });
   inflight.set(src, p);
   return p;
@@ -61,40 +70,50 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
       ? cache.get(src) ?? src
       : undefined;
   const [url, setUrl] = useState<string | undefined>(initial);
+  const [error, setError] = useState<boolean>(false);
   // Bumped to force a fresh resolve() after invalidating a stale (expired
   // token) proxy URL.
   const [reloadNonce, setReloadNonce] = useState(0);
 
   const reload = () => {
     invalidatePlayableVideoUrl(src);
+    setError(false);
     setReloadNonce((n) => n + 1);
   };
 
   useEffect(() => {
     if (!src) {
       setUrl(undefined);
+      setError(false);
       return;
     }
     if (src.startsWith("blob:") || src.startsWith("data:")) {
       setUrl(src);
+      setError(false);
       return;
     }
     const cached = cache.get(src);
     if (cached) {
       setUrl(cached);
+      setError(false);
       return;
     }
     let cancelled = false;
     setUrl(undefined);
-    resolve(src).then((u) => {
-      if (!cancelled) setUrl(u);
-    });
+    setError(false);
+    resolve(src)
+      .then((u) => {
+        if (!cancelled) setUrl(u);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [src, reloadNonce]);
 
-  return { url, loading: !!src && !url, reload };
+  return { url, loading: !!src && !url && !error, reload };
 }
 
 export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
@@ -112,7 +131,11 @@ export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all(srcs.map((s) => (s ? resolve(s) : Promise.resolve(undefined as unknown as string)))).then((res) => {
+    Promise.all(
+      srcs.map((s) =>
+        s ? resolve(s).catch(() => s) : Promise.resolve(undefined as unknown as string),
+      ),
+    ).then((res) => {
       if (cancelled) return;
       setUrls(res.map((u, i) => (srcs[i] ? u : undefined)));
     });
