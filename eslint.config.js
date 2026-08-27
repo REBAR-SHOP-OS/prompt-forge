@@ -25,4 +25,22 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  // src/integrations/supabase/previewAuthStorage.ts is Lovable-generated preview
+  // auth plumbing, rewritten whenever Lovable pushes to main. Its `timer` binding
+  // is assigned exactly once, but only after `finish` closes over it, so it cannot
+  // carry its initializer without a temporal-dead-zone reference — `prefer-const`
+  // is wrong about this shape.
+  //
+  // An inline eslint-disable comment does not survive regeneration: it has been
+  // stripped three times (restored in #189, again in #193, then wiped again by the
+  // "Work in progress" / "Lovable update" pushes), each time turning main red and
+  // failing every open PR with it. Scope the rule off here instead, where Lovable
+  // does not reach. Every other rule still applies to the file.
+  //
+  // Must stay AFTER the block above: in flat config the last matching entry wins,
+  // and that block re-enables prefer-const via js.configs.recommended.
+  {
+    files: ["src/integrations/supabase/previewAuthStorage.ts"],
+    rules: { "prefer-const": "off" },
+  },
 );
