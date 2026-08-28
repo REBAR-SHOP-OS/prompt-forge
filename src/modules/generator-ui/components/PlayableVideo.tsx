@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type VideoHTMLAttributes } from "react";
 import { LoaderCircle, Clapperboard, AlertCircle } from "lucide-react";
-import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
+import { usePlayableVideoUrl, usePlayableThumbnailUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
 
 type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
   src: string | null | undefined;
@@ -39,6 +39,10 @@ const MAX_RETRIES = 3;
  */
 export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbnail, ...rest }: Props) {
   const { url, loading: resolving, error: resolveError, reload } = usePlayableVideoUrl(src);
+  // Re-sign private-bucket poster/thumbnail URLs on demand (the raw
+  // `thumbnail_url` may be a dead `/object/public/...` URL or a bucket-relative
+  // path). A missing poster is acceptable, so this never throws.
+  const resolvedPoster = usePlayableThumbnailUrl(poster);
   const [errored, setErrored] = useState(false);
   const [painted, setPainted] = useState(false);
   const retriesRef = useRef(0);
@@ -75,7 +79,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
     // poster AND no seek is happening. A poster already covers the first
     // paint, so no kick is needed there either.
     const seekRequested = el.seeking || el.currentTime > 0;
-    if (poster || seekRequested) return;
+    if (resolvedPoster || seekRequested) return;
 
     // No poster and no seek: some browsers (Chromium) won't paint the first
     // frame of a muted <video> until play() is called. Briefly kick playback
@@ -119,10 +123,10 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
   // film icon so a card whose source can't be played still reads as a clip,
   // not an empty mystery box.
   const quietPlaceholder = (showLoader: boolean) => {
-    if (poster) {
+    if (resolvedPoster) {
       return (
         <div className={fallbackClassName ?? "h-full w-full bg-black"}>
-          <img src={poster} alt="" className="h-full w-full object-cover" />
+          <img src={resolvedPoster} alt="" className="h-full w-full object-cover" />
         </div>
       );
     }
@@ -192,7 +196,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
             key={retryToken}
             ref={videoRef}
             src={playUrl}
-            poster={poster}
+            poster={resolvedPoster}
             controls={controls}
             onLoadedMetadata={handleLoadedMetadata}
             onLoadedData={handleLoadedData}
@@ -250,7 +254,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
       key={retryToken}
       ref={videoRef}
       src={playUrl}
-      poster={poster}
+      poster={resolvedPoster}
       controls={controls}
       onLoadedMetadata={handleLoadedMetadata}
       onError={handleError}

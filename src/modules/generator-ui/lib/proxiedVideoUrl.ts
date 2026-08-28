@@ -77,6 +77,49 @@ async function resolvePrivateBucket(bucket: string, path: string): Promise<strin
   return data.signedUrl;
 }
 
+/**
+ * Resolve a poster/thumbnail URL for a private bucket. Unlike
+ * `proxiedVideoUrl`, this returns the raw signed URL (no video-proxy wrapper)
+ * because an <img>/<video poster> does not need Range/CORS-for-canvas — it
+ * just needs a URL the browser can fetch. Fail-closed: on signing failure it
+ * returns `undefined` (no poster) rather than throwing, because a missing
+ * poster is acceptable while a broken video is not.
+ */
+export async function proxiedThumbnailUrl(
+  url: string | null | undefined,
+): Promise<string | undefined> {
+  if (!url) return undefined;
+  if (url.startsWith("blob:") || url.startsWith("data:")) return url;
+
+  const rel = parseBucketRelative(url);
+  if (rel) {
+    const { data, error } = await supabase.storage
+      .from(rel.bucket)
+      .createSignedUrl(rel.path, SIGNED_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) return undefined;
+    return data.signedUrl;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+
+  const own = parseOwnStorage(parsed);
+  if (own && PRIVATE_STORAGE_BUCKETS.includes(own.bucket)) {
+    const { data, error } = await supabase.storage
+      .from(own.bucket)
+      .createSignedUrl(own.path, SIGNED_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) return undefined;
+    return data.signedUrl;
+  }
+
+  // Public bucket, external, or same-origin URL — usable as-is.
+  return url;
+}
+
 export async function proxiedVideoUrl(url: string): Promise<string> {
   if (!url) return url;
   if (url.startsWith("blob:") || url.startsWith("data:")) return url;

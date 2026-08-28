@@ -25,7 +25,7 @@ vi.mock("@/core/api/client", () => ({
 }));
 
 // Import after mocks are set up.
-import { proxiedVideoUrl } from "./proxiedVideoUrl";
+import { proxiedVideoUrl, proxiedThumbnailUrl } from "./proxiedVideoUrl";
 
 describe("proxiedVideoUrl", () => {
   beforeEach(() => {
@@ -112,5 +112,65 @@ describe("proxiedVideoUrl", () => {
     mockGetSession.mockResolvedValue({ data: { session: null } });
     const external = "https://dashscope-oss.cn.aliyuncs.com/output/video.mp4";
     await expect(proxiedVideoUrl(external)).rejects.toThrow("Not authenticated");
+  });
+});
+
+describe("proxiedThumbnailUrl", () => {
+  beforeEach(() => {
+    mockCreateSignedUrl.mockReset();
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "***" } },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns undefined for empty input", async () => {
+    await expect(proxiedThumbnailUrl(null)).resolves.toBeUndefined();
+    await expect(proxiedThumbnailUrl("")).resolves.toBeUndefined();
+  });
+
+  it("returns blob:/data: URLs unchanged", async () => {
+    await expect(proxiedThumbnailUrl("blob:https://example.com/1")).resolves.toBe("blob:https://example.com/1");
+    await expect(proxiedThumbnailUrl("data:image/jpeg;base64,AAAA")).resolves.toBe("data:image/jpeg;base64,AAAA");
+  });
+
+  it("re-signs a bucket-relative private path to a signed URL (no proxy wrapper)", async () => {
+    mockCreateSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://test.supabase.co/storage/v1/object/sign/merged-videos/user/thumb.jpg?token=***" },
+      error: null,
+    });
+    const result = await proxiedThumbnailUrl("merged-videos/user/thumb.jpg");
+    expect(mockCreateSignedUrl).toHaveBeenCalledWith("user/thumb.jpg", 7200);
+    expect(result).toContain("/object/sign/merged-videos/");
+    expect(result).not.toContain("video-proxy");
+  });
+
+  it("re-signs an old public-form private-bucket URL", async () => {
+    mockCreateSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://test.supabase.co/storage/v1/object/sign/merged-videos/user/thumb.jpg?token=***" },
+      error: null,
+    });
+    const input = "https://test.supabase.co/storage/v1/object/public/merged-videos/user/thumb.jpg";
+    const result = await proxiedThumbnailUrl(input);
+    expect(mockCreateSignedUrl).toHaveBeenCalledWith("user/thumb.jpg", 7200);
+    expect(result).toContain("/object/sign/merged-videos/");
+  });
+
+  it("returns undefined (no poster) when signing fails", async () => {
+    mockCreateSignedUrl.mockResolvedValue({
+      data: null,
+      error: { message: "not authorized" },
+    });
+    await expect(proxiedThumbnailUrl("merged-videos/user/thumb.jpg")).resolves.toBeUndefined();
+  });
+
+  it("returns public-bucket and external URLs unchanged", async () => {
+    const pub = "https://test.supabase.co/storage/v1/object/public/user-images/abc.png";
+    await expect(proxiedThumbnailUrl(pub)).resolves.toBe(pub);
+    expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
 });

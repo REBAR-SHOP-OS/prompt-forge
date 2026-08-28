@@ -20,10 +20,11 @@
 //     handed back forever, which was the root cause of permanently blank cards.
 
 import { useEffect, useState } from "react";
-import { proxiedVideoUrl } from "./proxiedVideoUrl";
+import { proxiedVideoUrl, proxiedThumbnailUrl } from "./proxiedVideoUrl";
 
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
+const thumbnailCache = new Map<string, string>();
 
 /**
  * Drop a resolved URL from the cache so the next resolve() re-runs the proxy
@@ -115,6 +116,52 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
   }, [src, reloadNonce]);
 
   return { url, loading: !!src && !url && !error, error, reload };
+}
+
+/**
+ * Resolve a poster/thumbnail URL for a private bucket via `proxiedThumbnailUrl`.
+ * Returns `undefined` (no poster) on failure — a missing poster is acceptable,
+ * unlike a broken video. Caches successful resolutions in-memory.
+ */
+export function usePlayableThumbnailUrl(
+  src: string | null | undefined,
+): string | undefined {
+  const [url, setUrl] = useState<string | undefined>(() => {
+    if (!src) return undefined;
+    if (src.startsWith("blob:") || src.startsWith("data:")) return src;
+    return thumbnailCache.get(src);
+  });
+
+  useEffect(() => {
+    if (!src) {
+      setUrl(undefined);
+      return;
+    }
+    if (src.startsWith("blob:") || src.startsWith("data:")) {
+      setUrl(src);
+      return;
+    }
+    const cached = thumbnailCache.get(src);
+    if (cached) {
+      setUrl(cached);
+      return;
+    }
+    let cancelled = false;
+    proxiedThumbnailUrl(src)
+      .then((u) => {
+        if (cancelled) return;
+        if (u) thumbnailCache.set(src, u);
+        setUrl(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return url;
 }
 
 export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {

@@ -1639,11 +1639,12 @@ async function pollVeo(
     logError("veo upload failed", { error: upErr.message, path });
     throw new Error(`Veo upload failed: ${upErr.message}`);
   }
-  const { data: pub } = ctx.client.storage.from("merged-videos").getPublicUrl(path);
-
+  // Persist a bucket-relative path (not a getPublicUrl() result): the
+  // merged-videos bucket is now PRIVATE, so a `/object/public/...` URL is
+  // dead. The frontend re-signs bucket-relative paths on demand.
   return {
     status: "completed",
-    videoUrl: pub.publicUrl,
+    videoUrl: `merged-videos/${path}`,
     thumbnailUrl: null,
     aspectRatio: null,
     duration: state.targetDuration,
