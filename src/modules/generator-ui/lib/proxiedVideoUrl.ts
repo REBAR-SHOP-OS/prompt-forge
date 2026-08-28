@@ -24,7 +24,7 @@ import { FUNCTIONS_BASE } from "@/core/api/client";
 // own files via RLS; the resulting signed URL is CORS-enabled and Range-capable
 // and needs no auth header, so it can feed a <video> element directly.
 const PRIVATE_STORAGE_BUCKETS = ["merged-videos", "user-videos"];
-const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2; // 2 hours
+export const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2; // 2 hours
 
 function parseOwnStorage(parsed: URL): { bucket: string; path: string } | null {
   const m = parsed.pathname.match(

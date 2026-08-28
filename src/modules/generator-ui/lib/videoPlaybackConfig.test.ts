@@ -45,7 +45,11 @@ function replayMergedVideosState(): BucketState {
     // mistaken for a real statement.
     const sql = rawSql
       .split('\n')
-      .map((line) => line.replace(/--.*$/, ''))
+      // No `$` anchor: on a CRLF checkout each line ends with `\r`, which `.`
+      // cannot cross and `$` (unanchored, no /m) will not match before — so
+      // `/--.*$/` silently strips nothing on Windows and the replay then reads
+      // rollback hints in comments as real statements.
+      .map((line) => line.replace(/--.*/, ''))
       .join('\n')
 
     // 1. Bucket creation / public-flag updates.
