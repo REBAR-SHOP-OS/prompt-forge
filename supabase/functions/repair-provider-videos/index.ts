@@ -90,10 +90,12 @@ Deno.serve(async (req) => {
           failures.push({ id: row.id, reason: `upload: ${upErr.message}` });
           continue;
         }
-        const { data: pub } = svc.storage.from("merged-videos").getPublicUrl(path);
+        // Persist a bucket-relative path (not a getPublicUrl() result): the
+        // merged-videos bucket is now PRIVATE, so a `/object/public/...` URL
+        // is dead. The frontend re-signs bucket-relative paths on demand.
         const { error: updErr } = await svc
           .from("generator_video_assets")
-          .update({ storage_path: pub.publicUrl })
+          .update({ storage_path: `merged-videos/${path}` })
           .eq("id", row.id);
         if (updErr) {
           failures.push({ id: row.id, reason: `db update: ${updErr.message}` });

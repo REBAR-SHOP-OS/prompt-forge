@@ -20,10 +20,32 @@
 //     handed back forever, which was the root cause of permanently blank cards.
 
 import { useEffect, useState } from "react";
-import { proxiedVideoUrl } from "./proxiedVideoUrl";
+import {
+  proxiedVideoUrl,
+  proxiedThumbnailUrl,
+  SIGNED_URL_TTL_SECONDS,
+} from "./proxiedVideoUrl";
 
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
+
+// Thumbnails are signed URLs and therefore expire. The video cache handles this
+// by having callers invoke invalidatePlayableVideoUrl() on a playback error, but
+// a poster has no error path to hang that on — a stale <img> just fails
+// silently. So cache posters with an expiry and treat an aged entry as a miss.
+// The margin keeps us from handing out a URL that dies moments later.
+const THUMBNAIL_TTL_MS = (SIGNED_URL_TTL_SECONDS - 5 * 60) * 1000;
+const thumbnailCache = new Map<string, { url: string; expiresAt: number }>();
+
+function readThumbnailCache(src: string): string | undefined {
+  const hit = thumbnailCache.get(src);
+  if (!hit) return undefined;
+  if (Date.now() >= hit.expiresAt) {
+    thumbnailCache.delete(src);
+    return undefined;
+  }
+  return hit.url;
+}
 
 /**
  * Drop a resolved URL from the cache so the next resolve() re-runs the proxy
@@ -115,6 +137,52 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
   }, [src, reloadNonce]);
 
   return { url, loading: !!src && !url && !error, error, reload };
+}
+
+/**
+ * Resolve a poster/thumbnail URL for a private bucket via `proxiedThumbnailUrl`.
+ * Returns `undefined` (no poster) on failure — a missing poster is acceptable,
+ * unlike a broken video. Caches successful resolutions in-memory.
+ */
+export function usePlayableThumbnailUrl(
+  src: string | null | undefined,
+): string | undefined {
+  const [url, setUrl] = useState<string | undefined>(() => {
+    if (!src) return undefined;
+    if (src.startsWith("blob:") || src.startsWith("data:")) return src;
+    return readThumbnailCache(src);
+  });
+
+  useEffect(() => {
+    if (!src) {
+      setUrl(undefined);
+      return;
+    }
+    if (src.startsWith("blob:") || src.startsWith("data:")) {
+      setUrl(src);
+      return;
+    }
+    const cached = readThumbnailCache(src);
+    if (cached) {
+      setUrl(cached);
+      return;
+    }
+    let cancelled = false;
+    proxiedThumbnailUrl(src)
+      .then((u) => {
+        if (cancelled) return;
+        if (u) thumbnailCache.set(src, { url: u, expiresAt: Date.now() + THUMBNAIL_TTL_MS });
+        setUrl(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return url;
 }
 
 export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {

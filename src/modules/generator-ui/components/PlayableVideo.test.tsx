@@ -7,12 +7,14 @@ import type { ReactNode } from "react";
 // without hitting Supabase. The mock returns a controllable state and tracks
 // reload() calls.
 
-const { mockUsePlayableVideoUrl } = vi.hoisted(() => ({
+const { mockUsePlayableVideoUrl, mockUsePlayableThumbnailUrl } = vi.hoisted(() => ({
   mockUsePlayableVideoUrl: vi.fn(),
+  mockUsePlayableThumbnailUrl: vi.fn(),
 }));
 
 vi.mock("@/modules/generator-ui/lib/usePlayableVideoUrl", () => ({
   usePlayableVideoUrl: mockUsePlayableVideoUrl,
+  usePlayableThumbnailUrl: mockUsePlayableThumbnailUrl,
 }));
 
 vi.mock("lucide-react", () => ({
@@ -45,6 +47,7 @@ function renderPlayable(overrides: Partial<{
   src: string | null | undefined;
   thumbnail?: boolean;
   poster?: string;
+  resolvedPoster?: string;
   url: string | undefined;
   loading: boolean;
   error: boolean;
@@ -54,6 +57,7 @@ function renderPlayable(overrides: Partial<{
     src = "merged-videos/user/clip.mp4",
     thumbnail = false,
     poster,
+    resolvedPoster,
     url = "https://test.supabase.co/functions/v1/video-proxy?url=xxx&token=***",
     loading = false,
     error = false,
@@ -61,7 +65,9 @@ function renderPlayable(overrides: Partial<{
   } = overrides;
 
   mockUsePlayableVideoUrl.mockReturnValue({ url, loading, error, reload });
+  mockUsePlayableThumbnailUrl.mockReturnValue(resolvedPoster ?? poster);
 
+  const { resolvedPoster: _rp, ...restOverrides } = overrides as Record<string, unknown>;
   return render(
     <PlayableVideo
       src={src}
@@ -69,7 +75,7 @@ function renderPlayable(overrides: Partial<{
       poster={poster}
       controls
       onError={vi.fn()}
-      {...(overrides as Record<string, unknown>)}
+      {...restOverrides}
     />,
   );
 }
@@ -79,6 +85,8 @@ function renderPlayable(overrides: Partial<{
 describe("PlayableVideo", () => {
   beforeEach(() => {
     mockUsePlayableVideoUrl.mockReset();
+    mockUsePlayableThumbnailUrl.mockReset();
+    mockUsePlayableThumbnailUrl.mockReturnValue(undefined);
   });
 
   afterEach(() => {
@@ -148,5 +156,12 @@ describe("PlayableVideo", () => {
     const video = document.querySelector("video");
     expect(video).toBeTruthy();
     expect(video?.getAttribute("src")).toBe("blob:https://example.com/123");
+  });
+
+  it("uses the re-signed poster URL on the <video> element", () => {
+    const signedPoster = "https://test.supabase.co/storage/v1/object/sign/merged-videos/user/thumb.jpg?token=***";
+    renderPlayable({ poster: "merged-videos/user/thumb.jpg", resolvedPoster: signedPoster, url: "https://test.supabase.co/functions/v1/video-proxy?url=xxx&token=***", loading: false });
+    const video = document.querySelector("video");
+    expect(video?.getAttribute("poster")).toBe(signedPoster);
   });
 });

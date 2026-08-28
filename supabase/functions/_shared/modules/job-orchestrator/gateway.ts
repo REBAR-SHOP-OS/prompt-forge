@@ -96,11 +96,20 @@ async function materializeVideoUrl(
       logError("local video upload failed", { error: upErr.message, path });
       throw new Error(`Local video upload failed: ${upErr.message}`);
     }
-    const { data: pub } = svc.storage.from("merged-videos").getPublicUrl(path);
-    return pub.publicUrl;
+    // Persist a bucket-relative path (not a getPublicUrl() result): the
+    // merged-videos bucket is now PRIVATE, so a `/object/public/...` URL is
+    // dead. The frontend re-signs bucket-relative paths on demand.
+    return `merged-videos/${path}`;
   }
 
   // 2) Anything that already lives in our own Supabase storage is durable.
+  //    This includes bucket-relative paths: pollVeo and the branch above now
+  //    return `merged-videos/<path>` rather than a dead `/object/public/` URL.
+  //    Without this check such a value falls through to (3) and we fetch() a
+  //    string that is not a URL — one failed request and one error log per
+  //    completed job, for a value that was already durable.
+  if (/^(merged-videos|user-videos)\//.test(videoUrl)) return videoUrl;
+
   const ownStoragePrefix = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/`;
   if (videoUrl.startsWith(ownStoragePrefix)) return videoUrl;
 
@@ -124,9 +133,8 @@ async function materializeVideoUrl(
       .upload(path, bytes, { contentType: uploadType, upsert: false });
     if (upErr) throw new Error(`upload failed: ${upErr.message}`);
 
-    const { data: pub } = svc.storage.from("merged-videos").getPublicUrl(path);
     logInfo("provider video re-hosted", { userId, bytes: bytes.byteLength, path });
-    return pub.publicUrl;
+    return `merged-videos/${path}`;
   } catch (e) {
     // Non-fatal: keep the provider URL so the job still completes and is
     // playable short-term. We never fail/refund a job over re-hosting.

@@ -24,7 +24,7 @@ import { FUNCTIONS_BASE } from "@/core/api/client";
 // own files via RLS; the resulting signed URL is CORS-enabled and Range-capable
 // and needs no auth header, so it can feed a <video> element directly.
 const PRIVATE_STORAGE_BUCKETS = ["merged-videos", "user-videos"];
-const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2; // 2 hours
+export const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2; // 2 hours
 
 function parseOwnStorage(parsed: URL): { bucket: string; path: string } | null {
   const m = parsed.pathname.match(
@@ -75,6 +75,54 @@ async function resolvePrivateBucket(bucket: string, path: string): Promise<strin
   // Signed URL without proxy token — the signed URL itself is CORS-enabled
   // and Range-capable, so it can feed a <video> element directly.
   return data.signedUrl;
+}
+
+/**
+ * Resolve a poster/thumbnail URL for a private bucket. Unlike
+ * `proxiedVideoUrl`, this returns the raw signed URL (no video-proxy wrapper)
+ * because an <img>/<video poster> does not need Range/CORS-for-canvas — it
+ * just needs a URL the browser can fetch. Fail-closed: on signing failure it
+ * returns `undefined` (no poster) rather than throwing, because a missing
+ * poster is acceptable while a broken video is not.
+ */
+export async function proxiedThumbnailUrl(
+  url: string | null | undefined,
+): Promise<string | undefined> {
+  if (!url) return undefined;
+  if (url.startsWith("blob:") || url.startsWith("data:")) return url;
+
+  const rel = parseBucketRelative(url);
+  if (rel) {
+    const { data, error } = await supabase.storage
+      .from(rel.bucket)
+      .createSignedUrl(rel.path, SIGNED_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) return undefined;
+    return data.signedUrl;
+  }
+
+  // Root- or dot-relative asset paths ("/assets/poster.png", "./poster.png")
+  // are same-origin and directly usable; `new URL()` would throw on them and
+  // drop the poster for no reason.
+  if (url.startsWith("/") || url.startsWith("./") || url.startsWith("../")) return url;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+
+  const own = parseOwnStorage(parsed);
+  if (own && PRIVATE_STORAGE_BUCKETS.includes(own.bucket)) {
+    const { data, error } = await supabase.storage
+      .from(own.bucket)
+      .createSignedUrl(own.path, SIGNED_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) return undefined;
+    return data.signedUrl;
+  }
+
+  // Public bucket, external, or same-origin URL — usable as-is.
+  return url;
 }
 
 export async function proxiedVideoUrl(url: string): Promise<string> {
