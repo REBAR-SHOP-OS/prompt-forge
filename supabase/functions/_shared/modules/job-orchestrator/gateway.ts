@@ -103,6 +103,13 @@ async function materializeVideoUrl(
   }
 
   // 2) Anything that already lives in our own Supabase storage is durable.
+  //    This includes bucket-relative paths: pollVeo and the branch above now
+  //    return `merged-videos/<path>` rather than a dead `/object/public/` URL.
+  //    Without this check such a value falls through to (3) and we fetch() a
+  //    string that is not a URL — one failed request and one error log per
+  //    completed job, for a value that was already durable.
+  if (/^(merged-videos|user-videos)\//.test(videoUrl)) return videoUrl;
+
   const ownStoragePrefix = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/`;
   if (videoUrl.startsWith(ownStoragePrefix)) return videoUrl;
 

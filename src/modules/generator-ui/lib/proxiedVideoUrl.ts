@@ -100,6 +100,11 @@ export async function proxiedThumbnailUrl(
     return data.signedUrl;
   }
 
+  // Root- or dot-relative asset paths ("/assets/poster.png", "./poster.png")
+  // are same-origin and directly usable; `new URL()` would throw on them and
+  // drop the poster for no reason.
+  if (url.startsWith("/") || url.startsWith("./") || url.startsWith("../")) return url;
+
   let parsed: URL;
   try {
     parsed = new URL(url);

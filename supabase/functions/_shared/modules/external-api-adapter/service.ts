@@ -1620,7 +1620,9 @@ async function pollVeo(
     }
   }
 
-  // Final download + re-upload to our public bucket.
+  // Final download + re-upload to our own merged-videos bucket, which is
+  // private (20260827160000) — the returned value is a bucket-relative path,
+  // not a public URL.
   const downloadUrl = uri.includes("?")
     ? `${uri}&key=${encodeURIComponent(apiKey)}`
     : `${uri}?key=${encodeURIComponent(apiKey)}`;
