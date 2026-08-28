@@ -1,10 +1,6 @@
-// Wraps a video URL through our same-origin video-proxy edge function so the
-// bytes come back with proper CORS headers and HTTP Range support. We route
-// ALL external/HTTP video URLs through the proxy — including our own Supabase
-// Storage — so cards, previews, trim, merge, and last-frame extraction all
-// use the exact same playback path. A single code path eliminates the
-// random "Video unavailable" flicker we used to see when one component got
-// the raw Storage URL and another got the proxied URL for the same asset.
+// Resolves a video URL to a CORS-safe, Range-capable playback URL. Owned
+// private Supabase objects are signed and played directly; only external
+// provider URLs are sent through video-proxy.
 //
 // Returned unchanged:
 //   - blob: / data: URLs
@@ -90,9 +86,12 @@ export function parseStorageRef(
 }
 
 /**
- * Resolve a private-bucket object to a playable URL. Mints a fresh signed
- * URL and optionally wraps it in the same-origin video-proxy for CORS/Range.
- * Throws on signing failure — never returns a raw private URL.
+ * Resolve a private-bucket object to a playable URL. Supabase signed object
+ * URLs already support browser playback, CORS and HTTP Range requests, so use
+ * the signed URL directly. Sending it through video-proxy adds a second auth
+ * gate that a <video> element cannot satisfy with an Authorization header and
+ * can make every saved clip fail when the deployed function gateway still
+ * verifies JWTs. Throws on signing failure — never returns a raw private URL.
  */
 async function resolvePrivateBucket(bucket: string, path: string): Promise<string> {
   const { data, error } = await supabase.storage
@@ -101,14 +100,6 @@ async function resolvePrivateBucket(bucket: string, path: string): Promise<strin
   if (error || !data?.signedUrl) {
     throw new Error(`Failed to sign ${bucket}/${path}: ${error?.message ?? "unknown"}`);
   }
-  const { data: sessionData } = await supabase.auth.getSession();
-  const proxyToken = sessionData.session?.access_token;
-  if (proxyToken) {
-    const pq = new URLSearchParams({ url: data.signedUrl, token: proxyToken });
-    return `${FUNCTIONS_BASE}/video-proxy?${pq.toString()}`;
-  }
-  // Signed URL without proxy token — the signed URL itself is CORS-enabled
-  // and Range-capable, so it can feed a <video> element directly.
   return data.signedUrl;
 }
 

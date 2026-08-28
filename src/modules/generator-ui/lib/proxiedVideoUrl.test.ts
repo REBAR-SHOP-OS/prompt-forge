@@ -62,8 +62,9 @@ describe("proxiedVideoUrl", () => {
 
     const result = await proxiedVideoUrl("merged-videos/user/file.mp4");
     expect(mockCreateSignedUrl).toHaveBeenCalledWith("user/file.mp4", 7200);
-    expect(result).toContain("video-proxy");
-    expect(result).toContain("token=");
+    expect(result).toContain("/storage/v1/object/sign/merged-videos/");
+    expect(result).not.toContain("video-proxy");
+    expect(mockGetSession).not.toHaveBeenCalled();
   });
 
   it("resolves full private Supabase storage URL via signed URL", async () => {
@@ -75,7 +76,9 @@ describe("proxiedVideoUrl", () => {
     const input = "https://test.supabase.co/storage/v1/object/public/merged-videos/user/file.mp4";
     const result = await proxiedVideoUrl(input);
     expect(mockCreateSignedUrl).toHaveBeenCalledWith("user/file.mp4", 7200);
-    expect(result).toContain("video-proxy");
+    expect(result).toContain("/storage/v1/object/sign/merged-videos/");
+    expect(result).not.toContain("video-proxy");
+    expect(mockGetSession).not.toHaveBeenCalled();
   });
 
   it("throws when signing a private bucket fails (fail-closed)", async () => {
