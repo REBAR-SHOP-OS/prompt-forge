@@ -59,6 +59,16 @@ export function invalidatePlayableVideoUrl(src: string | null | undefined): void
   inflight.delete(src);
 }
 
+/**
+ * Drop a resolved thumbnail URL from the cache so the next resolve() re-signs
+ * with a fresh token. Called when a poster <img> fails to load because its
+ * embedded signed-URL token has expired.
+ */
+export function invalidatePlayableThumbnailUrl(src: string | null | undefined): void {
+  if (!src) return;
+  thumbnailCache.delete(src);
+}
+
 function resolve(src: string): Promise<string> {
   if (!src) return Promise.resolve(src);
   if (src.startsWith("blob:") || src.startsWith("data:")) return Promise.resolve(src);
@@ -141,17 +151,27 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
 
 /**
  * Resolve a poster/thumbnail URL for a private bucket via `proxiedThumbnailUrl`.
- * Returns `undefined` (no poster) on failure — a missing poster is acceptable,
- * unlike a broken video. Caches successful resolutions in-memory.
+ * Returns `{ url, reload }` where `url` is `undefined` (no poster) on failure —
+ * a missing poster is acceptable, unlike a broken video. Successful resolutions
+ * are cached in-memory with a TTL shorter than the signed-URL TTL so an expired
+ * signed URL is never handed back. `reload()` invalidates the cache entry and
+ * forces a fresh re-sign (used by the poster <img> onError recovery).
  */
 export function usePlayableThumbnailUrl(
   src: string | null | undefined,
-): string | undefined {
+): { url: string | undefined; reload: () => void } {
+  const [reloadNonce, setReloadNonce] = useState(0);
+
   const [url, setUrl] = useState<string | undefined>(() => {
     if (!src) return undefined;
     if (src.startsWith("blob:") || src.startsWith("data:")) return src;
     return readThumbnailCache(src);
   });
+
+  const reload = () => {
+    invalidatePlayableThumbnailUrl(src);
+    setReloadNonce((n) => n + 1);
+  };
 
   useEffect(() => {
     if (!src) {
@@ -180,9 +200,9 @@ export function usePlayableThumbnailUrl(
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [src, reloadNonce]);
 
-  return url;
+  return { url, reload };
 }
 
 export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
