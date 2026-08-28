@@ -55,6 +55,41 @@ function parseBucketRelative(input: string): { bucket: string; path: string } | 
 }
 
 /**
+ * Parse a persisted `storage_path` into `{ bucket, path }`.
+ *
+ * Accepts BOTH shapes that exist in the database:
+ *   - bucket-relative  "merged-videos/<uid>/file.mp4"   (written since #202)
+ *   - full storage URL ".../object/public|sign|authenticated/<bucket>/<path>"
+ *     (every row written before #202)
+ *
+ * Returns `null` for blob:/data:, for a plain path with no bucket prefix
+ * (e.g. "<uid>/file.mp4" — the caller knows its own default bucket), and for
+ * any non-storage URL. Callers must keep their existing fallback for null.
+ *
+ * Exported because several callers (download, copyright/transcript signing,
+ * Social-Manager handoff, local-merge purge) previously only understood the
+ * URL shape and silently broke on the bucket-relative shape.
+ */
+export function parseStorageRef(
+  input: string | null | undefined,
+): { bucket: string; path: string } | null {
+  if (!input) return null;
+  if (input.startsWith("blob:") || input.startsWith("data:")) return null;
+
+  const rel = parseBucketRelative(input);
+  if (rel) return rel;
+
+  if (!/^https?:\/\//i.test(input)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(input);
+  } catch {
+    return null;
+  }
+  return parseOwnStorage(parsed);
+}
+
+/**
  * Resolve a private-bucket object to a playable URL. Mints a fresh signed
  * URL and optionally wraps it in the same-origin video-proxy for CORS/Range.
  * Throws on signing failure — never returns a raw private URL.

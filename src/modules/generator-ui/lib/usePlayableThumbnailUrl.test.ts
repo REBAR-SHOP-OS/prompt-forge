@@ -33,7 +33,7 @@ describe("usePlayableThumbnailUrl", () => {
   it("passes blob: and data: sources straight through without signing", async () => {
     const blob = "blob:https://app.example.com/abc";
     const { result } = renderHook(() => usePlayableThumbnailUrl(blob));
-    expect(result.current).toBe(blob);
+    expect(result.current.url).toBe(blob);
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
 
@@ -47,7 +47,7 @@ describe("usePlayableThumbnailUrl", () => {
     const { result } = renderHook(() => usePlayableThumbnailUrl(src));
 
     await waitFor(() =>
-      expect(result.current).toBe(
+      expect(result.current.url).toBe(
         "https://test.supabase.co/storage/v1/object/sign/x?token=***",
       ),
     );
@@ -62,12 +62,12 @@ describe("usePlayableThumbnailUrl", () => {
     // Resolution is async; give the effect a chance to settle, then assert it
     // stayed undefined rather than falling back to the unsigned path.
     await waitFor(() => expect(mockCreateSignedUrl).toHaveBeenCalled());
-    expect(result.current).toBeUndefined();
+    expect(result.current.url).toBeUndefined();
   });
 
   it("returns undefined for a null/empty source", () => {
     const { result } = renderHook(() => usePlayableThumbnailUrl(null));
-    expect(result.current).toBeUndefined();
+    expect(result.current.url).toBeUndefined();
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
 
@@ -79,11 +79,11 @@ describe("usePlayableThumbnailUrl", () => {
     });
 
     const first = renderHook(() => usePlayableThumbnailUrl(src));
-    await waitFor(() => expect(first.result.current).toBeDefined());
+    await waitFor(() => expect(first.result.current.url).toBeDefined());
     expect(mockCreateSignedUrl).toHaveBeenCalledTimes(1);
 
     const second = renderHook(() => usePlayableThumbnailUrl(src));
-    expect(second.result.current).toBe(
+    expect(second.result.current.url).toBe(
       "https://test.supabase.co/storage/v1/object/sign/cached?token=***",
     );
     expect(mockCreateSignedUrl).toHaveBeenCalledTimes(1);
@@ -92,14 +92,14 @@ describe("usePlayableThumbnailUrl", () => {
   it("leaves an external URL untouched", async () => {
     const src = "https://external.example.com/poster.png";
     const { result } = renderHook(() => usePlayableThumbnailUrl(src));
-    await waitFor(() => expect(result.current).toBe(src));
+    await waitFor(() => expect(result.current.url).toBe(src));
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
 
   it("leaves a root-relative asset path untouched", async () => {
     const src = "/assets/poster.png";
     const { result } = renderHook(() => usePlayableThumbnailUrl(src));
-    await waitFor(() => expect(result.current).toBe(src));
+    await waitFor(() => expect(result.current.url).toBe(src));
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
 });

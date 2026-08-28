@@ -25,7 +25,7 @@ vi.mock("@/core/api/client", () => ({
 }));
 
 // Import after mocks are set up.
-import { proxiedVideoUrl, proxiedThumbnailUrl } from "./proxiedVideoUrl";
+import { proxiedVideoUrl, proxiedThumbnailUrl, parseStorageRef } from "./proxiedVideoUrl";
 
 describe("proxiedVideoUrl", () => {
   beforeEach(() => {
@@ -172,5 +172,78 @@ describe("proxiedThumbnailUrl", () => {
     const pub = "https://test.supabase.co/storage/v1/object/public/user-images/abc.png";
     await expect(proxiedThumbnailUrl(pub)).resolves.toBe(pub);
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
+  });
+});
+
+// Regression guard for #202: `storage_path` is now persisted as
+// "merged-videos/<path>". Every consumer that resolves a bucket+path (download
+// with Content-Disposition, copyright/transcript signing, Social Media Manager
+// handoff, local-merge purge) must understand BOTH shapes. Before this helper
+// the bucket-relative shape was signed as MERGED_BUCKET + the still-prefixed
+// path, producing a dead "merged-videos/merged-videos/..." key.
+describe("parseStorageRef", () => {
+  it("parses the bucket-relative form persisted since #202", () => {
+    expect(parseStorageRef("merged-videos/uid-1/job-abc.mp4")).toEqual({
+      bucket: "merged-videos",
+      path: "uid-1/job-abc.mp4",
+    });
+  });
+
+  it("parses the user-videos bucket-relative form", () => {
+    expect(parseStorageRef("user-videos/uid-1/clip.webm")).toEqual({
+      bucket: "user-videos",
+      path: "uid-1/clip.webm",
+    });
+  });
+
+  it("does NOT double-prefix — path never keeps the bucket segment", () => {
+    const ref = parseStorageRef("merged-videos/uid-1/job-abc.mp4");
+    expect(ref?.path.startsWith("merged-videos/")).toBe(false);
+  });
+
+  it("parses the legacy public-URL form", () => {
+    expect(
+      parseStorageRef(
+        "https://test.supabase.co/storage/v1/object/public/merged-videos/uid-1/job-abc.mp4",
+      ),
+    ).toEqual({ bucket: "merged-videos", path: "uid-1/job-abc.mp4" });
+  });
+
+  it("parses the signed and authenticated URL forms", () => {
+    expect(
+      parseStorageRef(
+        "https://test.supabase.co/storage/v1/object/sign/merged-videos/uid-1/a.mp4?token=x",
+      ),
+    ).toEqual({ bucket: "merged-videos", path: "uid-1/a.mp4" });
+    expect(
+      parseStorageRef(
+        "https://test.supabase.co/storage/v1/object/authenticated/user-videos/uid-1/b.mp4",
+      ),
+    ).toEqual({ bucket: "user-videos", path: "uid-1/b.mp4" });
+  });
+
+  it("percent-decodes the path", () => {
+    expect(
+      parseStorageRef(
+        "https://test.supabase.co/storage/v1/object/public/merged-videos/uid-1/my%20film.mp4",
+      ),
+    ).toEqual({ bucket: "merged-videos", path: "uid-1/my film.mp4" });
+  });
+
+  it("returns null for a plain path with no bucket prefix (caller keeps its default bucket)", () => {
+    expect(parseStorageRef("uid-1/job-abc.mp4")).toBeNull();
+  });
+
+  it("returns null for blob:, data:, empty and non-storage URLs", () => {
+    expect(parseStorageRef("blob:https://example.com/1")).toBeNull();
+    expect(parseStorageRef("data:video/mp4;base64,AA")).toBeNull();
+    expect(parseStorageRef("")).toBeNull();
+    expect(parseStorageRef(null)).toBeNull();
+    expect(parseStorageRef("https://dashscope.aliyuncs.com/x/y.mp4")).toBeNull();
+  });
+
+  it("returns null for a bare bucket name with no object path", () => {
+    expect(parseStorageRef("merged-videos")).toBeNull();
+    expect(parseStorageRef("merged-videos/")).toBeNull();
   });
 });

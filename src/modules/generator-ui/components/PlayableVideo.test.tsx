@@ -52,6 +52,7 @@ function renderPlayable(overrides: Partial<{
   loading: boolean;
   error: boolean;
   reload: () => void;
+  reloadPoster: () => void;
 }> = {}) {
   const {
     src = "merged-videos/user/clip.mp4",
@@ -62,12 +63,18 @@ function renderPlayable(overrides: Partial<{
     loading = false,
     error = false,
     reload = vi.fn(),
+    reloadPoster = vi.fn(),
   } = overrides;
 
   mockUsePlayableVideoUrl.mockReturnValue({ url, loading, error, reload });
-  mockUsePlayableThumbnailUrl.mockReturnValue(resolvedPoster ?? poster);
+  // usePlayableThumbnailUrl returns { url, reload } so the poster can be
+  // re-signed when its signed URL expires mid-session.
+  mockUsePlayableThumbnailUrl.mockReturnValue({
+    url: resolvedPoster ?? poster,
+    reload: reloadPoster,
+  });
 
-  const { resolvedPoster: _rp, ...restOverrides } = overrides as Record<string, unknown>;
+  const { resolvedPoster: _rp, reloadPoster: _rlp, ...restOverrides } = overrides as Record<string, unknown>;
   return render(
     <PlayableVideo
       src={src}
@@ -86,7 +93,7 @@ describe("PlayableVideo", () => {
   beforeEach(() => {
     mockUsePlayableVideoUrl.mockReset();
     mockUsePlayableThumbnailUrl.mockReset();
-    mockUsePlayableThumbnailUrl.mockReturnValue(undefined);
+    mockUsePlayableThumbnailUrl.mockReturnValue({ url: undefined, reload: vi.fn() });
   });
 
   afterEach(() => {
@@ -163,5 +170,38 @@ describe("PlayableVideo", () => {
     renderPlayable({ poster: "merged-videos/user/thumb.jpg", resolvedPoster: signedPoster, url: "https://test.supabase.co/functions/v1/video-proxy?url=xxx&token=***", loading: false });
     const video = document.querySelector("video");
     expect(video?.getAttribute("poster")).toBe(signedPoster);
+  });
+
+  // A signed poster URL expires after 2h. When the poster <img> fails we must
+  // re-sign once so the card is not stuck on a dead image — and exactly once,
+  // so a genuinely missing object cannot spin an infinite re-sign loop.
+  it("re-signs the poster once when the poster <img> fails to load", () => {
+    const reloadPoster = vi.fn();
+    const expiredPoster = "https://test.supabase.co/storage/v1/object/sign/merged-videos/user/thumb.jpg?token=expired";
+    renderPlayable({
+      thumbnail: true,
+      poster: "merged-videos/user/thumb.jpg",
+      resolvedPoster: expiredPoster,
+      reloadPoster,
+      url: undefined,
+      loading: true,
+    });
+
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+
+    fireEvent.error(img!);
+    expect(reloadPoster).toHaveBeenCalledTimes(1);
+
+    // Second failure on the SAME poster src must not trigger another re-sign.
+    fireEvent.error(img!);
+    expect(reloadPoster).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not attempt a poster re-sign when there is no poster", () => {
+    const reloadPoster = vi.fn();
+    renderPlayable({ thumbnail: true, reloadPoster, url: undefined, loading: true });
+    expect(document.querySelector("img")).toBeNull();
+    expect(reloadPoster).not.toHaveBeenCalled();
   });
 });

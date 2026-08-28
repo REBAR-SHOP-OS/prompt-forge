@@ -42,11 +42,12 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
   // Re-sign private-bucket poster/thumbnail URLs on demand (the raw
   // `thumbnail_url` may be a dead `/object/public/...` URL or a bucket-relative
   // path). A missing poster is acceptable, so this never throws.
-  const resolvedPoster = usePlayableThumbnailUrl(poster);
+  const { url: resolvedPoster, reload: reloadPoster } = usePlayableThumbnailUrl(poster);
   const [errored, setErrored] = useState(false);
   const [painted, setPainted] = useState(false);
   const retriesRef = useRef(0);
   const reloadedRef = useRef(false);
+  const posterReloadedRef = useRef(false);
   const [retryToken, setRetryToken] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -64,6 +65,21 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
     setRetryToken(0);
     setPainted(false);
   }, [src]);
+
+  // Reset the poster-reload guard when the poster source changes (a genuinely
+  // new thumbnail), so a fresh poster gets its own single recovery attempt.
+  useEffect(() => {
+    posterReloadedRef.current = false;
+  }, [poster]);
+
+  // Recover when a poster <img> fails because its signed URL expired mid-session.
+  // Re-sign ONCE per poster src (guarded by posterReloadedRef) — never loop.
+  const handlePosterError = () => {
+    if (!posterReloadedRef.current && poster) {
+      posterReloadedRef.current = true;
+      reloadPoster();
+    }
+  };
 
   const handleLoadedMetadata: VideoHTMLAttributes<HTMLVideoElement>["onLoadedMetadata"] = (e) => {
     if (errored) setErrored(false);
@@ -126,7 +142,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
     if (resolvedPoster) {
       return (
         <div className={fallbackClassName ?? "h-full w-full bg-black"}>
-          <img src={resolvedPoster} alt="" className="h-full w-full object-cover" />
+          <img src={resolvedPoster} alt="" className="h-full w-full object-cover" onError={handlePosterError} />
         </div>
       );
     }

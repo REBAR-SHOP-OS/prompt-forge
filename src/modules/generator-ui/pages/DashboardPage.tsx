@@ -187,7 +187,7 @@ import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterShe
 
 
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
-import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
+import { proxiedVideoUrl, parseStorageRef } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
@@ -1304,20 +1304,17 @@ export default function DashboardPage() {
       // URL with the `download` option so the server sets Content-Disposition.
       let href: string | null = null
       try {
-        const parsed = new URL(url)
-        const m = parsed.pathname.match(
-          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-        )
-        if (m) {
-          const bucket = m[1]
-          let path = m[2]
-          try { path = decodeURIComponent(path) } catch { /* keep raw */ }
-          if (bucket === MERGED_BUCKET || bucket === 'user-videos') {
-            const { data, error } = await supabase.storage
-              .from(bucket)
-              .createSignedUrl(path, 60 * 60, { download: filename })
-            if (!error && data?.signedUrl) href = data.signedUrl
-          }
+        // Handles BOTH the legacy full-URL form and the bucket-relative
+        // "merged-videos/<path>" form persisted since #202. Without the
+        // bucket-relative branch this fell through to the proxied URL, which
+        // is cross-origin, so `a.download` was ignored and the file opened in
+        // a tab instead of downloading with its real name.
+        const ref = parseStorageRef(url)
+        if (ref && (ref.bucket === MERGED_BUCKET || ref.bucket === 'user-videos')) {
+          const { data, error } = await supabase.storage
+            .from(ref.bucket)
+            .createSignedUrl(ref.path, 60 * 60, { download: filename })
+          if (!error && data?.signedUrl) href = data.signedUrl
         }
       } catch { /* fall through to proxied URL */ }
 
@@ -1343,16 +1340,19 @@ export default function DashboardPage() {
   const signStorageUrl = useCallback(async (input: string): Promise<string | null> => {
     if (!input) return null
     try {
+      // `parseStorageRef` understands the bucket-relative
+      // "merged-videos/<path>" form persisted since #202 as well as the legacy
+      // full storage URL. Without it, a bucket-relative value was signed as
+      // MERGED_BUCKET + the *prefixed* path, producing a double
+      // "merged-videos/merged-videos/..." key that never resolves.
+      const ref = parseStorageRef(input)
       let bucket = MERGED_BUCKET
       let path = input
-      if (/^https?:\/\//i.test(input)) {
-        const parsed = new URL(input)
-        const m = parsed.pathname.match(
-          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-        )
-        if (!m) return input // unknown shape; let the function try as-is
-        bucket = m[1]
-        try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+      if (ref) {
+        bucket = ref.bucket
+        path = ref.path
+      } else if (/^https?:\/\//i.test(input)) {
+        return input // unknown URL shape; let the function try as-is
       }
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
       if (!error && data?.signedUrl) return data.signedUrl
@@ -3705,10 +3705,13 @@ export default function DashboardPage() {
         // Local-only entry: purge its file from merged-videos bucket if owned by us.
         const url = mergedEntry?.video?.storage_path
         if (url && userId) {
-          const m = url.match(/\/storage\/v1\/object\/(?:public\/)?merged-videos\/(.+)$/)
-          if (m) {
-            const path = decodeURIComponent(m[1])
-            await supabase.storage.from(MERGED_BUCKET).remove([path])
+          // Matches BOTH the legacy full-URL form and the bucket-relative
+          // "merged-videos/<path>" form persisted since #202. The old
+          // URL-only regex silently skipped the purge for new rows, orphaning
+          // the file in the private bucket.
+          const ref = parseStorageRef(url)
+          if (ref?.bucket === MERGED_BUCKET) {
+            await supabase.storage.from(MERGED_BUCKET).remove([ref.path])
           }
         }
       } else {
@@ -5151,18 +5154,13 @@ export default function DashboardPage() {
         : 'previewVideo.video.storage_path (empty)'
       if (rawPath) {
         try {
-          let bucket = MERGED_BUCKET
-          let path = rawPath
-          if (/^https?:\/\//i.test(rawPath)) {
-            const parsed = new URL(rawPath)
-            const m = parsed.pathname.match(
-              /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-            )
-            if (m) {
-              bucket = m[1]
-              try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
-            }
-          }
+          // Accepts the bucket-relative form persisted since #202 as well as
+          // the legacy full storage URL; otherwise a bucket-relative path was
+          // double-prefixed and signing failed, handing Social Media Manager
+          // the raw unfetchable storage_path.
+          const ref = parseStorageRef(rawPath)
+          const bucket = ref?.bucket ?? MERGED_BUCKET
+          const path = ref?.path ?? rawPath
           const { data, error } = await supabase.storage
             .from(bucket)
             .createSignedUrl(path, 60 * 60 * 24 * 365)

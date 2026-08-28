@@ -10,11 +10,26 @@
 -- minted for the owner's own merged-videos objects without re-opening the
 -- bucket to public or cross-user access.
 
-CREATE POLICY "merged-videos: authenticated read own"
-ON storage.objects
-FOR SELECT
-TO authenticated
-USING (
-  bucket_id = 'merged-videos'
-  AND (storage.foldername(name))[1] = (auth.uid())::text
-);
+-- Idempotent: this policy already exists in the live project (it was applied
+-- out-of-band, so it is absent from Migration History). A bare CREATE POLICY
+-- would abort a `db push`/replay with "policy already exists". The guard only
+-- creates it when missing and never drops the live policy.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename = 'objects'
+      AND policyname = 'merged-videos: authenticated read own'
+  ) THEN
+    CREATE POLICY "merged-videos: authenticated read own"
+    ON storage.objects
+    FOR SELECT
+    TO authenticated
+    USING (
+      bucket_id = 'merged-videos'
+      AND (storage.foldername(name))[1] = (auth.uid())::text
+    );
+  END IF;
+END
+$$;

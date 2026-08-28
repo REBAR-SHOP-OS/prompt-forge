@@ -24,7 +24,7 @@ vi.mock("@/core/api/client", () => ({
   FUNCTIONS_BASE: "https://test.supabase.co/functions/v1",
 }));
 
-import { usePlayableVideoUrl, usePlayableVideoUrls, invalidatePlayableVideoUrl } from "./usePlayableVideoUrl";
+import { usePlayableVideoUrl, usePlayableVideoUrls, usePlayableThumbnailUrl, invalidatePlayableVideoUrl, invalidatePlayableThumbnailUrl } from "./usePlayableVideoUrl";
 
 describe("usePlayableVideoUrl", () => {
   beforeEach(() => {
@@ -124,6 +124,86 @@ describe("usePlayableVideoUrl", () => {
     expect(r2.current.url).toContain("video-proxy");
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
+});
+
+const SIGN_BASE =
+  "https://test.supabase.co/storage/v1/object/sign/merged-videos/user/thumb.jpg?token=";
+
+describe("usePlayableThumbnailUrl", () => {
+  beforeEach(() => {
+    mockCreateSignedUrl.mockReset();
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({
+      data: { session: { access_token: "***" } },
+    });
+    invalidatePlayableThumbnailUrl("merged-videos/user/thumb.jpg");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("re-signs an expired thumbnail cache entry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T12:00:00Z"));
+
+    // Distinct token per call so "was it re-signed?" is observable.
+    let sig = 0;
+    mockCreateSignedUrl.mockImplementation(() => {
+      sig += 1;
+      return Promise.resolve({
+        data: { signedUrl: `${SIGN_BASE}sig${sig}` },
+        error: null,
+      });
+    });
+    const { result } = renderHook(() => usePlayableThumbnailUrl("merged-videos/user/thumb.jpg"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const firstUrl = result.current.url;
+    expect(firstUrl).toContain("object/sign");
+
+    // Advance past THUMBNAIL_TTL_MS (signed TTL - 5 min) so the entry is stale.
+    await act(async () => {
+      vi.setSystemTime(new Date("2026-08-28T14:00:00Z")); // +2h
+    });
+
+    // A fresh hook with the same src must re-sign (not return the stale URL).
+    const { result: r2 } = renderHook(() => usePlayableThumbnailUrl("merged-videos/user/thumb.jpg"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(r2.current.url).not.toBe(firstUrl);
+    expect(mockCreateSignedUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("reload() re-signs after invalidation", async () => {
+    let sig = 0;
+    mockCreateSignedUrl.mockImplementation(() => {
+      sig += 1;
+      return Promise.resolve({
+        data: { signedUrl: `${SIGN_BASE}sig${sig}` },
+        error: null,
+      });
+    });
+    const { result } = renderHook(() => usePlayableThumbnailUrl("merged-videos/user/thumb.jpg"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const firstUrl = result.current.url;
+    expect(firstUrl).toContain("object/sign");
+
+    act(() => {
+      result.current.reload();
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.url).not.toBe(firstUrl);
+    expect(mockCreateSignedUrl).toHaveBeenCalledTimes(2);
+  });
+
 });
 
 describe("usePlayableVideoUrls (batch)", () => {
