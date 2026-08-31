@@ -104,7 +104,7 @@ describe("usePlayableVideoUrl", () => {
     });
     expect(result.current.error).toBe(false);
     expect(result.current.url).toBeDefined();
-    expect(result.current.url).toContain("video-proxy");
+    expect(result.current.url).toContain("/object/sign/");
   });
 
   it("caches successful resolutions for subsequent calls with same src", async () => {
@@ -116,12 +116,12 @@ describe("usePlayableVideoUrl", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10));
     });
-    expect(r1.current.url).toContain("video-proxy");
+    expect(r1.current.url).toContain("/object/sign/");
 
     // Second hook with same src should get cached result instantly
     mockCreateSignedUrl.mockClear();
     const { result: r2 } = renderHook(() => usePlayableVideoUrl("merged-videos/user/file2.mp4"));
-    expect(r2.current.url).toContain("video-proxy");
+    expect(r2.current.url).toContain("/object/sign/");
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
 });
@@ -243,7 +243,7 @@ describe("usePlayableVideoUrls (batch)", () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(result.current.urls[0]).toContain("video-proxy");
+    expect(result.current.urls[0]).toContain("/object/sign/");
     expect(result.current.urls[1]).toBeUndefined(); // NOT the raw source
     expect(result.current.urls[2]).toBeUndefined();
     expect(result.current.errors[0]).toBe(false);

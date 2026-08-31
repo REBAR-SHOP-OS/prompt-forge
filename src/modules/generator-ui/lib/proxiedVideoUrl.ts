@@ -101,14 +101,11 @@ async function resolvePrivateBucket(bucket: string, path: string): Promise<strin
   if (error || !data?.signedUrl) {
     throw new Error(`Failed to sign ${bucket}/${path}: ${error?.message ?? "unknown"}`);
   }
-  const { data: sessionData } = await supabase.auth.getSession();
-  const proxyToken = sessionData.session?.access_token;
-  if (proxyToken) {
-    const pq = new URLSearchParams({ url: data.signedUrl, token: proxyToken });
-    return `${FUNCTIONS_BASE}/video-proxy?${pq.toString()}`;
-  }
-  // Signed URL without proxy token — the signed URL itself is CORS-enabled
-  // and Range-capable, so it can feed a <video> element directly.
+  // Supabase Storage serves signed URLs with Access-Control-Allow-Origin: *
+  // and supports Range requests, so they feed <video> and crossOrigin canvas
+  // directly. Routing through video-proxy is unnecessary and currently broken:
+  // the gateway enforces verify_jwt (config.toml override not deployed) and
+  // rejects <video> requests that can only pass the token as a query param.
   return data.signedUrl;
 }
 
