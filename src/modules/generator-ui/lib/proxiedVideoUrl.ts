@@ -1,10 +1,15 @@
 // Wraps a video URL through our same-origin video-proxy edge function so the
-// bytes come back with proper CORS headers and HTTP Range support. We route
-// ALL external/HTTP video URLs through the proxy — including our own Supabase
-// Storage — so cards, previews, trim, merge, and last-frame extraction all
-// use the exact same playback path. A single code path eliminates the
-// random "Video unavailable" flicker we used to see when one component got
-// the raw Storage URL and another got the proxied URL for the same asset.
+// bytes come back with proper CORS headers and HTTP Range support. External
+// provider URLs (Aliyun OSS and friends) are routed through the proxy.
+//
+// Our OWN private Supabase Storage objects are NOT: they are signed here and
+// returned directly. A Supabase signed object URL already carries
+// Access-Control-Allow-Origin: * and supports Range, so it feeds <video> and
+// crossOrigin canvas without help — and the proxy actively breaks it, because
+// the deployed gateway enforces verify_jwt and a <video> element cannot send
+// an Authorization header. Every caller still resolves through this one
+// module, so cards, previews, trim, merge and last-frame extraction continue
+// to share a single playback path per asset.
 //
 // Returned unchanged:
 //   - blob: / data: URLs
@@ -90,9 +95,11 @@ export function parseStorageRef(
 }
 
 /**
- * Resolve a private-bucket object to a playable URL. Mints a fresh signed
- * URL and optionally wraps it in the same-origin video-proxy for CORS/Range.
- * Throws on signing failure — never returns a raw private URL.
+ * Resolve a private-bucket object to a playable URL. Mints a fresh signed URL
+ * and returns it as-is — signed object URLs are already CORS-enabled and
+ * Range-capable, and the video-proxy wrapper would add an auth gate a <video>
+ * element cannot satisfy. Throws on signing failure — never returns a raw
+ * private URL.
  */
 async function resolvePrivateBucket(bucket: string, path: string): Promise<string> {
   const { data, error } = await supabase.storage
