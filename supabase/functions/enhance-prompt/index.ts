@@ -284,8 +284,8 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        // gemini-2.5-flash supports vision and is fast/cheap.
-        model: "google/gemini-2.5-flash",
+        // gemini-3-flash-preview supports vision and is fast/cheap.
+        model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userContent },

@@ -221,7 +221,7 @@ Deno.serve(async (req) => {
     const PRIMARY = "google/gemini-3.1-flash-image-preview";
     const FALLBACK = "google/gemini-2.5-flash-image";
     const MAX_IDENTITY_ATTEMPTS = 2;
-    const evalModel = "google/gemini-2.5-flash";
+    const evalModel = "google/gemini-3-flash-preview";
     const evalPrompt = buildIdentityEvalPrompt(identitySpecs);
 
     async function evaluateIdentity(dataUrl: string) {
