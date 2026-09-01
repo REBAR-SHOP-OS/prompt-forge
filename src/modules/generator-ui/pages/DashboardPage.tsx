@@ -211,6 +211,30 @@ import {
  * without WebCrypto — that path is NOT cryptographically secure but still avoids
  * Math.random() and is sufficient for non-security-critical draft identifiers.
  */
+// Supabase's FunctionsHttpError surfaces only "Edge Function returned a
+// non-2xx status code" in `.message`; the real, actionable error lives in the
+// response body (`{ error: string }`). Read it so the user sees the actual
+// reason (e.g. "Business information is required…") instead of a generic code.
+async function extractFunctionError(fnErr: unknown, fallback: string): Promise<string> {
+  try {
+    const ctx = (fnErr as { context?: { json?: () => Promise<unknown>; text?: () => Promise<string> } })?.context
+    if (ctx && typeof ctx.json === 'function') {
+      const body = (await ctx.json()) as { error?: string } | null
+      if (body?.error) return String(body.error)
+    }
+    if (ctx && typeof ctx.text === 'function') {
+      const txt = await ctx.text()
+      try {
+        const parsed = JSON.parse(txt) as { error?: string }
+        if (parsed?.error) return String(parsed.error)
+      } catch { /* not JSON */ }
+      if (txt) return txt
+    }
+  } catch { /* ignore */ }
+  if (fnErr instanceof Error && fnErr.message) return fnErr.message
+  return fallback
+}
+
 function secureRandomId(): string {
   const c = globalThis.crypto as unknown as { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array } | undefined
   if (c?.randomUUID) return c.randomUUID()
@@ -7669,7 +7693,7 @@ export default function DashboardPage() {
       // Do NOT silently repeat the prompt. A failed scenario is a hard error so
       // the user can retry or fix their business info rather than approving a
       // film of duplicated scenes.
-      const msg = err instanceof Error ? err.message : 'Could not write the scenario.'
+      const msg = await extractFunctionError(err, 'Could not write the scenario.')
       throw new Error(`Could not write the film scenario: ${msg}`)
     }
     if (scenes.length === 0) {

@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
     //     (bounded).
     //   - error: the evaluator itself failed (technical error, invalid response,
     //     429/402/5xx) -> return immediately, do NOT start a fresh generation.
-    const evalModel = "google/gemini-2.5-flash";
+    const evalModel = "google/gemini-3-flash-preview";
     const evalPrompt = buildIdentityEvalPrompt(safeReferenceUrls);
 
     // Returns { verdict, outcome }. verdict is "pass" | "identity-fail" | "error".

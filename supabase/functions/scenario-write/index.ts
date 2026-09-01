@@ -320,7 +320,7 @@ async function callGateway(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model: "google/gemini-3-flash-preview",
       messages: [
         { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration, unit) },
         { role: "user", content: userContent },
@@ -706,7 +706,7 @@ Deno.serve(async (req) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
+            model: "google/gemini-3-flash-preview",
             messages: [
               { role: "user", content: buildSemanticJudgePrompt(candidateText, historyText) },
             ],
