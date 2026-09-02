@@ -39,7 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
@@ -1035,7 +1035,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {expectedPlanCount(duration)} shots × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
+                    {expectedPlanCount(duration)} shots × ~{PLAN_DURATION_SECONDS}s each
                   </p>
                 </div>
 
@@ -1395,7 +1395,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   {plans.map((plan, i) => (
                       <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-4">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                          Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
+                          Shot {i + 1} (~{PLAN_DURATION_SECONDS}s)
                         </div>
                         <Textarea
                           value={plan.scenarioText}
