@@ -41,4 +41,28 @@ describe('prepareProductStartFrameImage', () => {
       { fit: 'contain', backgroundColor: '#ffffff' },
     )
   })
+
+  // The caller (productStartFrame) catches and returns undefined, and the clip
+  // then generates with no product conditioning at all. An off-ratio product
+  // frame is a far better outcome than no product frame, so a canvas failure
+  // must degrade rather than propagate.
+  it('falls back to the original image when normalization fails', async () => {
+    const normalize = vi.fn().mockRejectedValue(new Error('Failed to load image'))
+
+    await expect(
+      prepareProductStartFrameImage('https://x/product-square.png', '9:16', normalize),
+    ).resolves.toBe('https://x/product-square.png')
+
+    expect(normalize).toHaveBeenCalledOnce()
+  })
+
+  it('falls back on a synchronous throw too', async () => {
+    const normalize = vi.fn(() => {
+      throw new Error('SecurityError: tainted canvas')
+    })
+
+    await expect(
+      prepareProductStartFrameImage('https://x/product-square.png', '16:9', normalize),
+    ).resolves.toBe('https://x/product-square.png')
+  })
 })

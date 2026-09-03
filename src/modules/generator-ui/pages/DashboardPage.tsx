@@ -313,6 +313,10 @@ type UploadedFile = {
   status: 'uploading' | 'ready' | 'failed'
   url: string | null
   error: string | null
+  // Where this frame came from. 'product' marks one this page staged itself
+  // from the selected product, which it may therefore restage or replace.
+  // Anything the user put there is left alone. Absent means user-supplied.
+  source?: 'product'
 }
 
 export type UserImageItem = {
@@ -6138,6 +6142,20 @@ export default function DashboardPage() {
     setIsReframeOpen(false)
   }
 
+  // Restaging the product as the Start frame happens on its own — on product
+  // select and on an aspect change — so it must never clobber a frame the user
+  // put there. A Start frame this page staged from a product is ours to
+  // replace; anything else is the user's answer to "what should this clip open
+  // on", and an aspect chip is not a request to discard it.
+  //
+  // (Gating on "no Start frame at all" would instead break the feature outright:
+  // the product-select handler stages one, so every later aspect change would
+  // see a Start frame present and skip the restage that is the point of it.)
+  function canRestageProductStartFrame(): boolean {
+    const startFrame = uploadedFiles.find((file) => file.target === 'Start')
+    return !startFrame || startFrame.source === 'product'
+  }
+
   // Stage an existing image (clip or archive) as the composer Start frame,
   // switch to image-to-video, and scroll the composer into view.
   // The image must be re-staged into the wan-frames bucket because the
@@ -6157,6 +6175,7 @@ export default function DashboardPage() {
         status: 'uploading',
         url: null,
         error: null,
+        ...(productAspect ? { source: 'product' as const } : {}),
       },
     ])
     try {
@@ -12974,7 +12993,7 @@ export default function DashboardPage() {
                   onClick={() => {
                     if (isLocked) return
                     setAspectRatio(opt.value)
-                    if (selectedProduct) {
+                    if (selectedProduct && canRestageProductStartFrame()) {
                       setUploadTarget('Start')
                       void handleUseImageAsStart(selectedProduct.url, opt.value)
                     }
@@ -13791,8 +13810,10 @@ export default function DashboardPage() {
                           }
                           setSelectedProduct(product)
                           setProductMenuOpen(false)
-                          setUploadTarget('Start')
-                          void handleUseImageAsStart(product.url, aspectRatio)
+                          if (canRestageProductStartFrame()) {
+                            setUploadTarget('Start')
+                            void handleUseImageAsStart(product.url, aspectRatio)
+                          }
                         }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
                           selectedProduct?.id === p.id

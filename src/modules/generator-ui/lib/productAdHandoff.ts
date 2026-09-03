@@ -30,6 +30,14 @@ export async function stageProductAdStartFrame(
  * Convert a product reference into an exact-ratio Start frame before it enters
  * the video pipeline. `contain` deliberately preserves the whole product;
  * cropping a reference image can remove load-bearing geometry or branding.
+ *
+ * Normalization is an improvement, not a precondition. It runs in the browser
+ * on a canvas, so it can fail for reasons that have nothing to do with the
+ * product: the <img> never loads, the 2D context is unavailable, `toDataURL`
+ * refuses. Letting that reject would be a worse outcome than an off-ratio
+ * frame — `productStartFrame` swallows the throw and returns undefined, and the
+ * clip then generates with no product conditioning at all, which is the exact
+ * failure this whole path exists to prevent. Fall back to the original URL.
  */
 export async function prepareProductStartFrameImage(
   imageUrl: string,
@@ -40,8 +48,12 @@ export async function prepareProductStartFrameImage(
     options: NormalizeImageAspectOptions,
   ) => Promise<string> = normalizeImageAspect,
 ): Promise<string> {
-  return normalize(imageUrl, aspectRatio, {
-    fit: 'contain',
-    backgroundColor: '#ffffff',
-  })
+  try {
+    return await normalize(imageUrl, aspectRatio, {
+      fit: 'contain',
+      backgroundColor: '#ffffff',
+    })
+  } catch {
+    return imageUrl
+  }
 }
