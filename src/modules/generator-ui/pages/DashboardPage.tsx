@@ -2491,6 +2491,8 @@ export default function DashboardPage() {
     musicRange?: [number, number]
     musicTimeline?: [number, number]
     musicVolume?: number
+    musicFadeInSec?: number
+    musicFadeOutSec?: number
     voiceoverRange?: [number, number]
     voiceoverTimeline?: [number, number]
     voiceoverVolume?: number
@@ -3298,6 +3300,8 @@ export default function DashboardPage() {
   const [soundtrackMode, setSoundtrackMode] = useState<'music-only' | 'mix'>('mix')
   const [clipVolume, setClipVolume] = useState<number>(1)
   const [musicVolume, setMusicVolume] = useState<number>(1)
+  const [musicFadeInSec, setMusicFadeInSec] = useState<number>(0)
+  const [musicFadeOutSec, setMusicFadeOutSec] = useState<number>(0)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
   // Bumped on Start Over / workspace reset to clear VoiceoverDialog's transient
@@ -4982,6 +4986,19 @@ export default function DashboardPage() {
     return Math.max(1, Math.round(total))
   }, [playableSequenceClips])
 
+  const musicTimelineDurationSec = Math.max(
+    0,
+    (musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec) - musicTimeline[0],
+  )
+  // Each fade may use at most half of the active placement, preventing the two
+  // controls from crossing. Ten seconds is ample for a smooth editorial fade
+  // without making the compact soundtrack dialog unwieldy.
+  const musicFadeLimitSec = Math.min(10, musicTimelineDurationSec / 2)
+  useEffect(() => {
+    setMusicFadeInSec((value) => Math.min(value, musicFadeLimitSec))
+    setMusicFadeOutSec((value) => Math.min(value, musicFadeLimitSec))
+  }, [musicFadeLimitSec])
+
   // Track the previous film length so we can detect when a new clip extends
   // the project and auto-extend a full-length music timeline to match.
   const prevMergedDurationRef = useRef(mergedDurationSec)
@@ -6444,6 +6461,8 @@ export default function DashboardPage() {
     setVoiceoverRange([0, 0])
     setVoiceoverTimeline([0, 0])
     setMusicVolume(1)
+    setMusicFadeInSec(0)
+    setMusicFadeOutSec(0)
     setVoiceoverVolume(1)
     setClipVolume(1)
     setVoiceoverClipVolume(0.3)
@@ -6486,6 +6505,8 @@ export default function DashboardPage() {
         setMusicTimeline(audioSettings?.musicTimeline ?? [0, mergedDurationSec])
         if (audioSettings?.musicRange) setMusicRange(audioSettings.musicRange)
         if (audioSettings?.musicVolume !== undefined) setMusicVolume(audioSettings.musicVolume)
+        setMusicFadeInSec(audioSettings?.musicFadeInSec ?? 0)
+        setMusicFadeOutSec(audioSettings?.musicFadeOutSec ?? 0)
         try {
           const a = new Audio()
           a.src = url
@@ -8305,6 +8326,8 @@ export default function DashboardPage() {
     setMusicDuration(0)
     setMusicRange([0, 0])
     setMusicTimeline([0, mergedDurationSec])
+    setMusicFadeInSec(0)
+    setMusicFadeOutSec(0)
     setIsMusicDialogOpen(true)
     // Persist the uploaded track so it appears in Storage › Audio.
     void persistUserAudio(file, 'music', file.name)
@@ -8330,6 +8353,8 @@ export default function DashboardPage() {
     setMusicDuration(0)
     setMusicRange([0, 0])
     setMusicTimeline([0, 0])
+    setMusicFadeInSec(0)
+    setMusicFadeOutSec(0)
     setIsMusicDialogOpen(false)
   }
 
@@ -8665,6 +8690,8 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
+                  fadeInSec: musicFadeInSec,
+                  fadeOutSec: musicFadeOutSec,
                   timelineStartSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[0] : undefined,
                   timelineEndSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : undefined,
                 }
@@ -8911,6 +8938,8 @@ export default function DashboardPage() {
             musicRange: hasMusic ? musicRange : undefined,
             musicTimeline: hasMusic ? musicTimeline : undefined,
             musicVolume: hasMusic ? musicVolume : undefined,
+            musicFadeInSec: hasMusic ? musicFadeInSec : undefined,
+            musicFadeOutSec: hasMusic ? musicFadeOutSec : undefined,
             voiceoverRange: hasVoiceover ? voiceoverRange : undefined,
             voiceoverTimeline: hasVoiceover ? voiceoverTimeline : undefined,
             voiceoverVolume: hasVoiceover ? voiceoverVolume : undefined,
@@ -9098,6 +9127,8 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicFadeInSec(0)
+    setMusicFadeOutSec(0)
     setIsMusicDialogOpen(false)
     if (voiceoverUrl) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
@@ -11148,6 +11179,51 @@ export default function DashboardPage() {
               </p>
             </div>
 
+            {/* Music gain envelope on the active video-timeline window. */}
+            <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-foreground/80">
+                <span className="font-medium">Music fades</span>
+                <span className="text-[11px] text-muted-foreground">Smooth start and finish</span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-muted-foreground">
+                  <span>Fade in</span>
+                  <span className="tabular-nums text-foreground/90">
+                    {musicFadeInSec > 0 ? `${musicFadeInSec.toFixed(1)}s` : 'Off'}
+                  </span>
+                </div>
+                <Slider
+                  aria-label="Music fade in duration"
+                  value={[Math.min(musicFadeInSec, musicFadeLimitSec)]}
+                  min={0}
+                  max={Math.max(0.5, musicFadeLimitSec)}
+                  step={0.5}
+                  disabled={musicFadeLimitSec <= 0}
+                  onValueChange={(v) => setMusicFadeInSec(Math.min(v[0] ?? 0, musicFadeLimitSec))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-muted-foreground">
+                  <span>Fade out</span>
+                  <span className="tabular-nums text-foreground/90">
+                    {musicFadeOutSec > 0 ? `${musicFadeOutSec.toFixed(1)}s` : 'Off'}
+                  </span>
+                </div>
+                <Slider
+                  aria-label="Music fade out duration"
+                  value={[Math.min(musicFadeOutSec, musicFadeLimitSec)]}
+                  min={0}
+                  max={Math.max(0.5, musicFadeLimitSec)}
+                  step={0.5}
+                  disabled={musicFadeLimitSec <= 0}
+                  onValueChange={(v) => setMusicFadeOutSec(Math.min(v[0] ?? 0, musicFadeLimitSec))}
+                />
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Fade durations apply to the selected playback window in Preview and Final Film.
+              </p>
+            </div>
+
 
             {/* Audio mode: music-only vs mix */}
             <div className="space-y-3 rounded-md border border-border bg-surface-2/60 p-3">
@@ -11249,6 +11325,8 @@ export default function DashboardPage() {
               musicUrl={musicUrl}
               musicRange={musicRange}
               musicVolume={musicVolume}
+              musicFadeInSec={musicFadeInSec}
+              musicFadeOutSec={musicFadeOutSec}
               musicTimeline={musicTimeline}
               voiceoverUrl={voiceoverUrl}
               voiceoverVolume={voiceoverVolume}
@@ -11358,6 +11436,8 @@ export default function DashboardPage() {
                       musicUrl={musicUrl}
                       musicRange={musicRange}
                       musicVolume={musicVolume}
+                      musicFadeInSec={musicFadeInSec}
+                      musicFadeOutSec={musicFadeOutSec}
                       musicTimeline={musicTimeline}
                       voiceoverUrl={voiceoverUrl}
                       voiceoverVolume={voiceoverVolume}
