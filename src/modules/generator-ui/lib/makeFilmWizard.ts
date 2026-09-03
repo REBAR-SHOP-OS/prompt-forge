@@ -110,6 +110,9 @@ export function sumClipDurations(clips: ClipDuration[]): number {
 /** Camera coverage (framing) for a single 5-second plan/shot. */
 export type PlanCoverage = 'wide' | 'medium' | 'close'
 
+/** Duration in seconds of a single plan/shot. Every plan is exactly 5 seconds. */
+export const PLAN_DURATION_SECONDS = 5
+
 /**
  * How many 5-second plans (shots) a total duration expects. The unit of work
  * changed from the card (5|10|15s) to the plan (5s), so every duration maps to

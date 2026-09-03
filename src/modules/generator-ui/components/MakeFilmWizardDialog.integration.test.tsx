@@ -161,6 +161,26 @@ beforeEach(() => {
 })
 
 describe('MakeFilmWizardDialog scenario product requirement (integration)', () => {
+  it('shows a per-shot duration that matches the real plan structure for every duration', () => {
+    // The summary must read "N shots × ~5s each" where N = duration/5, so the
+    // per-shot figure always agrees with the total film duration.
+    const cases: Array<[number, string]> = [
+      [5, '1 shots × ~5s each'],
+      [10, '2 shots × ~5s each'],
+      [15, '3 shots × ~5s each'],
+      [30, '6 shots × ~5s each'],
+      [45, '9 shots × ~5s each'],
+      [60, '12 shots × ~5s each'],
+      [90, '18 shots × ~5s each'],
+      [135, '27 shots × ~5s each'],
+    ]
+    for (const [duration, expected] of cases) {
+      const { unmount } = renderWizard({ defaultDuration: duration as 5 | 10 | 15 | 30 | 45 | 60 | 90 | 135 })
+      expect(screen.getByText(expected)).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('requires a product, enables after selection, and disables immediately after removal', async () => {
     renderWizard()
     const writeButton = screen.getByRole('button', { name: 'Write scenario' })

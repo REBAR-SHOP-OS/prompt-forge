@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   expectedSceneCount,
   expectedPlanCount,
+  PLAN_DURATION_SECONDS,
   computeClipDurations,
   computePlanDurations,
   computePlanCoverage,
@@ -67,6 +68,13 @@ describe('expectedPlanCount', () => {
     expect(expectedPlanCount(60)).toBe(12)
     expect(expectedPlanCount(90)).toBe(18)
     expect(expectedPlanCount(135)).toBe(27)
+  })
+
+  it('keeps every plan at PLAN_DURATION_SECONDS so count × per-shot equals the total', () => {
+    expect(PLAN_DURATION_SECONDS).toBe(5)
+    for (const duration of FILM_DURATIONS) {
+      expect(expectedPlanCount(duration) * PLAN_DURATION_SECONDS).toBe(duration)
+    }
   })
 })
 
