@@ -15,6 +15,8 @@ export interface VideoWithSoundtrackProps extends VideoBaseProps {
   musicUrl?: string | null
   musicRange?: [number, number]
   musicVolume?: number
+  musicFadeInSec?: number
+  musicFadeOutSec?: number
   musicTimeline?: [number, number]
   voiceoverUrl?: string | null
   voiceoverVolume?: number
@@ -38,6 +40,8 @@ export function VideoWithSoundtrack({
   musicUrl,
   musicRange,
   musicVolume = 1,
+  musicFadeInSec = 0,
+  musicFadeOutSec = 0,
   musicTimeline,
   voiceoverUrl,
   voiceoverVolume = 1,
@@ -192,6 +196,8 @@ export function VideoWithSoundtrack({
         musicUrl={musicUrl}
         musicRange={musicRange}
         musicVolume={musicVolume}
+        musicFadeInSec={musicFadeInSec}
+        musicFadeOutSec={musicFadeOutSec}
         musicTimeline={musicTimeline}
         voiceoverUrl={voiceoverUrl}
         voiceoverVolume={voiceoverVolume}

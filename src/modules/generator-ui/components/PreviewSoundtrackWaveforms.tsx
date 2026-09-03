@@ -6,6 +6,7 @@ import {
 } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import { Music, Mic } from 'lucide-react'
+import { musicGainAtFilmTime } from '@/modules/generator-ui/lib/musicFade'
 
 export type PreviewSoundtrackHandle = {
   /** Start audio in sync with the video. */
@@ -31,6 +32,8 @@ type Props = {
   /** Source window inside the music file. */
   musicRange?: [number, number]
   musicVolume?: number
+  musicFadeInSec?: number
+  musicFadeOutSec?: number
   /** Placement on the video timeline [start, end] in seconds. */
   musicTimeline?: [number, number]
   voiceoverUrl?: string | null
@@ -58,6 +61,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     musicUrl,
     musicRange,
     musicVolume = 1,
+    musicFadeInSec = 0,
+    musicFadeOutSec = 0,
     musicTimeline,
     voiceoverUrl,
     voiceoverVolume = 1,
@@ -90,6 +95,10 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   voiceTimelineRef.current = voiceoverTimeline
   const musicVolumeRef = useRef<number>(musicVolume)
   musicVolumeRef.current = musicVolume
+  const musicFadeInRef = useRef<number>(musicFadeInSec)
+  musicFadeInRef.current = musicFadeInSec
+  const musicFadeOutRef = useRef<number>(musicFadeOutSec)
+  musicFadeOutRef.current = musicFadeOutSec
   const voiceVolumeRef = useRef<number>(voiceoverVolume)
   voiceVolumeRef.current = voiceoverVolume
 
@@ -115,12 +124,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
 
     const onReady = () => {
       musicReadyRef.current = true
-      ws.setVolume(Math.max(0, Math.min(1, musicVolume)))
       const start = rangeRef.current?.[0] ?? 0
       try { ws.setTime(start) } catch { /* ignore */ }
-      if (wantPlayingRef.current) {
-        ws.play().catch(() => { /* autoplay block — ignore */ })
-      }
+      applyMusic(lastFilmTimeRef.current, true)
     }
     ws.on('ready', onReady)
 
@@ -130,7 +136,6 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       try { ws.destroy() } catch { /* ignore */ }
       if (musicWsRef.current === ws) musicWsRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [musicUrl, height])
 
   // Build the voiceover waveform when its URL changes.
@@ -173,15 +178,15 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   // Live volume updates.
   useEffect(() => {
     const ws = musicWsRef.current
-    if (ws && musicReadyRef.current) ws.setVolume(Math.max(0, Math.min(1, musicVolume)))
-  }, [musicVolume])
+    if (ws && musicReadyRef.current) applyMusic(lastFilmTimeRef.current, false)
+  }, [musicVolume, musicFadeInSec, musicFadeOutSec])
   useEffect(() => {
     const ws = voiceWsRef.current
     if (ws && voiceReadyRef.current) ws.setVolume(Math.max(0, Math.min(1, voiceoverVolume)))
   }, [voiceoverVolume])
 
   // Apply music gating + source mapping for a given video playhead.
-  const applyMusic = (t: number, forceSeek: boolean) => {
+  function applyMusic(t: number, forceSeek: boolean) {
     const m = musicWsRef.current
     if (!m || !musicReadyRef.current) return
     const tl = musicTimelineRef.current
@@ -194,7 +199,14 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         if (m.isPlaying()) m.pause()
         return
       }
-      m.setVolume(Math.max(0, Math.min(1, musicVolumeRef.current)))
+      m.setVolume(musicGainAtFilmTime({
+        filmTimeSec: t,
+        timelineStartSec: tlStart,
+        timelineEndSec: tlEnd,
+        volume: musicVolumeRef.current,
+        fadeInSec: musicFadeInRef.current,
+        fadeOutSec: musicFadeOutRef.current,
+      }))
       const range = rangeRef.current
       const rel = t - tlStart
       let target: number
