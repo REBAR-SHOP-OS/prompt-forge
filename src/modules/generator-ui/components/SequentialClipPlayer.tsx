@@ -53,6 +53,8 @@ type Props = {
   musicUrl?: string | null
   musicRange?: [number, number]
   musicVolume?: number
+  musicFadeInSec?: number
+  musicFadeOutSec?: number
   musicTimeline?: [number, number]
   voiceoverUrl?: string | null
   voiceoverVolume?: number
@@ -74,6 +76,8 @@ export function SequentialClipPlayer({
   musicUrl,
   musicRange,
   musicVolume = 1,
+  musicFadeInSec = 0,
+  musicFadeOutSec = 0,
   musicTimeline,
   voiceoverUrl,
   voiceoverVolume = 1,
@@ -660,6 +664,8 @@ export function SequentialClipPlayer({
           musicUrl={musicUrl}
           musicRange={musicRange}
           musicVolume={musicVolume}
+          musicFadeInSec={musicFadeInSec}
+          musicFadeOutSec={musicFadeOutSec}
           musicTimeline={musicTimeline}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}

@@ -12,6 +12,8 @@
 //   transcoding is intentionally kept out of the Final Film path because
 //   ffmpeg.wasm can hang/OOM on long clips and strand the UI at 95%.
 
+import { musicGainAtFilmTime } from './musicFade'
+
 export interface MergeProgress {
   ratio: number
   clipIndex: number
@@ -28,6 +30,9 @@ export interface MergeMusicTrack {
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
+  /** Linear fade durations at the start/end of the music timeline. */
+  fadeInSec?: number
+  fadeOutSec?: number
   /** Placement on the final video timeline (seconds). Defaults to whole video. */
   timelineStartSec?: number
   timelineEndSec?: number
@@ -57,6 +62,8 @@ export interface MergeAudioOptions {
   startSec?: number
   endSec?: number
   musicVolume?: number
+  fadeInSec?: number
+  fadeOutSec?: number
 }
 
 export function normalizeAudioOptions(audio?: MergeAudioOptions): {
@@ -73,6 +80,8 @@ export function normalizeAudioOptions(audio?: MergeAudioOptions): {
         startSec: audio.startSec ?? 0,
         endSec: audio.endSec ?? 0,
         musicVolume: audio.musicVolume,
+        fadeInSec: audio.fadeInSec,
+        fadeOutSec: audio.fadeOutSec,
       },
       clipVolume: audio.clipVolume,
     }
@@ -772,7 +781,7 @@ export async function mergeVideoUrls(
       soundtrackEl.currentTime = Math.max(0, musicTrack.startSec)
       const source = audioCtx.createMediaElementSource(soundtrackEl)
       const gain = audioCtx.createGain()
-      gain.gain.value = musicVolume
+      gain.gain.value = 0
       source.connect(gain)
       gain.connect(audioDest)
       soundtrackGain = gain
@@ -1119,7 +1128,14 @@ export async function mergeVideoUrls(
       if (soundtrackEl && soundtrackGain) {
         const inWin = gt >= musicTlStart && gt < musicTlEnd
         if (inWin) {
-          soundtrackGain.gain.value = musicVolume
+          soundtrackGain.gain.value = musicGainAtFilmTime({
+            filmTimeSec: gt,
+            timelineStartSec: musicTlStart,
+            timelineEndSec: musicTlEnd,
+            volume: musicVolume,
+            fadeInSec: musicTrack?.fadeInSec,
+            fadeOutSec: musicTrack?.fadeOutSec,
+          })
           if (soundtrackEl.currentTime >= musicWinEnd || soundtrackEl.currentTime < musicWinStart) {
             try { soundtrackEl.currentTime = musicWinStart } catch { /* ignore */ }
           }

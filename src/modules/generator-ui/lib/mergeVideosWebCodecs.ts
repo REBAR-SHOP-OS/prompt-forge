@@ -36,6 +36,7 @@ import {
   normalizeAudioOptions,
   setMergeOverlay,
 } from './mergeVideos'
+import { scheduleMusicFade } from './musicFade'
 
 /** Thrown when the browser lacks the WebCodecs surface this encoder needs, so
  *  the caller can fall back to the legacy MediaRecorder path. */
@@ -188,14 +189,21 @@ async function renderAudioMix(
       const winLen = Math.max(0.05, music.endSec - music.startSec)
       const tlStart = Math.max(0, music.timelineStartSec ?? 0)
       const tlEnd = Math.min(totalDuration, music.timelineEndSec ?? totalDuration)
+      const gain = octx.createGain()
+      scheduleMusicFade(gain.gain, {
+        timelineStartSec: tlStart,
+        timelineEndSec: tlEnd,
+        volume: musicVolume,
+        fadeInSec: music.fadeInSec,
+        fadeOutSec: music.fadeOutSec,
+      })
+      gain.connect(octx.destination)
       let pos = tlStart
       while (pos < tlEnd - 1e-3) {
         const playLen = Math.min(winLen, tlEnd - pos)
         const src = octx.createBufferSource()
         src.buffer = buffer
-        const gain = octx.createGain()
-        gain.gain.value = musicVolume
-        src.connect(gain).connect(octx.destination)
+        src.connect(gain)
         try { src.start(pos, music.startSec, playLen) } catch { /* ignore */ }
         pos += playLen
         scheduled = true

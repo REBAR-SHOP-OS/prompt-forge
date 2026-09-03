@@ -21,6 +21,7 @@ vi.mock("lucide-react", () => ({
 }));
 
 import { VideoWithSoundtrack } from "./VideoWithSoundtrack";
+import { PreviewSoundtrackWaveforms } from "./PreviewSoundtrackWaveforms";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,28 @@ describe("VideoWithSoundtrack", () => {
     const video = document.querySelector("video");
     expect(video).toBeTruthy();
     expect(video?.getAttribute("src")).toContain("video-proxy");
+  });
+
+  it("forwards music fade durations to the live soundtrack preview", () => {
+    mockUsePlayableVideoUrl.mockReturnValue({
+      url: "https://test.supabase.co/video-proxy?token=***",
+      loading: false,
+      error: false,
+      reload: vi.fn(),
+    });
+    render(
+      <VideoWithSoundtrack
+        src="merged-videos/user/clip.mp4"
+        musicUrl="blob:music"
+        musicFadeInSec={1.5}
+        musicFadeOutSec={2.5}
+      />,
+    );
+    const props = vi.mocked(PreviewSoundtrackWaveforms).mock.calls.at(-1)?.[0];
+    expect(props).toEqual(expect.objectContaining({
+      musicFadeInSec: 1.5,
+      musicFadeOutSec: 2.5,
+    }));
   });
 
   it("shows Retry button on resolve failure", () => {
