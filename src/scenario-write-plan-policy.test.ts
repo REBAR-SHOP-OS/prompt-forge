@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getPlanDurationPolicy,
   parsePlanScenarios,
   runPlanQualityPass,
+  MAX_PLAN_CORRECTIVE_ATTEMPTS,
   SCENE_DELIMITER,
 } from "../supabase/functions/scenario-write/scenario-policy.ts";
 
@@ -12,6 +15,20 @@ function sixPlans(prefix = "Plan"): string {
     "shows the hero product in sharp focus, gliding across a clean studio set while a soft key light traces its edges and a vivid background gradient shifts behind it, building desire and momentum.";
   return Array.from({ length: 6 }, (_, i) => `${prefix} ${i + 1} ${body}`)
     .join(` ${SCENE_DELIMITER} `);
+}
+
+function numberedPlans(count: number, prefix = "Plan"): string {
+  const body =
+    "shows the hero product in sharp focus, gliding across a clean studio set while a soft key light traces its edges and a vivid background gradient shifts behind it, building desire and momentum.";
+  return Array.from({ length: count }, (_, i) => `${prefix} ${i + 1}: ${body}`)
+    .join("\n");
+}
+
+function numericListPlans(count: number): string {
+  return numberedPlans(count)
+    .split("\n")
+    .map((plan) => plan.replace(/^Plan (\d+):/, "$1."))
+    .join("\n");
 }
 
 const SINGLE_BLOCK =
@@ -47,6 +64,46 @@ describe("parsePlanScenarios", () => {
     const single = "A single paragraph describing the whole film without any delimiter.";
     expect(parsePlanScenarios(single, 30)).toEqual([]);
   });
+
+  it("accepts 9 sequential numbered plan headings for a 45s film", () => {
+    const parsed = parsePlanScenarios(numberedPlans(9), 45);
+    expect(parsed).toHaveLength(9);
+    expect(parsed[0]).toContain("hero product");
+    expect(parsed[8]).toContain("building desire and momentum");
+  });
+
+  it("accepts a plain numbered list when Gemini omits the Plan label", () => {
+    expect(parsePlanScenarios(numericListPlans(9), 45)).toHaveLength(9);
+  });
+
+  it("accepts numbered plan headings for every supported multi-plan duration", () => {
+    const cases: Array<[number, number]> = [
+      [10, 2],
+      [15, 3],
+      [30, 6],
+      [45, 9],
+      [60, 12],
+      [90, 18],
+      [135, 27],
+    ];
+    for (const [duration, count] of cases) {
+      expect(parsePlanScenarios(numberedPlans(count), duration)).toHaveLength(count);
+    }
+  });
+
+  it("rejects duplicated or non-sequential plan numbers", () => {
+    const malformed = numberedPlans(9).replace("Plan 5:", "Plan 4:");
+    expect(parsePlanScenarios(malformed, 45)).toEqual([]);
+  });
+
+  it("keeps the numbered-heading fallback wired into the production parser", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "supabase/functions/scenario-write/scenario-policy.ts"),
+      "utf8",
+    );
+    expect(source).toMatch(/const numbered = parseNumberedPlanScenarios\(cleaned\)/);
+    expect(source).not.toMatch(/return paragraphs\.length === planCount \? paragraphs : \[\];/);
+  });
 });
 
 describe("runPlanQualityPass regression (30s → 6 plans)", () => {
@@ -72,7 +129,7 @@ describe("runPlanQualityPass regression (30s → 6 plans)", () => {
     expect(result.scenes).toHaveLength(6);
   });
 
-  it("returns empty scenes (not a fake single plan) when retry still cannot produce 6 plans", async () => {
+  it("returns empty scenes (not a fake single plan) after the bounded retries stay malformed", async () => {
     // Both the initial output and the retried output are one undelimited block.
     // The fix must NOT wrap them as a single valid plan.
     const singleBlock = "One undelimited block that cannot be split into six 5-second plans.";
@@ -81,7 +138,7 @@ describe("runPlanQualityPass regression (30s → 6 plans)", () => {
       retryCount += 1;
       return singleBlock; // retry also malformed
     });
-    expect(retryCount).toBe(1);
+    expect(retryCount).toBe(MAX_PLAN_CORRECTIVE_ATTEMPTS);
     expect(result.retried).toBe(true);
     expect(result.scenes).toEqual([]);
     expect(result.warning).toBeDefined();
@@ -96,5 +153,31 @@ describe("runPlanQualityPass regression (30s → 6 plans)", () => {
     expect(result.retried).toBe(false);
     expect(result.scenes).toHaveLength(1);
     expect(result.scenes[0]).toBe(onePlan);
+  });
+});
+
+describe("runPlanQualityPass regression (45s → 9 plans)", () => {
+  it("does not return the reported 502 path for a complete numbered response", async () => {
+    const result = await runPlanQualityPass(45, numberedPlans(9), async () => {
+      throw new Error("a complete 9-plan response must not trigger a retry");
+    });
+
+    expect(result.retried).toBe(false);
+    expect(result.scenes).toHaveLength(9);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it("recovers when the first correction is still underfilled and the second has all 9 plans", async () => {
+    const underfilled = numberedPlans(8);
+    let retryCount = 0;
+    const result = await runPlanQualityPass(45, underfilled, async () => {
+      retryCount += 1;
+      return retryCount === 1 ? underfilled : numberedPlans(9);
+    });
+
+    expect(retryCount).toBe(2);
+    expect(result.retried).toBe(true);
+    expect(result.scenes).toHaveLength(9);
+    expect(result.warning).toBeUndefined();
   });
 });
