@@ -23,6 +23,7 @@ export interface ScenarioQualityResult {
 export const SCENE_DELIMITER = "===SCENE===";
 
 const SUPPORTED_DURATIONS = [5, 10, 15, 30, 45, 60, 90, 135] as const;
+export const MAX_PLAN_CORRECTIVE_ATTEMPTS = 2;
 
 export function getScenarioDurationPolicy(durationSeconds: number): ScenarioDurationPolicy {
   if (!SUPPORTED_DURATIONS.includes(durationSeconds as (typeof SUPPORTED_DURATIONS)[number])) {
@@ -117,6 +118,35 @@ export function getPlanDurationPolicy(durationSeconds: number): PlanDurationPoli
   };
 }
 
+function splitSequentialHeadings(raw: string, heading: RegExp): string[] {
+  const matches = Array.from(raw.matchAll(heading));
+  if (matches.length === 0) return [];
+
+  const sequential = matches.every((match, index) => Number(match[1]) === index + 1);
+  if (!sequential) return [];
+
+  return matches
+    .map((match, index) => {
+      const start = (match.index ?? 0) + match[0].length;
+      const end = index + 1 < matches.length ? (matches[index + 1].index ?? raw.length) : raw.length;
+      return stripQuotes(raw.slice(start, end));
+    })
+    .filter(Boolean);
+}
+
+function parseNumberedPlanScenarios(raw: string): string[] {
+  const labeled = splitSequentialHeadings(
+    raw,
+    /(?:^|\r?\n)\s*(?:#{1,6}\s*)?(?:\*\*|__)?(?:plan|shot)\s*#?\s*(\d{1,3})\s*(?::|[.)\-–—])?(?:\*\*|__)?\s*/gim,
+  );
+  if (labeled.length > 0) return labeled;
+
+  return splitSequentialHeadings(
+    raw,
+    /(?:^|\r?\n)\s*(?:\*\*|__)?(\d{1,3})\s*[.)\-–—:](?:\*\*|__)?\s*/gm,
+  );
+}
+
 export function parsePlanScenarios(raw: string, durationSeconds: number): string[] {
   const cleaned = stripQuotes(raw);
   if (!cleaned) return [];
@@ -125,16 +155,25 @@ export function parsePlanScenarios(raw: string, durationSeconds: number): string
   if (planCount === 1) return [cleaned];
 
   const delimited = cleaned
-    .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
+    .split(/\r?\n?\s*===(?:SCENE|PLAN)===\s*\r?\n?/i)
     .map(stripQuotes)
     .filter(Boolean);
   if (delimited.length === planCount) return delimited;
+
+  // Gemini sometimes preserves the requested count but renders conventional
+  // "Plan 1:" or "Shot 1:" headings instead of the literal delimiter.
+  // Accept only a complete, strictly sequential set so missing or duplicated
+  // headings still fail the plan-count contract.
+  const numbered = parseNumberedPlanScenarios(cleaned);
+  if (numbered.length === planCount) return numbered;
 
   const paragraphs = cleaned
     .split(/\n\s*\n+/)
     .map(stripQuotes)
     .filter(Boolean);
-  return paragraphs.length === planCount ? paragraphs : [];
+  if (paragraphs.length === planCount) return paragraphs;
+
+  return [];
 }
 
 export function assessPlanScenarios(plans: string[], durationSeconds: number): ScenarioQualityIssue[] {
@@ -178,9 +217,13 @@ export function buildPlanCorrectiveRetryInstruction(durationSeconds: number, iss
   ].join(" ");
 }
 
-function planQualityWarning(durationSeconds: number, issues: ScenarioQualityIssue[]): string {
+function planQualityWarning(
+  durationSeconds: number,
+  issues: ScenarioQualityIssue[],
+  retryAttempts: number,
+): string {
   const policy = getPlanDurationPolicy(durationSeconds);
-  return `Scenario quality warning after one corrective retry: ${issues.map((issue) => issue.message).join("; ")}. Expected ${policy.planCount} plan${policy.planCount === 1 ? "" : "s"}, ${policy.minWordsPerPlan}-${policy.maxWordsPerPlan} words per plan, and one 5-second beat per plan.`;
+  return `Scenario quality warning after ${retryAttempts} corrective ${retryAttempts === 1 ? "attempt" : "attempts"}: ${issues.map((issue) => issue.message).join("; ")}. Expected ${policy.planCount} plan${policy.planCount === 1 ? "" : "s"}, ${policy.minWordsPerPlan}-${policy.maxWordsPerPlan} words per plan, and one 5-second beat per plan.`;
 }
 
 export async function runPlanQualityPass(
@@ -192,17 +235,30 @@ export async function runPlanQualityPass(
   const initialIssues = assessPlanScenarios(initialPlans, durationSeconds);
   if (initialIssues.length === 0) return { scenes: initialPlans, retried: false };
 
-  let retryRaw: string | null = null;
-  try {
-    retryRaw = await correctiveRetry(buildPlanCorrectiveRetryInstruction(durationSeconds, initialIssues));
-  } catch {
-    retryRaw = null;
-  }
+  let finalRaw = initialRaw;
+  let finalPlans = initialPlans;
+  let finalIssues = initialIssues;
+  let retryAttempts = 0;
 
-  const finalRaw = retryRaw?.trim() || initialRaw;
-  const finalPlans = parsePlanScenarios(finalRaw, durationSeconds);
-  const finalIssues = assessPlanScenarios(finalPlans, durationSeconds);
-  if (finalIssues.length === 0) return { scenes: finalPlans, retried: true };
+  while (retryAttempts < MAX_PLAN_CORRECTIVE_ATTEMPTS) {
+    retryAttempts += 1;
+    let retryRaw: string | null = null;
+    try {
+      const instruction = [
+        buildPlanCorrectiveRetryInstruction(durationSeconds, finalIssues),
+        `This is bounded correction attempt ${retryAttempts} of ${MAX_PLAN_CORRECTIVE_ATTEMPTS}; count every plan before returning the answer.`,
+      ].join(" ");
+      retryRaw = await correctiveRetry(instruction);
+    } catch {
+      retryRaw = null;
+    }
+
+    if (!retryRaw?.trim()) break;
+    finalRaw = retryRaw.trim();
+    finalPlans = parsePlanScenarios(finalRaw, durationSeconds);
+    finalIssues = assessPlanScenarios(finalPlans, durationSeconds);
+    if (finalIssues.length === 0) return { scenes: finalPlans, retried: true };
+  }
 
   // Never let an invalid multi-plan output fall through as a single valid plan.
   // For planCount === 1 parsePlanScenarios always returns [raw] when non-empty,
@@ -214,7 +270,7 @@ export async function runPlanQualityPass(
   return {
     scenes: fallback,
     retried: true,
-    warning: planQualityWarning(durationSeconds, finalIssues),
+    warning: planQualityWarning(durationSeconds, finalIssues, retryAttempts),
   };
 }
 
