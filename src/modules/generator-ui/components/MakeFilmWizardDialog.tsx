@@ -46,6 +46,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
 import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
+import { groupProductPhotos, productPhotoForScene, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 
@@ -91,9 +92,10 @@ async function signStorageUrl(storagePath: string | null | undefined, bucket: st
   return raw
 }
 
-type ProductPhoto = { id: string; title: string | null; url: string; imageType?: string | null }
+type ProductPhoto = { id: string; title: string | null; url: string; urls?: string[]; imageType?: string | null }
 
 type ProductPhotoSource = { id: string; title: string | null; storagePath: string; imageType?: string | null }
+type ProductPhotoGroupSource = ProductPhotoGroup<ProductPhotoSource>
 
 export const inFlightSigns = new Map<string, Promise<string>>()
 
@@ -133,6 +135,7 @@ export interface FilmIdentity {
 
 export interface IdentityRef {
   url: string
+  urls?: string[]
   role: 'product' | 'character'
   imageType?: string | null
   characterSheet: boolean
@@ -200,7 +203,7 @@ export function MakeFilmWizardDialog({
   const [selectedCameraAngle, setSelectedCameraAngle] = useState('auto')
   const [selectedTheme, setSelectedTheme] = useState('auto')
   const [selectedFilmType, setSelectedFilmType] = useState<string>(normalizeFilmType(initialFilmType))
-  const [productPhotos, setProductPhotos] = useState<ProductPhotoSource[]>([])
+  const [productPhotos, setProductPhotos] = useState<ProductPhotoGroupSource[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const productPickerControllerRef = useRef<AbortController | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
@@ -305,14 +308,12 @@ export function MakeFilmWizardDialog({
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
       const rows = (data ?? []).filter((r) => !r.title?.toLowerCase().includes('character'))
-      const photos: ProductPhotoSource[] = await Promise.all(
-        rows.map(async (r) => ({
+      const photos: ProductPhotoSource[] = rows.map((r) => ({
           id: r.id,
           title: r.title ?? null,
           storagePath: r.storage_path,
-        })),
-      )
-      setProductPhotos(photos)
+        }))
+      setProductPhotos(groupProductPhotos(photos))
     } catch (e) {
       setProductLoadError((e as Error).message ?? 'Failed to load products')
     } finally {
@@ -362,7 +363,7 @@ export function MakeFilmWizardDialog({
 
   function currentProductName(): string | null {
     const manualName = productName.trim()
-    if (manualName) return manualName
+    if (manualName) return sanitizeProductName(manualName)
     return selectedProduct ? sanitizeProductName(selectedProduct.title) : null
   }
 
@@ -433,6 +434,7 @@ export function MakeFilmWizardDialog({
     if (!photo) return undefined
     return {
       url: photo.url,
+      urls: photo.urls?.length ? photo.urls : [photo.url],
       role,
       imageType: photo.imageType ?? null,
       characterSheet: role === 'character' && isCharacterSheetRef(photo),
@@ -767,7 +769,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     for (let i = 0; i < plans.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
       try {
-        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], i) ?? snapshot.product?.url
+        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -790,7 +793,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const characterSheet = snapshot.character?.characterSheet ?? false
-      const url = await generateSceneImage(plans[index].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], index) ?? snapshot.product?.url
+      const url = await generateSceneImage(plans[index].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -1686,7 +1690,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           <DialogHeader>
             <DialogTitle className="text-base">Choose a product</DialogTitle>
             <DialogDescription>
-              Select a saved product image to keep the product consistent throughout the film.
+              Select a product folder. Its saved angles will rotate across the film scenes.
             </DialogDescription>
           </DialogHeader>
           {loadingProducts ? (
@@ -1704,10 +1708,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             <div className="py-10 text-center text-sm text-muted-foreground">No saved product photos yet.</div>
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
-              {productPhotos.map((photo) => (
+              {productPhotos.map((group) => (
                 <ProductPickerCard
-                  key={photo.id}
-                  photo={photo}
+                  key={group.id}
+                  group={group}
                   bucket={PRODUCTS_BUCKET}
                   userId={userId}
                   controllerRef={productPickerControllerRef}
@@ -1823,37 +1827,58 @@ type CardRetryState = 'loading' | 'ready' | 'idle' | 'retrying' | 'failed'
 
 let globalCardEpoch = 0
 
+/** A product angle that has been signed successfully, still tied to its row id. */
+type SignedAngle = { id: string; url: string }
+
 /**
- * Re-sign a single product photo URL.  Stale responses (after dialog
+ * Re-sign every angle in a product group.  Stale responses (after dialog
  * close, unmount, or user change) are dropped via an epoch nonce.
+ *
+ * Angles are carried as {id, url} pairs rather than a bare URL array.
+ * `Promise.allSettled` preserves order but signing can reject per angle, so a
+ * filtered URL list no longer lines up with `group.photos` — index 0 of the
+ * survivors may belong to photo 1.  Everything that consumes an angle needs
+ * the id that goes with it (the selection handed to the wizard, the React
+ * keys), so the pairing is kept rather than reconstructed from position.
  */
 function useResilientPhotoCard(
-  photo: ProductPhotoSource,
+  group: ProductPhotoGroupSource,
   bucket: string,
   userId: string | null,
   controllerRef: React.MutableRefObject<AbortController | null>,
 ) {
-  const [signedUrl, setSignedUrl] = useState<string>('')
+  const [signedAngles, setSignedAngles] = useState<SignedAngle[]>([])
   const [retryState, setRetryState] = useState<CardRetryState>('loading')
   const epochRef = useRef(0)
   const retryCountRef = useRef(0)
+
+  const signAvailableAngles = useCallback(async (): Promise<SignedAngle[]> => {
+    const results = await Promise.allSettled(
+      group.photos.map((photo) => signStorageUrlDeduped(photo.storagePath, bucket, userId)),
+    )
+    const angles = results.flatMap((result, index) =>
+      result.status === 'fulfilled' ? [{ id: group.photos[index].id, url: result.value }] : [],
+    )
+    if (angles.length === 0) throw new Error('No product angle could be loaded')
+    return angles
+  }, [group, bucket, userId])
 
   // On mount or identity change, start signing.  Any previous epoch
   // is implicitly abandoned by the component unmounting.
   useEffect(() => {
     let cancelled = false
     setRetryState('loading')
-    setSignedUrl('')
+    setSignedAngles([])
     retryCountRef.current = 0
     const nonce = ++globalCardEpoch
     epochRef.current = nonce
 
     async function sign() {
       try {
-        const fresh = await signStorageUrlDeduped(photo.storagePath, bucket, userId)
+        const fresh = await signAvailableAngles()
         if (cancelled) return
         if (epochRef.current !== nonce) return
-        setSignedUrl(fresh)
+        setSignedAngles(fresh)
         setRetryState('ready')
       } catch {
         if (cancelled) return
@@ -1865,7 +1890,7 @@ function useResilientPhotoCard(
     void sign()
 
     return () => { cancelled = true }
-  }, [photo.id, photo.storagePath, bucket, userId])
+  }, [signAvailableAngles])
 
   const handleLoad = useCallback(() => {
     setRetryState('idle')
@@ -1876,16 +1901,21 @@ function useResilientPhotoCard(
     epochRef.current = nonce
     setRetryState('retrying')
     try {
-      const fresh = await signStorageUrlDeduped(photo.storagePath, bucket, userId)
+      const fresh = await signAvailableAngles()
       if (epochRef.current !== nonce) return
-      setSignedUrl(fresh)
+      setSignedAngles(fresh)
       setRetryState('ready')
     } catch {
       if (epochRef.current !== nonce) return
       setRetryState('failed')
     }
-  }, [photo.storagePath, bucket, userId])
+  }, [signAvailableAngles])
 
+  // Only the primary angle escalates to a whole-card re-sign. Before grouping
+  // there was one <img> per card, so an onError could safely mean "this card
+  // is broken". With up to four tiles that no longer holds: a single 404 angle
+  // would take the whole product down, and the sibling error events racing in
+  // would trip the second-failure branch and skip the retry entirely.
   const handleImageError = useCallback(() => {
     if (retryCountRef.current === 0) {
       retryCountRef.current = 1
@@ -1895,7 +1925,17 @@ function useResilientPhotoCard(
     }
   }, [handleRetry])
 
-  return { signedUrl, retryState, handleLoad, handleImageError, handleRetry }
+  // A secondary angle that will not render is dropped instead. It would also
+  // fail as a scene reference downstream, so removing it from the set the
+  // wizard receives is the point, not a side effect. Never empties the list —
+  // the primary angle owns the failure path.
+  const handleAngleError = useCallback((id: string) => {
+    setSignedAngles((current) =>
+      current.length <= 1 ? current : current.filter((angle) => angle.id !== id),
+    )
+  }, [])
+
+  return { signedAngles, retryState, handleLoad, handleImageError, handleAngleError, handleRetry }
 }
 
 /**
@@ -1906,25 +1946,29 @@ function useResilientPhotoCard(
  * button that executes a fresh signing attempt immediately.
  */
 function ProductPickerCard({
-  photo,
+  group,
   bucket,
   userId,
   controllerRef,
   onSelect,
 }: {
-  photo: ProductPhotoSource
+  group: ProductPhotoGroupSource
   bucket: string
   userId: string | null
   controllerRef: React.MutableRefObject<AbortController | null>
   onSelect: (photo: ProductPhoto) => void
 }) {
-  const { signedUrl, retryState, handleLoad, handleImageError, handleRetry } = useResilientPhotoCard(
-    photo,
+  const { signedAngles, retryState, handleLoad, handleImageError, handleAngleError, handleRetry } = useResilientPhotoCard(
+    group,
     bucket,
     userId,
     controllerRef,
   )
   const selectable = retryState === 'idle' || retryState === 'ready'
+  const primaryAngle = signedAngles[0]
+  // Once signing has run, report the angles that actually resolved — claiming
+  // "4 angles" when one failed to sign would overstate what the film can use.
+  const angleCount = signedAngles.length || group.photos.length
 
   if (retryState === 'failed') {
     return (
@@ -1932,7 +1976,7 @@ function ProductPickerCard({
         <div className="flex aspect-square w-full items-center justify-center bg-surface-2">
           <ImageIcon className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
         </div>
-        <div className="mt-2 truncate text-[11px] text-muted-foreground">{photo.title || 'Untitled'}</div>
+        <div className="mt-2 truncate text-[11px] text-muted-foreground">{group.name}</div>
         <Button
           type="button"
           variant="ghost"
@@ -1953,8 +1997,16 @@ function ProductPickerCard({
   return (
     <button
       type="button"
-      disabled={!selectable}
-      onClick={() => onSelect({ id: photo.id, title: photo.title, url: signedUrl })}
+      disabled={!selectable || !primaryAngle}
+      onClick={() => {
+        if (!primaryAngle) return
+        onSelect({
+          id: primaryAngle.id,
+          title: group.name,
+          url: primaryAngle.url,
+          urls: signedAngles.map((angle) => angle.url),
+        })
+      }}
       className={`group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-fuchsia-300/40 ${
         selectable ? '' : 'cursor-not-allowed opacity-60'
       }`}
@@ -1965,16 +2017,24 @@ function ProductPickerCard({
         </div>
       )}
       {showImage && (
-        <img
-          src={signedUrl}
-          alt={photo.title ?? 'Product'}
-          loading="lazy"
-          className="aspect-square w-full bg-surface-2/60 object-cover"
-          onLoad={handleLoad}
-          onError={handleImageError}
-        />
+        <div className={`grid aspect-square w-full gap-0.5 bg-surface-2/60 ${signedAngles.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {signedAngles.slice(0, 4).map((angle, index) => (
+            <img
+              key={angle.id}
+              src={angle.url}
+              alt={index === 0 ? group.name : `${group.name} angle ${index + 1}`}
+              loading="lazy"
+              className="h-full min-h-0 w-full object-cover"
+              onLoad={index === 0 ? handleLoad : undefined}
+              onError={index === 0 ? handleImageError : () => handleAngleError(angle.id)}
+            />
+          ))}
+        </div>
       )}
-      <div className="truncate px-2 py-1 text-[11px] text-foreground/90">{photo.title || 'Untitled'}</div>
+      <div className="px-2 py-1">
+        <div className="truncate text-[11px] text-foreground/90">{group.name}</div>
+        <div className="text-[10px] text-muted-foreground">{angleCount} angle{angleCount === 1 ? '' : 's'}</div>
+      </div>
     </button>
   )
 }

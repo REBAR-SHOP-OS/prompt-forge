@@ -151,6 +151,9 @@ function mockRefreshableCharacterRows(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockStorage.from.mockImplementation(() => ({
+    createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
+  }))
   generateSceneImage.mockResolvedValue('data:image/png;base64,SCENE')
   writeScenario.mockResolvedValue([
     'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
@@ -210,7 +213,7 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
 
     fireEvent.click(screen.getByText('Choose product'))
     expect(screen.getByRole('dialog', { name: 'Choose a product' })).toHaveAccessibleDescription(
-      'Select a saved product image to keep the product consistent throughout the film.',
+      'Select a product folder. Its saved angles will rotate across the film scenes.',
     )
     fireEvent.keyDown(document, { key: 'Escape' })
 
@@ -595,8 +598,8 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
 
     // Open the product picker and choose the product.
     fireEvent.click(screen.getByText('Choose product'))
-    await waitFor(() => expect(screen.getByText('stirup001')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('stirup001'))
+    await waitFor(() => expect(screen.getByText('stirup')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('stirup'))
 
     // Write the scenario.
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
@@ -609,6 +612,79 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     // The raw title is never sent; the sanitized name is used in the prompt too.
     expect(options.productName).not.toContain('001')
   })
+
+  it('selects one canonical product folder and rotates its saved angles across scenes', async () => {
+    mockImageRows([
+      { id: 'stirrup-008', title: 'Rebar Stirrup 008', image_type: null },
+      { id: 'stirrup-007', title: 'Rebar Stirrup 007', image_type: null },
+    ])
+    mockStorage.from.mockImplementation(() => ({
+      createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
+    }))
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('Rebar Stirrup')).toBeInTheDocument())
+    expect(screen.getByText('2 angles')).toBeInTheDocument()
+    expect(screen.queryByText('Rebar Stirrup 008')).not.toBeInTheDocument()
+    expect(screen.queryByText('Rebar Stirrup 007')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Rebar Stirrup'))
+
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+    expect(writeScenario.mock.calls[0][0]).toContain('PRODUCT TO FEATURE: Rebar Stirrup')
+    expect(writeScenario.mock.calls[0][0]).not.toMatch(/Rebar Stirrup 00[78]/)
+    expect(writeScenario.mock.calls[0][1].productName).toBe('Rebar Stirrup')
+
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
+    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual([
+      'https://x/user/stirrup-008.png',
+      'https://x/user/stirrup-007.png',
+      'https://x/user/stirrup-008.png',
+      'https://x/user/stirrup-007.png',
+      'https://x/user/stirrup-008.png',
+      'https://x/user/stirrup-007.png',
+    ])
+  }, 15_000)
+
+  // Grouping put up to four <img> tiles behind one card. The card's onError
+  // path was written when there was exactly one image per card, where "this
+  // image broke" and "this card is unusable" were the same statement. They are
+  // not the same statement for a folder: one dead angle must not take the
+  // product down, and the film must stop offering that angle as a reference.
+  it('drops a single unrenderable angle instead of failing the whole product folder', async () => {
+    mockImageRows([
+      { id: 'stirrup-008', title: 'Rebar Stirrup 008', image_type: null },
+      { id: 'stirrup-007', title: 'Rebar Stirrup 007', image_type: null },
+    ])
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('Rebar Stirrup')).toBeInTheDocument())
+    expect(screen.getByText('2 angles')).toBeInTheDocument()
+
+    fireEvent.error(screen.getByAltText('Rebar Stirrup angle 2'))
+
+    // The folder survives, and its count now reports what is actually usable
+    // rather than how many rows the group started with.
+    await waitFor(() => expect(screen.getByText('1 angle')).toBeInTheDocument())
+    expect(screen.queryByAltText('Rebar Stirrup angle 2')).not.toBeInTheDocument()
+    expect(screen.getByText('Rebar Stirrup')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Rebar Stirrup'))
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    // The dropped angle is gone from the rotation, not merely hidden in the UI.
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
+    const used = generateSceneImage.mock.calls.map((call) => call[2])
+    expect(used).toEqual(Array.from({ length: 6 }, () => 'https://x/user/stirrup-008.png'))
+    expect(used).not.toContain('https://x/user/stirrup-007.png')
+  }, 15_000)
 
   it('uses a saved user product to prefill Product Name and preserves a manual override through prompt and film identity', async () => {
     const productEq = vi.fn()
@@ -641,7 +717,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
 
     const productNameInput = screen.getByRole('textbox', { name: 'Product name' })
     expect(productNameInput).toHaveValue('Saved Widget')
-    fireEvent.change(productNameInput, { target: { value: 'Manual Launch Name' } })
+    fireEvent.change(productNameInput, { target: { value: 'Manual Launch Name 008' } })
 
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))

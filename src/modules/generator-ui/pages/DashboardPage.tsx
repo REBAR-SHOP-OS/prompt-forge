@@ -56,6 +56,7 @@ import {
   Drama,
   Wand2,
   FileText,
+  FolderOpen,
   MessageSquareQuote,
   Contact,
   Eye,
@@ -162,6 +163,7 @@ import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDial
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { groupProductPhotos } from '@/modules/generator-ui/lib/productPhotoGroups'
 import { buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
 import {
   GlobalSceneBatchError,
@@ -1698,6 +1700,7 @@ export default function DashboardPage() {
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
   const [archiveProductImages, setArchiveProductImages] = useState<UserImageItem[]>([])
+  const archiveProductGroups = useMemo(() => groupProductPhotos(archiveProductImages), [archiveProductImages])
   const [archiveAudio, setArchiveAudio] = useState<UserAudioItem[]>([])
   const productPhotoInputRef = useRef<HTMLInputElement | null>(null)
   const [isUploadingProductPhoto, setIsUploadingProductPhoto] = useState(false)
@@ -9591,7 +9594,7 @@ export default function DashboardPage() {
                     : archiveTab === 'images'
                       ? archiveImages.length
                       : archiveTab === 'products'
-                        ? archiveProductImages.length
+                        ? archiveProductGroups.length
                         : archiveAudio.length}
                 </span>
               </div>
@@ -9658,7 +9661,7 @@ export default function DashboardPage() {
               >
                 <Package className="h-3.5 w-3.5" aria-hidden="true" />
                 Product Photos
-                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductImages.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductGroups.length}</span>
               </button>
             </div>
           </DialogHeader>
@@ -9734,8 +9737,8 @@ export default function DashboardPage() {
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-accent/20 px-4 py-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground/90">Upload a product photo</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
+                      <p className="text-sm font-medium text-foreground/90">Upload product angles</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Give every angle of the same product the same product name. JPG, PNG or WEBP — up to 10 MB. Angles are grouped into one folder and rotated across film scenes.</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">Or bulk-import captions: upload <span className="text-foreground/80">.txt</span> files named like the photos (e.g. <span className="text-foreground/80">circular_tie_001.txt</span> → <span className="text-foreground/80">circular_tie_001</span>) to attach each text to its matching image.</p>
                       {productUploadError ? (
                         <p className="mt-1 text-xs text-action-rose">{productUploadError}</p>
@@ -9815,8 +9818,18 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                      {archiveProductImages.map((img) => (
+                    <div className="space-y-4">
+                      {archiveProductGroups.map((group) => (
+                        <section key={group.id} className="rounded-2xl border border-border bg-accent/20 p-4">
+                          <div className="mb-3 flex items-center gap-2">
+                            <FolderOpen className="h-4 w-4 text-accent-cool" aria-hidden="true" />
+                            <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground/90">{group.name}</h3>
+                            <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[10px] text-muted-foreground">
+                              {group.photos.length} angle{group.photos.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                      {group.photos.map((img) => (
                         <article
                           key={img.id}
                           className={`flex flex-col gap-3 rounded-2xl border bg-accent/35 p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-border'}`}
@@ -9963,6 +9976,9 @@ export default function DashboardPage() {
                             </div>
                           </div>
                         </article>
+                      ))}
+                          </div>
+                        </section>
                       ))}
                     </div>
                   )}
