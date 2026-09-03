@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { stageProductAdStartFrame } from './productAdHandoff'
+import { prepareProductStartFrameImage, stageProductAdStartFrame } from './productAdHandoff'
 
 describe('stageProductAdStartFrame', () => {
   it('does nothing when the dialog produced no frame', async () => {
@@ -24,5 +24,21 @@ describe('stageProductAdStartFrame', () => {
   it('propagates unexpected staging rejections', async () => {
     const stage = vi.fn().mockRejectedValue(new Error('network down'))
     await expect(stageProductAdStartFrame('https://x/frame.png', stage)).rejects.toThrow('network down')
+  })
+})
+
+describe('prepareProductStartFrameImage', () => {
+  it('normalizes the product to the selected 9:16 ratio without cropping it', async () => {
+    const normalize = vi.fn().mockResolvedValue('data:image/png;base64,portrait')
+
+    await expect(
+      prepareProductStartFrameImage('https://x/product-square.png', '9:16', normalize),
+    ).resolves.toBe('data:image/png;base64,portrait')
+
+    expect(normalize).toHaveBeenCalledWith(
+      'https://x/product-square.png',
+      '9:16',
+      { fit: 'contain', backgroundColor: '#ffffff' },
+    )
   })
 })

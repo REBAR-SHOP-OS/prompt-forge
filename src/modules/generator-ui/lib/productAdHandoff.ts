@@ -1,3 +1,9 @@
+import {
+  normalizeImageAspect,
+  type AspectRatio,
+  type NormalizeImageAspectOptions,
+} from './normalizeImageAspect'
+
 /**
  * Product Ad → composer Start-frame handoff.
  *
@@ -18,4 +24,24 @@ export async function stageProductAdStartFrame(
       'Could not stage the Product Ad start frame. Check the Start frame thumbnail in the composer, then retry or attach the image manually.',
     )
   }
+}
+
+/**
+ * Convert a product reference into an exact-ratio Start frame before it enters
+ * the video pipeline. `contain` deliberately preserves the whole product;
+ * cropping a reference image can remove load-bearing geometry or branding.
+ */
+export async function prepareProductStartFrameImage(
+  imageUrl: string,
+  aspectRatio: AspectRatio,
+  normalize: (
+    url: string,
+    aspect: AspectRatio,
+    options: NormalizeImageAspectOptions,
+  ) => Promise<string> = normalizeImageAspect,
+): Promise<string> {
+  return normalize(imageUrl, aspectRatio, {
+    fit: 'contain',
+    backgroundColor: '#ffffff',
+  })
 }

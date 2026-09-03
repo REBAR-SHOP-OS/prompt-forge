@@ -139,7 +139,10 @@ import {
   type ContinuityState,
 } from '@/modules/generator-ui/lib/continuity'
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
-import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHandoff'
+import {
+  prepareProductStartFrameImage,
+  stageProductAdStartFrame,
+} from '@/modules/generator-ui/lib/productAdHandoff'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { AccountCenterDialog } from '@/modules/generator-ui/components/AccountCenterDialog'
 import { initialsForName } from '@/modules/generator-ui/lib/initials'
@@ -6122,7 +6125,7 @@ export default function DashboardPage() {
   // switch to image-to-video, and scroll the composer into view.
   // The image must be re-staged into the wan-frames bucket because the
   // jobs-create validator only accepts firstFrameUrl under wan-frames/{userId}/.
-  async function handleUseImageAsStart(url: string): Promise<boolean> {
+  async function handleUseImageAsStart(url: string, productAspect?: Ratio): Promise<boolean> {
     if (!url) return false
     setGenerationMode('image-to-video')
     const seedId = Date.now()
@@ -6146,7 +6149,10 @@ export default function DashboardPage() {
     const userId = session?.user?.id
     try {
       if (!userId) throw new Error('Sign in before using an image as a frame')
-      const res = await fetch(url)
+      const startFrameUrl = productAspect
+        ? await prepareProductStartFrameImage(url, productAspect)
+        : url
+      const res = await fetch(startFrameUrl)
       if (!res.ok) throw new Error(`Could not read image (HTTP ${res.status})`)
       const blob = await res.blob()
       const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
@@ -6810,12 +6816,16 @@ export default function DashboardPage() {
   // nothing to condition on and the film won't resemble the product. Use the
   // REAL product photo itself as the start frame, but first stage it into the
   // wan-frames bucket because jobs-create only accepts frame URLs from there.
-  async function productStartFrame(product: ProjectProduct | null): Promise<string | undefined> {
+  async function productStartFrame(
+    product: ProjectProduct | null,
+    ratio: Ratio,
+  ): Promise<string | undefined> {
     if (!product?.url) return undefined
     const userId = session?.user?.id
     if (!userId) return undefined
     try {
-      const res = await fetchWithTimeout(product.url, 30_000, 'Product image download')
+      const normalizedUrl = await prepareProductStartFrameImage(product.url, ratio)
+      const res = await fetchWithTimeout(normalizedUrl, 30_000, 'Product image download')
       if (!res.ok) throw new Error(`Product image download failed (HTTP ${res.status})`)
       const blob = await withTimeout(res.blob(), 30_000, 'Product image decode')
       const storagePath = `${userId}/product-start-${Date.now()}-${crypto.randomUUID()}.png`
@@ -7082,7 +7092,7 @@ export default function DashboardPage() {
         !characterSeedFrameUrl
       ) {
         setVideoColumnMessage('Preparing product as start frame…')
-        productSeedFrameUrl = await productStartFrame(selectedProduct)
+        productSeedFrameUrl = await productStartFrame(selectedProduct, effectiveRatio)
         if (productSeedFrameUrl) {
           bakedStartFrameUrl = productSeedFrameUrl
           setGenerationMode('image-to-video')
@@ -7471,7 +7481,7 @@ export default function DashboardPage() {
           // instead of drifting in pure text-to-video.
           if (!startFrameUrl && activeProduct) {
             setVideoColumnMessage(`Preparing product as start frame for ${sceneLabel}…`)
-            startFrameUrl = await productStartFrame(activeProduct)
+            startFrameUrl = await productStartFrame(activeProduct, effectiveRatio)
             startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
         } else if (previousJobId) {
@@ -8202,7 +8212,7 @@ export default function DashboardPage() {
         // Source clip had no start frame: seed with the real product photo so the
         // regenerated clip actually reproduces the selected product.
         setVideoColumnMessage('Preparing product as start frame…')
-        regenFirstFrameUrl = await productStartFrame(selectedProduct)
+        regenFirstFrameUrl = await productStartFrame(selectedProduct, ratio)
         setVideoColumnMessage((current) => current === 'Preparing product as start frame…' ? null : current)
       }
       const createdJob = await jobOrchestratorGateway.createJob({
@@ -12881,7 +12891,14 @@ export default function DashboardPage() {
                   aria-checked={active}
                   aria-disabled={isLocked}
                   disabled={isLocked}
-                  onClick={() => { if (!isLocked) setAspectRatio(opt.value) }}
+                  onClick={() => {
+                    if (isLocked) return
+                    setAspectRatio(opt.value)
+                    if (selectedProduct) {
+                      setUploadTarget('Start')
+                      void handleUseImageAsStart(selectedProduct.url, opt.value)
+                    }
+                  }}
                   title={lockTitle}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
                     active
@@ -13686,8 +13703,16 @@ export default function DashboardPage() {
                         key={p.id}
                         type="button"
                         onClick={() => {
-                          setSelectedProduct({ id: p.id, url: p.storage_path, title: p.title?.trim() || 'Selected product', description: p.description ?? null })
+                          const product = {
+                            id: p.id,
+                            url: p.storage_path,
+                            title: p.title?.trim() || 'Selected product',
+                            description: p.description ?? null,
+                          }
+                          setSelectedProduct(product)
                           setProductMenuOpen(false)
+                          setUploadTarget('Start')
+                          void handleUseImageAsStart(product.url, aspectRatio)
                         }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
                           selectedProduct?.id === p.id
