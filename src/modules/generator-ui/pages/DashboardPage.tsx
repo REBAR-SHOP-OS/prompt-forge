@@ -9619,14 +9619,21 @@ export default function DashboardPage() {
             </TooltipContent>
           </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <ThemeSwitcher triggerClassName="h-10 w-10 rounded-full border border-violet-500/30 bg-violet-500/[0.08] text-violet-400 shadow-sm transition-all duration-200 hover:scale-110 hover:border-violet-500/45 hover:bg-violet-500/15 active:scale-95" />
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs">
-              Theme
-            </TooltipContent>
-          </Tooltip>
+          {/*
+            No Radix Tooltip on this one, deliberately. `TooltipTrigger asChild`
+            clones its child with the trigger's props and a ref, and
+            ThemeSwitcher is a plain function component that accepts only
+            `triggerClassName` — it neither forwards a ref nor spreads the rest
+            onto its button. The tooltip would silently never open, and React
+            would warn about the dropped ref.
+
+            Its inner button is also already a `PopoverTrigger asChild`, so
+            making this work means composing two asChild consumers onto one
+            element — more machinery than a hover label is worth here. The
+            button carries `title="Theme"` and `aria-label="Change theme"`, so
+            it still has a hover label and an accessible name.
+          */}
+          <ThemeSwitcher triggerClassName="h-10 w-10 rounded-full border border-violet-500/30 bg-violet-500/[0.08] text-violet-400 shadow-sm transition-all duration-200 hover:scale-110 hover:border-violet-500/45 hover:bg-violet-500/15 active:scale-95" />
 
           <Tooltip>
             <TooltipTrigger asChild>
