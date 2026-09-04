@@ -26,16 +26,23 @@ describe('DashboardPage Library header icon', () => {
   })
 
   it('renders Library as a larger circular first control before the profile avatar', () => {
+    // Assert each lookup succeeded BEFORE using its result. indexOf returns -1
+    // and match returns undefined when the markup is renamed, and slicing from
+    // -1 quietly hands back almost the whole file while `.toContain` on
+    // undefined throws a TypeError — either way the failure names the wrong
+    // thing and sends the next reader hunting.
     const containerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
+    expect(containerStart, 'header container marker not found').toBeGreaterThan(-1)
+
     const containerSlice = source.slice(containerStart, containerStart + 4000)
     const libraryIdx = containerSlice.indexOf('aria-label="Library"')
     const avatarIdx = containerSlice.indexOf('aria-label="Open account menu"')
-    const libraryButton = containerSlice.match(/aria-label="Library"[\s\S]*?<\/button>/)?.[0]
-
-    expect(containerStart).toBeGreaterThan(-1)
-    expect(libraryIdx).toBeGreaterThan(-1)
-    expect(avatarIdx).toBeGreaterThan(-1)
+    expect(libraryIdx, 'Library control not found in the header container').toBeGreaterThan(-1)
+    expect(avatarIdx, 'account avatar not found in the header container').toBeGreaterThan(-1)
     expect(libraryIdx).toBeLessThan(avatarIdx)
+
+    const libraryButton = containerSlice.match(/aria-label="Library"[\s\S]*?<\/button>/)?.[0]
+    expect(libraryButton, 'Library <button> markup not matched').toBeDefined()
     expect(libraryButton).toContain('h-11 w-11')
     expect(libraryButton).toContain('rounded-full')
     expect(libraryButton).toContain('<Library className="h-5 w-5"')

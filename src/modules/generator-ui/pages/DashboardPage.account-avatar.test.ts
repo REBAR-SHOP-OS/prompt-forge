@@ -82,7 +82,12 @@ describe('DashboardPage account avatar header control', () => {
 
   it('Library is the first child and Avatar dropdown is the second child in the flex row', () => {
     // Extract the flex container content and verify child order.
+    // Assert the marker was found before slicing on it: indexOf returns -1 when
+    // the class list is reworded, and `slice(-1, 3999)` then returns the last
+    // character of the file, so every assertion below would fail pointing at
+    // child order rather than at the renamed marker that actually broke.
     const containerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
+    expect(containerStart, 'header container marker not found').toBeGreaterThan(-1)
     const containerSlice = source.slice(containerStart, containerStart + 4000)
 
     // First child: the TooltipProvider wrapping the Library button
