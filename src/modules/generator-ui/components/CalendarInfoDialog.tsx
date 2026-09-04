@@ -4,6 +4,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/integrations/supabase/client'
+import { request } from '@/core/api/client'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import {
@@ -115,11 +116,11 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setDetailLoadingKey(key)
     setDetailError(null)
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('day-info', {
-        body: { occasion: { title: occ.title, date: occ.date, category: occ.category }, lang },
+      const data = await request<{ occasion?: OccasionDetail }>('/day-info', {
+        method: 'POST',
+        body: JSON.stringify({ occasion: { title: occ.title, date: occ.date, category: occ.category }, lang }),
       })
-      if (fnError) throw fnError
-      const detail = (data as { occasion?: OccasionDetail })?.occasion
+      const detail = data.occasion
       setDetailCache((c) => ({
         ...c,
         [key]: {
