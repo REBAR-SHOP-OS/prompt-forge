@@ -3,10 +3,10 @@ import { describe, it, expect } from 'vitest'
 // or __dirname needed at runtime. Works identically in jsdom and node environments.
 import source from './DashboardPage.tsx?raw'
 
-// Regression coverage for the top-left account control: the Avatar is the first
-// member of the same flex row as the Library icon, not an independently fixed element.
+// Regression coverage for the top-left account control: the Avatar remains in
+// the same flex row immediately after the larger circular Library control.
 describe('DashboardPage account avatar header control', () => {
-  it('renders a circular avatar as the first header control', () => {
+  it('keeps the existing circular avatar profile control', () => {
     expect(source).toContain('aria-label="Open account menu"')
     expect(source).toContain('<Avatar className="h-10 w-10 ring-1 ring-border">')
     expect(source).toContain('rounded-full')
@@ -65,8 +65,8 @@ describe('DashboardPage account avatar header control', () => {
 
     expect(avatarIdx).toBeGreaterThan(-1)
     expect(libraryIdx).toBeGreaterThan(-1)
-    // Avatar must come before Library in the container.
-    expect(avatarIdx).toBeLessThan(libraryIdx)
+    // Library must come first, with Avatar immediately after it.
+    expect(libraryIdx).toBeLessThan(avatarIdx)
   })
 
   it('the flex container wraps both Avatar dropdown and Library button (no separate fixed div for icons)', () => {
@@ -80,18 +80,23 @@ describe('DashboardPage account avatar header control', () => {
     expect(oldIconRowCount).toBe(0)
   })
 
-  it('Avatar dropdown is the first child and Library is the second child in the flex row', () => {
+  it('Library is the first child and Avatar dropdown is the second child in the flex row', () => {
     // Extract the flex container content and verify child order.
+    // Assert the marker was found before slicing on it: indexOf returns -1 when
+    // the class list is reworded, and `slice(-1, 3999)` then returns the last
+    // character of the file, so every assertion below would fail pointing at
+    // child order rather than at the renamed marker that actually broke.
     const containerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
+    expect(containerStart, 'header container marker not found').toBeGreaterThan(-1)
     const containerSlice = source.slice(containerStart, containerStart + 4000)
 
-    // First child: the DropdownMenu wrapping the Avatar button
-    const dropdownMenuIdx = containerSlice.indexOf('<DropdownMenu>')
-    // Second child: the TooltipProvider wrapping the Library button
+    // First child: the TooltipProvider wrapping the Library button
     const tooltipProviderIdx = containerSlice.indexOf('<TooltipProvider')
+    // Second child: the DropdownMenu wrapping the Avatar button
+    const dropdownMenuIdx = containerSlice.indexOf('<DropdownMenu>')
 
     expect(dropdownMenuIdx).toBeGreaterThan(-1)
     expect(tooltipProviderIdx).toBeGreaterThan(-1)
-    expect(dropdownMenuIdx).toBeLessThan(tooltipProviderIdx)
+    expect(tooltipProviderIdx).toBeLessThan(dropdownMenuIdx)
   })
 })
