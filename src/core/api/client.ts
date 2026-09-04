@@ -2,8 +2,25 @@
 // Module-specific calls live in src/modules/<domain>/api.ts and use this client.
 import { supabase } from "@/integrations/supabase/client";
 
-const PROJECT_ID = "sacxoanuyetjfrfllkzx";
-export const FUNCTIONS_BASE = `https://${PROJECT_ID}.supabase.co/functions/v1`;
+// Derive the functions base from the SAME configured URL the Supabase client
+// uses, not from a second hardcoded project id.
+//
+// `authHeader` below mints its token from `supabase.auth`, which targets
+// `VITE_SUPABASE_URL`. When that is set to a non-default project — a staging or
+// local build — the old constant sent that project's token to the production
+// project instead, and every call through this client came back 401 with
+// nothing pointing at the cause.
+//
+// The default is duplicated from `@/integrations/supabase/client` rather than
+// imported because that file is generated ("Do not edit it directly") and
+// exports only the client. It MUST stay byte-identical to the default there:
+// `VITE_SUPABASE_URL` is not set in the build environment, so production
+// resolves through this fallback, and PR #83 already shipped one outage by
+// changing a fallback in that file to an empty string. The regression test
+// pins that the unset case still produces the historical production URL.
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL || "https://sacxoanuyetjfrfllkzx.supabase.co";
+export const FUNCTIONS_BASE = `${SUPABASE_URL.replace(/\/+$/, "")}/functions/v1`;
 const PUBLIC_FUNCTIONS = new Set(["/health"]);
 
 let sessionRecoveryPromise: Promise<string | null> | null = null;
