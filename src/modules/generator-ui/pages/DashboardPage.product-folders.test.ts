@@ -36,8 +36,10 @@ describe('Storage Product Photos folders', () => {
     const enterPoints = [
       // createProductFolder — new draft folder becomes active
       /setActiveProductFolder\(folder\)[\s\S]{0,600}?setSelectedArchiveIds\(new Set\(\)\)/,
-      // openProductFolder — existing folder becomes active
-      /storageFolderId: storedProductFolderId\(group\.photos\[0\]\),\s*\}\)\s*setSelectedArchiveIds\(new Set\(\)\)/,
+      // openProductFolder — existing folder becomes active. The id is now
+      // resolved before activating (photo row, or the persisted record for an
+      // empty folder), so the clear follows the single setActiveProductFolder.
+      /setActiveProductFolder\(\{ groupId: group\.id, name: group\.name, storageFolderId \}\)\s*setSelectedArchiveIds\(new Set\(\)\)/,
     ]
     for (const pattern of enterPoints) expect(source).toMatch(pattern)
 
@@ -78,6 +80,37 @@ describe('Storage Product Photos folders', () => {
     expect(source).toContain(".from('product_folders')")
     expect(source).toContain('.insert({ user_id: userId, storage_folder_id: storageFolderId, name })')
     expect(source).toContain("mergeEmptyProductFolders(groupProductPhotos(archiveProductImages), productFolders)")
+  })
+
+  // openProductFolder resolves the storage id from a photo row when there is
+  // one, and from the persisted product_folders record when there is not.
+  // The distinction matters because handleProductPhotoSelected silently falls
+  // back to the flat legacy path when the id is missing:
+  //
+  //  - legacy title-grouped folder → id is legitimately null, and the flat
+  //    path is exactly where the rest of that group already lives. Must still
+  //    open.
+  //  - empty folder with no resolvable record → the flat path would drop the
+  //    upload OUTSIDE the folder on screen, and it would then reappear as a
+  //    second title-grouped folder of the same name. Must NOT open.
+  it('opens a folder only when its uploads can land inside it', () => {
+    expect(source).toContain('const hasPhotos = group.photos.length > 0')
+    expect(source).toMatch(
+      /const storageFolderId = hasPhotos\s*\?\s*storedProductFolderId\(group\.photos\[0\]\)\s*:\s*productFolderStorageId\(group, productFolders\)/,
+    )
+    // Guarded on the empty case ONLY — `!storageFolderId` alone would refuse to
+    // open every legacy folder, since those have no folder id by definition.
+    expect(source).toContain('if (!hasPhotos && !storageFolderId) {')
+    expect(source).not.toMatch(/if \(!storageFolderId\) \{\s*setProductUploadError/)
+
+    // Resolved once, before activating. The earlier shape activated with an
+    // undefined id and corrected it in a second setState.
+    const opener = source.slice(
+      source.indexOf('const openProductFolder ='),
+      source.indexOf('const handlePickProductPhoto ='),
+    )
+    expect(opener.length).toBeGreaterThan(0)
+    expect((opener.match(/setActiveProductFolder\(/g) || []).length).toBe(1)
   })
 
   it('an empty product folder persists across reload', async () => {

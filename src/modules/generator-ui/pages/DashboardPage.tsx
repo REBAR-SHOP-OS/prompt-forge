@@ -5591,23 +5591,33 @@ export default function DashboardPage() {
   }
 
   const openProductFolder = (group: ProductPhotoGroup<UserImageItem>) => {
-    setActiveProductFolder({
-      groupId: group.id,
-      name: group.name,
-      storageFolderId: storedProductFolderId(group.photos[0]),
-    })
+    // storedProductFolderId needs a photo row to read the folder id from; an
+    // empty folder (a persisted row with no photos uploaded yet) has none, so
+    // fall back to the persisted product_folders record. Resolved ONCE, before
+    // activating, rather than activating with an undefined id and correcting
+    // it afterwards.
+    const hasPhotos = group.photos.length > 0
+    const storageFolderId = hasPhotos
+      ? storedProductFolderId(group.photos[0])
+      : productFolderStorageId(group, productFolders)
+
+    // A null id is CORRECT for a legacy title-grouped folder — its photos live
+    // at the flat path and handleProductPhotoSelected's fallback puts new ones
+    // there too, which is where the rest of that group already is. So only the
+    // EMPTY case is guarded: an empty group exists solely because a
+    // product_folders row produced it, so an unresolvable id there means the
+    // record has not arrived, and activating anyway would send uploads to the
+    // flat path — outside the folder on screen. They would then reappear as a
+    // second, title-grouped folder of the same name, since the rows still carry
+    // the folder name as their title.
+    if (!hasPhotos && !storageFolderId) {
+      setProductUploadError('This folder is still loading. Try again in a moment.')
+      return
+    }
+
+    setActiveProductFolder({ groupId: group.id, name: group.name, storageFolderId })
     setSelectedArchiveIds(new Set())
     setProductUploadError(null)
-    // storedProductFolderId needs a photo row to read the folder id from; an
-    // empty folder (a persisted row with no photos uploaded yet) has none.
-    // Resolve it from the persisted product_folders record instead so it
-    // stays a valid upload target even before its first photo lands.
-    if (group.photos.length === 0) {
-      const persistedId = productFolderStorageId(group, productFolders)
-      if (persistedId) {
-        setActiveProductFolder({ groupId: group.id, name: group.name, storageFolderId: persistedId })
-      }
-    }
   }
 
   const handlePickProductPhoto = () => {
