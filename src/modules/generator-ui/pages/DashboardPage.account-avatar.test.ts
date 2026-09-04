@@ -3,8 +3,14 @@ import { describe, it, expect } from 'vitest'
 // or __dirname needed at runtime. Works identically in jsdom and node environments.
 import source from './DashboardPage.tsx?raw'
 
+// The top-left control group. Declared once so a layout change breaks in a
+// single place with a clear message, instead of four copies of the literal
+// each failing on a downstream assertion that names the wrong thing.
+const HEADER_CONTAINER = 'fixed left-4 top-4 flex flex-col items-center gap-2.5'
+
 // Regression coverage for the top-left account control: the Avatar remains in
-// the same flex row immediately after the larger circular Library control.
+// the same vertical control rail immediately after the Library control, and
+// the two are the same size.
 describe('DashboardPage account avatar header control', () => {
   it('keeps the existing circular avatar profile control', () => {
     expect(source).toContain('aria-label="Open account menu"')
@@ -51,13 +57,13 @@ describe('DashboardPage account avatar header control', () => {
   })
 
   it('Avatar and Library are inside the same flex container div', () => {
-    // Find the flex container that holds the top-left icon row.
-    // After the fix it starts with `fixed left-4 top-4 flex items-center gap-2`.
-    const containerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
-    expect(containerStart).toBeGreaterThan(-1)
+    // Find the flex container that holds the top-left control group. It is a
+    // vertical rail: `fixed left-4 top-4 flex flex-col items-center gap-2.5`.
+    const containerStart = source.indexOf(HEADER_CONTAINER)
+    expect(containerStart, 'header container marker not found').toBeGreaterThan(-1)
 
     // Extract a generous slice of the file from that point to capture the container body.
-    const slice = source.slice(containerStart, containerStart + 4000)
+    const slice = source.slice(containerStart, containerStart + 8000)
 
     // Both the Avatar DropdownMenu and the Library button must be inside this region.
     const avatarIdx = slice.indexOf('aria-label="Open account menu"')
@@ -86,9 +92,9 @@ describe('DashboardPage account avatar header control', () => {
     // the class list is reworded, and `slice(-1, 3999)` then returns the last
     // character of the file, so every assertion below would fail pointing at
     // child order rather than at the renamed marker that actually broke.
-    const containerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
+    const containerStart = source.indexOf(HEADER_CONTAINER)
     expect(containerStart, 'header container marker not found').toBeGreaterThan(-1)
-    const containerSlice = source.slice(containerStart, containerStart + 4000)
+    const containerSlice = source.slice(containerStart, containerStart + 8000)
 
     // First child: the TooltipProvider wrapping the Library button
     const tooltipProviderIdx = containerSlice.indexOf('<TooltipProvider')
@@ -98,5 +104,32 @@ describe('DashboardPage account avatar header control', () => {
     expect(dropdownMenuIdx).toBeGreaterThan(-1)
     expect(tooltipProviderIdx).toBeGreaterThan(-1)
     expect(tooltipProviderIdx).toBeLessThan(dropdownMenuIdx)
+  })
+
+  // Carried over from the superseded #219: the two controls the user reads as a
+  // pair must actually be the same size. The rail stacks them vertically now,
+  // so a mismatch is more visible than it was side by side, not less.
+  it('renders Library and Profile with the same circular outer dimensions', () => {
+    const headerStart = source.indexOf(HEADER_CONTAINER)
+    expect(headerStart, 'header container marker not found').toBeGreaterThan(-1)
+    const header = source.slice(headerStart, headerStart + 8000)
+
+    const extractButton = (ariaLabel: string) => {
+      const labelIndex = header.indexOf(`aria-label="${ariaLabel}"`)
+      expect(labelIndex, `${ariaLabel} control not found`).toBeGreaterThan(-1)
+      const buttonStart = header.lastIndexOf('<button', labelIndex)
+      expect(buttonStart, `${ariaLabel} <button> opening tag not found`).toBeGreaterThan(-1)
+      const buttonEnd = header.indexOf('</button>', labelIndex)
+      expect(buttonEnd, `${ariaLabel} <button> closing tag not found`).toBeGreaterThan(-1)
+      return header.slice(buttonStart, buttonEnd + '</button>'.length)
+    }
+
+    const libraryButton = extractButton('Library')
+    const profileButton = extractButton('Open account menu')
+
+    expect(libraryButton).toContain('h-10 w-10')
+    expect(libraryButton).toContain('rounded-full')
+    expect(profileButton).toContain('h-10 w-10')
+    expect(profileButton).toContain('rounded-full')
   })
 })
