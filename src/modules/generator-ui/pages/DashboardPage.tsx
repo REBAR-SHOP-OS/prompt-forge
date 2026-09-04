@@ -5516,6 +5516,12 @@ export default function DashboardPage() {
     const folder = { groupId: `folder:${storageFolderId}`, name, storageFolderId }
     setDraftProductFolder(folder)
     setActiveProductFolder(folder)
+    // Selection is scoped to what is on screen, but the state is not — ids
+    // ticked in another folder survive the switch and stay armed for bulk
+    // delete while the UI shows a folder they do not belong to. Closing a
+    // folder already clears it; entering one has to as well, or the delete
+    // button acts on photos the user can no longer see.
+    setSelectedArchiveIds(new Set())
     setProductFolderName('')
     setProductUploadError(null)
     setIsCreatingProductFolder(false)
@@ -5527,6 +5533,7 @@ export default function DashboardPage() {
       name: group.name,
       storageFolderId: storedProductFolderId(group.photos[0]),
     })
+    setSelectedArchiveIds(new Set())
     setProductUploadError(null)
   }
 
@@ -5616,10 +5623,26 @@ export default function DashboardPage() {
     const norm = (s: string) =>
       s.replace(/\.[^/.]+$/, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
     // Build a lookup of current product images by normalized base name.
-    const byName = new Map<string, UserImageItem>()
-    for (const img of archiveProductImages) {
-      const key = norm(img.title ?? '')
-      if (key && !byName.has(key)) byName.set(key, img)
+    //
+    // Folders changed what a title means. Every angle uploaded into a folder is
+    // written with `title: folder.name`, so a title-keyed map collapses a whole
+    // folder to one entry and `!byName.has(key)` silently keeps whichever angle
+    // came back first — a caption file would land on an arbitrary angle and the
+    // rest would be unreachable.
+    //
+    // Not fixed by keying off the storage basename, which is the obvious
+    // suggestion: new uploads are stored as `{uuid}.{ext}`, so no caption file a
+    // person would ever name can match one. The name that exists on disk and on
+    // screen is the FOLDER name, so a caption now applies to the folder — every
+    // angle in it — which is coherent under the new model instead of arbitrary.
+    // Legacy title-grouped rows keep matching one image each, as before.
+    const byName = new Map<string, UserImageItem[]>()
+    for (const group of archiveProductGroups) {
+      const key = norm(group.name)
+      if (!key) continue
+      const existing = byName.get(key)
+      if (existing) existing.push(...group.photos)
+      else byName.set(key, [...group.photos])
     }
     let matched = 0
     const unmatched: string[] = []
@@ -5636,8 +5659,8 @@ export default function DashboardPage() {
           continue
         }
         const key = norm(file.name)
-        const target = byName.get(key)
-        if (!target) {
+        const targets = byName.get(key)
+        if (!targets || targets.length === 0) {
           unmatched.push(file.name)
           continue
         }
@@ -5653,17 +5676,23 @@ export default function DashboardPage() {
           continue
         }
         try {
+          const targetIds = targets.map((t) => t.id)
           const { error } = await supabase
             .from('generator_user_images')
             .update({ description: text })
-            .eq('id', target.id)
+            .in('id', targetIds)
             .eq('user_id', userId)
           if (error) throw error
+          const idSet = new Set(targetIds)
           setArchiveProductImages((prev) =>
-            prev.map((i) => (i.id === target.id ? { ...i, description: text } : i)),
+            prev.map((i) => (idSet.has(i.id) ? { ...i, description: text } : i)),
           )
-          setProductDescDraft((prev) => ({ ...prev, [target.id]: text }))
-          setSelectedProduct((prev) => (prev && prev.id === target.id ? { ...prev, description: text } : prev))
+          setProductDescDraft((prev) => {
+            const next = { ...prev }
+            for (const id of targetIds) next[id] = text
+            return next
+          })
+          setSelectedProduct((prev) => (prev && idSet.has(prev.id) ? { ...prev, description: text } : prev))
           matched += 1
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'update failed'
