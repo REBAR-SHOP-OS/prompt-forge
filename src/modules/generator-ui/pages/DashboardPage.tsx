@@ -9505,7 +9505,7 @@ export default function DashboardPage() {
                 aria-label="Library"
                 title="Library"
                 onClick={() => setIsApprovedPanelOpen((open) => !open)}
-                className={`relative grid h-11 w-11 place-items-center rounded-full border shadow-sm transition ${
+                className={`relative grid h-10 w-10 place-items-center rounded-full border shadow-sm transition ${
                   isApprovedPanelOpen
                     ? 'border-red-500/50 bg-red-500/15 text-danger'
                     : 'border-red-500/30 bg-red-500/[0.08] text-danger hover:border-red-500/45 hover:bg-red-500/15'

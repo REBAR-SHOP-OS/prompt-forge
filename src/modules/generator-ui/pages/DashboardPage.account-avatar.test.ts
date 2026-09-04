@@ -4,12 +4,35 @@ import { describe, it, expect } from 'vitest'
 import source from './DashboardPage.tsx?raw'
 
 // Regression coverage for the top-left account control: the Avatar remains in
-// the same flex row immediately after the larger circular Library control.
+// the same flex row immediately after the equally sized circular Library control.
 describe('DashboardPage account avatar header control', () => {
   it('keeps the existing circular avatar profile control', () => {
     expect(source).toContain('aria-label="Open account menu"')
+    expect(source).toContain('className="grid h-10 w-10 place-items-center rounded-full')
     expect(source).toContain('<Avatar className="h-10 w-10 ring-1 ring-border">')
     expect(source).toContain('rounded-full')
+  })
+
+  it('renders Library and Profile with the same circular outer dimensions', () => {
+    const headerStart = source.indexOf('fixed left-4 top-4 flex items-center gap-2')
+    expect(headerStart, 'header container marker not found').toBeGreaterThan(-1)
+    const header = source.slice(headerStart, headerStart + 4000)
+
+    const extractButton = (ariaLabel: string) => {
+      const labelIndex = header.indexOf(`aria-label="${ariaLabel}"`)
+      expect(labelIndex, `${ariaLabel} control not found`).toBeGreaterThan(-1)
+      const buttonStart = header.lastIndexOf('<button', labelIndex)
+      const buttonEnd = header.indexOf('</button>', labelIndex)
+      return header.slice(buttonStart, buttonEnd + '</button>'.length)
+    }
+
+    const libraryButton = extractButton('Library')
+    const profileButton = extractButton('Open account menu')
+
+    expect(libraryButton).toContain('h-10 w-10')
+    expect(libraryButton).toContain('rounded-full')
+    expect(profileButton).toContain('h-10 w-10')
+    expect(profileButton).toContain('rounded-full')
   })
 
   it('derives initials from first/last name with email fallback', () => {
