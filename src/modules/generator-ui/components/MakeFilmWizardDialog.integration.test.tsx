@@ -340,11 +340,12 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
     // The initial generation must receive the required product plus the sheet
-    // URL and characterSheet=true.
+    // URL and characterSheet=true. Product is now the FULL grouped array (one
+    // photo here, so a single-element array), not a single rotated string.
     const calls = generateSceneImage.mock.calls
     expect(calls.length).toBeGreaterThan(0)
     for (const c of calls) {
-      expect(c[2]).toContain('product-1')
+      expect(c[2]).toEqual(expect.arrayContaining([expect.stringContaining('product-1')]))
       expect(c[3]).toContain('sheet-1') // character url from snapshot
       expect(c[6]).toBe(true) // characterSheet flag from snapshot
     }
@@ -613,7 +614,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     expect(options.productName).not.toContain('001')
   })
 
-  it('selects one canonical product folder and rotates its saved angles across scenes', async () => {
+  it('selects one canonical product folder and sends every saved angle to every scene', async () => {
     mockImageRows([
       { id: 'stirrup-008', title: 'Rebar Stirrup 008', image_type: null },
       { id: 'stirrup-007', title: 'Rebar Stirrup 007', image_type: null },
@@ -639,17 +640,15 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
 
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
-    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual([
-      'https://x/user/stirrup-008.png',
-      'https://x/user/stirrup-007.png',
-      'https://x/user/stirrup-008.png',
-      'https://x/user/stirrup-007.png',
-      'https://x/user/stirrup-008.png',
-      'https://x/user/stirrup-007.png',
-    ])
+    // A single generated shot can only show one angle, but every scene must
+    // still be grounded by the FULL saved group — not one angle rotated by
+    // scene index. Every one of the 6 calls receives both angles, in order.
+    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual(
+      Array.from({ length: 6 }, () => ['https://x/user/stirrup-008.png', 'https://x/user/stirrup-007.png']),
+    )
   }, 15_000)
 
-  it('uses an explicit product-folder id to keep differently labelled views together', async () => {
+  it('uses an explicit product-folder id to keep differently labelled views together, all reaching every scene', async () => {
     mockImageRows([
       { id: 'front', title: 'Rebar Stirrup', image_type: null, storage_path: 'user-1/products/folder-7/front.png' },
       { id: 'side', title: 'Side view', image_type: null, storage_path: 'user-1/products/folder-7/side.png' },
@@ -670,14 +669,9 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     await waitFor(() => expect(writeScenario).toHaveBeenCalled())
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
-    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual([
-      'https://signed/front.png',
-      'https://signed/side.png',
-      'https://signed/front.png',
-      'https://signed/side.png',
-      'https://signed/front.png',
-      'https://signed/side.png',
-    ])
+    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual(
+      Array.from({ length: 6 }, () => ['https://signed/front.png', 'https://signed/side.png']),
+    )
   }, 15_000)
 
   // Grouping put up to four <img> tiles behind one card. The card's onError
@@ -709,12 +703,13 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     fireEvent.click(screen.getByText('Write scenario'))
     await waitFor(() => expect(writeScenario).toHaveBeenCalled())
 
-    // The dropped angle is gone from the rotation, not merely hidden in the UI.
+    // The dropped angle is gone from the group entirely, not merely hidden in
+    // the UI — every remaining scene call must carry only the surviving angle.
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
     const used = generateSceneImage.mock.calls.map((call) => call[2])
-    expect(used).toEqual(Array.from({ length: 6 }, () => 'https://x/user/stirrup-008.png'))
-    expect(used).not.toContain('https://x/user/stirrup-007.png')
+    expect(used).toEqual(Array.from({ length: 6 }, () => ['https://x/user/stirrup-008.png']))
+    for (const urls of used) expect(urls).not.toContain('https://x/user/stirrup-007.png')
   }, 15_000)
 
   it('uses a saved user product to prefill Product Name and preserves a manual override through prompt and film identity', async () => {

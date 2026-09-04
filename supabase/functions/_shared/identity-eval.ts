@@ -52,16 +52,23 @@ export interface IdentityEvalOutcome {
 export type EvalVerdict = "pass" | "identity-fail" | "error";
 
 export const ALLOWED_ROLES: readonly ReferenceRole[] = ["product", "character"];
-export const MAX_REFERENCE_IMAGES = 2;
+// A real product photo folder can hold several angles of the same product,
+// all of which should ground generation at once (see selectEvaluatedSpecs
+// below for how identity-eval judges only a bounded subset of them). 6 covers
+// a realistic folder (up to 5 angles) plus one character reference.
+export const MAX_REFERENCE_IMAGES = 6;
 
 /**
  * Validate the reference payload. Returns the validated specs (url + role +
  * characterSheet) or a clear error string. Enforces:
  *   - roles must be one of "product" | "character",
  *   - referenceRoles and referenceImageUrls must be the same length,
- *   - at most one product and one character (max 2 references),
- *   - roles must be unique (no duplicate product or duplicate character),
- *   - deterministic order: product first, then character,
+ *   - any number of product references (every grouped angle of one product)
+ *     but at most one character, bounded overall by MAX_REFERENCE_IMAGES,
+ *   - character role must be unique (no duplicate character; multiple
+ *     product entries are allowed and expected for a multi-angle folder),
+ *   - deterministic order: every product spec first (in its original relative
+ *     order), then the character spec,
  *   - each URL must be a non-empty string.
  *
  * The optional `characterSheets` array (aligned 1:1 with the ORIGINAL input
@@ -98,10 +105,10 @@ export function validateReferenceSpecs(
   if (urlList.length > MAX_REFERENCE_IMAGES) {
     return {
       ok: false,
-      error: `At most ${MAX_REFERENCE_IMAGES} reference images are allowed (one product and one character).`,
+      error: `At most ${MAX_REFERENCE_IMAGES} reference images are allowed.`,
     };
   }
-  const seen = new Set<string>();
+  const seenRoles = new Set<string>();
   const specs: ReferenceSpec[] = [];
   for (let i = 0; i < urlList.length; i++) {
     const role = roleList[i].toLowerCase();
@@ -111,22 +118,41 @@ export function validateReferenceSpecs(
         error: `Invalid reference role "${roleList[i]}". Allowed roles: product, character.`,
       };
     }
-    if (seen.has(role)) {
+    // Multiple "product" entries are allowed (every grouped angle of one
+    // product); only "character" is capped at one.
+    if (role === "character" && seenRoles.has("character")) {
       return {
         ok: false,
-        error: `Duplicate reference role "${role}". Only one product and one character are allowed.`,
+        error: `Duplicate reference role "character". Only one character is allowed.`,
       };
     }
-    seen.add(role);
+    seenRoles.add(role);
     // Attach the character-sheet flag to THIS spec (by original index) BEFORE
     // the deterministic sort below, so the flag stays with its own reference.
     const characterSheet = role === "character" && sheetList[i] === true;
     specs.push({ url: urlList[i], role: role as ReferenceRole, characterSheet });
   }
-  // Deterministic order: product first, then character. The characterSheet
-  // flag was attached per-spec above, so reordering cannot misalign it.
+  // Deterministic order: every product spec first (in its original relative
+  // order — Array.prototype.sort is stable), then the character spec. The
+  // characterSheet flag was attached per-spec above, so reordering cannot
+  // misalign it.
   specs.sort((a, b) => (a.role === "product" ? -1 : 1) - (b.role === "product" ? -1 : 1));
   return { ok: true, specs };
+}
+
+/**
+ * Select the subset of validated specs that identity-eval should actually
+ * judge for pass/fail: the FIRST product spec plus the character spec, if
+ * present. A single generated image can only visually show one product
+ * angle, so judging every grouped angle against it would fail spuriously —
+ * the remaining product specs are generation-only grounding, not eval
+ * targets. Order matches validateReferenceSpecs' deterministic output
+ * (product before character).
+ */
+export function selectEvaluatedSpecs(specs: ReferenceSpec[]): ReferenceSpec[] {
+  const firstProduct = specs.find((s) => s.role === "product");
+  const character = specs.find((s) => s.role === "character");
+  return [firstProduct, character].filter((s): s is ReferenceSpec => s !== undefined);
 }
 
 /**
