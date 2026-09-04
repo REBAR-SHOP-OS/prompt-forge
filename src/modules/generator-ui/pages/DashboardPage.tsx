@@ -9411,6 +9411,32 @@ export default function DashboardPage() {
       />
 
       <div className={`fixed left-4 top-4 flex items-center gap-2 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Library"
+                title="Library"
+                onClick={() => setIsApprovedPanelOpen((open) => !open)}
+                className={`relative grid h-11 w-11 place-items-center rounded-full border shadow-sm transition ${
+                  isApprovedPanelOpen
+                    ? 'border-red-500/50 bg-red-500/15 text-danger'
+                    : 'border-red-500/30 bg-red-500/[0.08] text-danger hover:border-red-500/45 hover:bg-red-500/15'
+                }`}
+              >
+                <Library className="h-5 w-5" aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-surface-2 px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
+                  {approvedIds.size}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Library
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -9440,31 +9466,6 @@ export default function DashboardPage() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <TooltipProvider delayDuration={150}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="Library"
-                title="Library"
-                onClick={() => setIsApprovedPanelOpen((open) => !open)}
-                className={`relative grid h-9 w-9 place-items-center rounded-md border transition ${
-                  isApprovedPanelOpen
-                    ? 'border-red-500/40 bg-red-500/10 text-danger'
-                    : 'border-transparent text-danger hover:border-border hover:bg-accent/45 hover:text-danger'
-                }`}
-              >
-                <Library className="h-[18px] w-[18px]" aria-hidden="true" />
-                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-surface-2 px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
-                  {approvedIds.size}
-                </span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              Library
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
 
         {(() => {
           const isAlert = upcomingOccasion !== null
