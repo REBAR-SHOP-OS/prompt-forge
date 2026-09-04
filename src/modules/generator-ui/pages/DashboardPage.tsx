@@ -9496,7 +9496,7 @@ export default function DashboardPage() {
         onChange={handleFileInputChange}
       />
 
-      <div className={`fixed left-4 top-4 flex items-center gap-2 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+      <div className={`fixed left-4 top-4 flex flex-col items-center gap-2.5 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
         <TooltipProvider delayDuration={150}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -9505,7 +9505,7 @@ export default function DashboardPage() {
                 aria-label="Library"
                 title="Library"
                 onClick={() => setIsApprovedPanelOpen((open) => !open)}
-                className={`relative grid h-11 w-11 place-items-center rounded-full border shadow-sm transition ${
+                className={`relative grid h-10 w-10 place-items-center rounded-full border shadow-sm transition-all duration-200 hover:scale-110 active:scale-95 ${
                   isApprovedPanelOpen
                     ? 'border-red-500/50 bg-red-500/15 text-danger'
                     : 'border-red-500/30 bg-red-500/[0.08] text-danger hover:border-red-500/45 hover:bg-red-500/15'
@@ -9517,127 +9517,143 @@ export default function DashboardPage() {
                 </span>
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
+            <TooltipContent side="right" className="text-xs">
               Library
             </TooltipContent>
           </Tooltip>
+
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="grid h-10 w-10 place-items-center rounded-full border border-transparent transition-all duration-200 hover:scale-110 hover:border-border hover:bg-accent/45 active:scale-95"
+                    type="button"
+                    aria-label="Open account menu"
+                  >
+                    <Avatar className="h-10 w-10 ring-1 ring-border">
+                      {profile?.avatar_url ? (
+                        <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
+                      ) : null}
+                      <AvatarFallback className="bg-accent text-sm font-semibold text-foreground/90">
+                        {initialsForName(profile?.first_name ?? '', profile?.last_name ?? '', profile?.email ?? session?.user.email ?? '')}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="text-xs">
+                Account
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="start" side="right" sideOffset={8} className="w-64">
+              <DropdownMenuItem onSelect={() => setIsAccountCenterOpen(true)} className="flex items-center gap-2 text-xs font-normal text-muted-foreground focus:text-foreground/90">
+                <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => { void signOut() }} className="text-danger focus:text-danger">
+                <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+                <span>Sign out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {(() => {
+            const isAlert = upcomingOccasion !== null
+            const occasionLabel = upcomingOccasion
+              ? upcomingOccasion.daysAway === 0
+                ? `${upcomingOccasion.title} today`
+                : upcomingOccasion.daysAway === 1
+                  ? `${upcomingOccasion.title} tomorrow`
+                  : `${upcomingOccasion.title} in ${upcomingOccasion.daysAway} days`
+              : 'No occasion'
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => { setIsCalendarOpen(true) }}
+                    aria-label={isAlert ? `${occasionLabel} — open calendar` : 'Open calendar'}
+                    className={`relative grid h-10 w-10 place-items-center rounded-full border shadow-sm transition-all duration-200 hover:scale-110 active:scale-95 ${
+                      isAlert
+                        ? 'border-red-500/40 bg-red-500/10 hover:bg-red-500/15'
+                        : 'border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/15'
+                    }`}
+                  >
+                    <CalendarDays
+                      className={`h-[18px] w-[18px] ${isAlert ? 'text-danger' : 'text-action-emerald'}`}
+                      aria-hidden="true"
+                    />
+                    {isAlert && (
+                      <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-red-500/70" aria-hidden="true" />
+                    )}
+                    <span
+                      className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-ring ${
+                        isAlert ? 'bg-red-500' : 'bg-emerald-500'
+                      }`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="text-xs">
+                  {occasionLabel}
+                </TooltipContent>
+              </Tooltip>
+            )
+          })()}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Open storage archive"
+                onClick={() => { setIsArchiveOpen(true); void loadArchive() }}
+                className="grid h-10 w-10 place-items-center rounded-full border border-sky-500/30 bg-sky-500/[0.08] text-sky-400 shadow-sm transition-all duration-200 hover:scale-110 hover:border-sky-500/45 hover:bg-sky-500/15 active:scale-95"
+              >
+                <Database className="h-[18px] w-[18px]" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              Storage
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ThemeSwitcher triggerClassName="h-10 w-10 rounded-full border border-violet-500/30 bg-violet-500/[0.08] text-violet-400 shadow-sm transition-all duration-200 hover:scale-110 hover:border-violet-500/45 hover:bg-violet-500/15 active:scale-95" />
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              Theme
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="About your business (required)"
+                onClick={() => { setIsBusinessOpen(true) }}
+                className={`relative grid h-10 w-10 place-items-center rounded-full border shadow-sm transition-all duration-200 hover:scale-110 active:scale-95 ${
+                  hasBusinessInfo === false
+                    ? 'border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/15'
+                    : 'border-amber-400/20 bg-amber-400/[0.06] hover:border-amber-400/35 hover:bg-amber-400/10'
+                }`}
+              >
+                <Building2
+                  className="h-[18px] w-[18px] text-accent-warm"
+                  aria-hidden="true"
+                />
+                {hasBusinessInfo === false && (
+                  <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-ring" aria-hidden="true" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              {hasBusinessInfo === false ? 'About your business (required)' : 'Your business'}
+            </TooltipContent>
+          </Tooltip>
         </TooltipProvider>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="grid h-10 w-10 place-items-center rounded-full border border-transparent transition hover:border-border hover:bg-accent/45"
-              type="button"
-              aria-label="Open account menu"
-            >
-              <Avatar className="h-10 w-10 ring-1 ring-border">
-                {profile?.avatar_url ? (
-                  <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
-                ) : null}
-                <AvatarFallback className="bg-accent text-sm font-semibold text-foreground/90">
-                  {initialsForName(profile?.first_name ?? '', profile?.last_name ?? '', profile?.email ?? session?.user.email ?? '')}
-                </AvatarFallback>
-              </Avatar>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" sideOffset={8} className="w-64">
-            <DropdownMenuItem onSelect={() => setIsAccountCenterOpen(true)} className="flex items-center gap-2 text-xs font-normal text-muted-foreground focus:text-foreground/90">
-              <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => { void signOut() }} className="text-danger focus:text-danger">
-              <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
-              <span>Sign out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {(() => {
-          const isAlert = upcomingOccasion !== null
-          const occasionLabel = upcomingOccasion
-            ? upcomingOccasion.daysAway === 0
-              ? `${upcomingOccasion.title} today`
-              : upcomingOccasion.daysAway === 1
-                ? `${upcomingOccasion.title} tomorrow`
-                : `${upcomingOccasion.title} in ${upcomingOccasion.daysAway} days`
-            : 'No occasion'
-          return (
-        <button
-          type="button"
-          onClick={() => { setIsCalendarOpen(true) }}
-          aria-label={isAlert ? `${occasionLabel} — open calendar` : 'Open calendar'}
-          title={isAlert ? `${occasionLabel} — take a look` : 'Calendar'}
-          className={`group flex h-9 items-center gap-2 rounded-md border px-2.5 transition ${
-            isAlert
-              ? 'border-red-500/40 bg-red-500/10 hover:bg-red-500/15'
-              : 'border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/15'
-          }`}
-        >
-          <span className="relative grid place-items-center">
-            <CalendarDays
-              className={`h-[20px] w-[20px] ${isAlert ? 'text-danger' : 'text-action-emerald'}`}
-              aria-hidden="true"
-            />
-            {isAlert && (
-              <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-red-500/70" aria-hidden="true" />
-            )}
-            <span
-              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-ring ${
-                isAlert ? 'bg-red-500' : 'bg-emerald-500'
-              }`}
-              aria-hidden="true"
-            />
-          </span>
-          <span
-            className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
-              isAlert ? 'text-danger' : 'text-action-emerald'
-            }`}
-          >
-            {occasionLabel}
-          </span>
-        </button>
-          )
-        })()}
-
-        <button
-          type="button"
-          aria-label="Open storage archive"
-          title="Storage"
-          onClick={() => { setIsArchiveOpen(true); void loadArchive() }}
-          className="grid h-9 w-9 place-items-center rounded-md border border-transparent text-foreground/80 transition hover:border-border hover:bg-accent/45 hover:text-foreground"
-        >
-          <Database className="h-[18px] w-[18px]" aria-hidden="true" />
-        </button>
-
-        <ThemeSwitcher />
-
-        <button
-          type="button"
-          aria-label="About your business (required)"
-          title="About your business (required)"
-          onClick={() => { setIsBusinessOpen(true) }}
-          className={`group relative flex h-9 items-center gap-2 rounded-md border px-2.5 transition ${
-            hasBusinessInfo === false
-              ? 'border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/15'
-              : 'border-transparent text-foreground/80 hover:border-border hover:bg-accent/45 hover:text-foreground'
-          }`}
-        >
-          <Building2
-            className="h-[18px] w-[18px] text-accent-warm"
-            aria-hidden="true"
-          />
-          <span
-            className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
-              hasBusinessInfo === false ? 'text-accent-warm' : 'text-foreground/80'
-            }`}
-          >
-            Your business
-          </span>
-          {hasBusinessInfo === false && (
-            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-ring" aria-hidden="true" />
-          )}
-        </button>
       </div>
 
       <BusinessProfileDialog
