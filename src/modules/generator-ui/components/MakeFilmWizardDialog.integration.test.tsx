@@ -58,7 +58,7 @@ function renderWizard(overrides: Partial<Parameters<typeof MakeFilmWizardDialog>
   )
 }
 
-type MockPhotoRow = { id: string; title: string | null; image_type: string | null }
+type MockPhotoRow = { id: string; title: string | null; image_type: string | null; storage_path?: string }
 
 const defaultProduct: MockPhotoRow = {
   id: 'product-1',
@@ -84,7 +84,7 @@ function mockImageRows(
         order: vi.fn(async () => ({
           data: (category === 'product' ? products : characters).map((r) => ({
             id: r.id,
-            storage_path: `https://x/user/${r.id}.png`,
+            storage_path: r.storage_path ?? `https://x/user/${r.id}.png`,
             title: r.title,
             category: category ?? 'character',
             image_type: r.image_type,
@@ -646,6 +646,37 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
       'https://x/user/stirrup-007.png',
       'https://x/user/stirrup-008.png',
       'https://x/user/stirrup-007.png',
+    ])
+  }, 15_000)
+
+  it('uses an explicit product-folder id to keep differently labelled views together', async () => {
+    mockImageRows([
+      { id: 'front', title: 'Rebar Stirrup', image_type: null, storage_path: 'user-1/products/folder-7/front.png' },
+      { id: 'side', title: 'Side view', image_type: null, storage_path: 'user-1/products/folder-7/side.png' },
+    ])
+    mockStorage.from.mockImplementation(() => ({
+      createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
+    }))
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('Rebar Stirrup')).toBeInTheDocument())
+    expect(screen.getByText('2 angles')).toBeInTheDocument()
+    expect(screen.queryByText('Side view')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Rebar Stirrup'))
+
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
+    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual([
+      'https://signed/front.png',
+      'https://signed/side.png',
+      'https://signed/front.png',
+      'https://signed/side.png',
+      'https://signed/front.png',
+      'https://signed/side.png',
     ])
   }, 15_000)
 
