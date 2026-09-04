@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { groupProductPhotos, productPhotoForScene } from './productPhotoGroups'
+import {
+  groupProductPhotos,
+  normalizeProductFolderName,
+  productFolderNameKey,
+  productPhotoForScene,
+  productPhotoStoragePath,
+  storedProductFolderId,
+} from './productPhotoGroups'
 
 describe('groupProductPhotos', () => {
   it('groups numbered angle files under the canonical product name', () => {
@@ -39,6 +46,33 @@ describe('groupProductPhotos', () => {
       ['Selected Product', ['c']],
       ['Selected Product', ['d']],
     ])
+  })
+
+  it('uses the explicit storage folder as product identity even when angle titles differ', () => {
+    const groups = groupProductPhotos([
+      { id: 'front', title: 'Front detail', storagePath: 'user-1/products/folder-7/front.png' },
+      { id: 'back', title: 'Back detail', storage_path: 'user-1/products/folder-7/back.png' },
+      { id: 'other', title: 'Front detail', storagePath: 'user-1/products/folder-8/front.png' },
+    ])
+
+    expect(groups.map((group) => [group.id, group.photos.map((photo) => photo.id)])).toEqual([
+      ['folder:folder-7', ['front', 'back']],
+      ['folder:folder-8', ['other']],
+    ])
+  })
+})
+
+describe('explicit product folder metadata', () => {
+  it('normalizes a user-created name and builds a durable virtual-folder upload path', () => {
+    expect(normalizeProductFolderName('  Rebar   Stirrup  ')).toBe('Rebar Stirrup')
+    expect(productFolderNameKey(' Rebar   Stirrup ')).toBe('rebar stirrup')
+    expect(productPhotoStoragePath('user-1', 'folder-7', 'image-2', 'ANGLE.JP$G')).toBe(
+      'user-1/products/folder-7/image-2.jpg',
+    )
+    expect(storedProductFolderId({
+      id: 'photo',
+      storagePath: 'https://example.test/storage/v1/object/sign/user-images/user-1/products/folder-7/image.png?token=x',
+    })).toBe('folder-7')
   })
 })
 

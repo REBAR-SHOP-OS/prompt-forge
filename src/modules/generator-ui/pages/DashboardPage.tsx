@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ChevronsRight,
   Check,
+  ChevronLeft,
   ChevronDown,
   Cpu,
   Camera,
@@ -57,6 +58,7 @@ import {
   Wand2,
   FileText,
   FolderOpen,
+  FolderPlus,
   MessageSquareQuote,
   Contact,
   Eye,
@@ -163,7 +165,14 @@ import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDial
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
-import { groupProductPhotos } from '@/modules/generator-ui/lib/productPhotoGroups'
+import {
+  groupProductPhotos,
+  normalizeProductFolderName,
+  productFolderNameKey,
+  productPhotoStoragePath,
+  storedProductFolderId,
+  type ProductPhotoGroup,
+} from '@/modules/generator-ui/lib/productPhotoGroups'
 import { buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
 import {
   GlobalSceneBatchError,
@@ -334,6 +343,12 @@ export type UserImageItem = {
   description?: string | null
   /** Durable per-project group id; mirrors job draft_group_id. */
   draft_group_id?: string | null
+}
+
+type ProductFolderTarget = {
+  groupId: string
+  name: string
+  storageFolderId: string | null
 }
 
 const USER_IMAGE_ROW_SELECT = 'id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id'
@@ -1701,11 +1716,18 @@ export default function DashboardPage() {
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
   const [archiveProductImages, setArchiveProductImages] = useState<UserImageItem[]>([])
   const archiveProductGroups = useMemo(() => groupProductPhotos(archiveProductImages), [archiveProductImages])
+  const [activeProductFolder, setActiveProductFolder] = useState<ProductFolderTarget | null>(null)
+  const [draftProductFolder, setDraftProductFolder] = useState<ProductFolderTarget | null>(null)
+  const [isCreatingProductFolder, setIsCreatingProductFolder] = useState(false)
+  const [productFolderName, setProductFolderName] = useState('')
+  const activeProductGroup = useMemo<ProductPhotoGroup<UserImageItem> | null>(
+    () => archiveProductGroups.find((group) => group.id === activeProductFolder?.groupId) ?? null,
+    [archiveProductGroups, activeProductFolder],
+  )
   const [archiveAudio, setArchiveAudio] = useState<UserAudioItem[]>([])
   const productPhotoInputRef = useRef<HTMLInputElement | null>(null)
   const [isUploadingProductPhoto, setIsUploadingProductPhoto] = useState(false)
   const [productUploadError, setProductUploadError] = useState<string | null>(null)
-  const [productName, setProductName] = useState('')
   // Bulk caption import: upload .txt files named like the images to attach descriptions.
   const captionFilesInputRef = useRef<HTMLInputElement | null>(null)
   const [isImportingCaptions, setIsImportingCaptions] = useState(false)
@@ -5477,21 +5499,52 @@ export default function DashboardPage() {
     }
   }
 
+  const createProductFolder = () => {
+    const name = normalizeProductFolderName(productFolderName)
+    if (!name) {
+      setProductUploadError('Enter a product folder name first.')
+      return
+    }
+    const duplicate = archiveProductGroups.some(
+      (group) => productFolderNameKey(group.name) === productFolderNameKey(name),
+    ) || (draftProductFolder !== null && productFolderNameKey(draftProductFolder.name) === productFolderNameKey(name))
+    if (duplicate) {
+      setProductUploadError('A product folder with this name already exists. Open it to add more angles.')
+      return
+    }
+    const storageFolderId = crypto.randomUUID()
+    const folder = { groupId: `folder:${storageFolderId}`, name, storageFolderId }
+    setDraftProductFolder(folder)
+    setActiveProductFolder(folder)
+    setProductFolderName('')
+    setProductUploadError(null)
+    setIsCreatingProductFolder(false)
+  }
+
+  const openProductFolder = (group: ProductPhotoGroup<UserImageItem>) => {
+    setActiveProductFolder({
+      groupId: group.id,
+      name: group.name,
+      storageFolderId: storedProductFolderId(group.photos[0]),
+    })
+    setProductUploadError(null)
+  }
+
   const handlePickProductPhoto = () => {
-    if (isUploadingProductPhoto) return
+    if (isUploadingProductPhoto || !activeProductFolder) return
     productPhotoInputRef.current?.click()
   }
 
   const handleProductPhotoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
     event.target.value = ''
-    if (files.length === 0 || !userId) return
+    if (files.length === 0 || !userId || !activeProductFolder) return
     setProductUploadError(null)
     setIsUploadingProductPhoto(true)
     const errors: string[] = []
     let uploadedCount = 0
     try {
-      const trimmedName = productName.trim().slice(0, 100)
+      const folder = activeProductFolder
       for (const file of files) {
         if (!file.type.startsWith('image/')) {
           errors.push(`${file.name}: not an image`)
@@ -5502,8 +5555,10 @@ export default function DashboardPage() {
           continue
         }
         try {
-          const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
-          const path = `${userId}/${crypto.randomUUID()}.${ext}`
+          const objectId = crypto.randomUUID()
+          const path = folder.storageFolderId
+            ? productPhotoStoragePath(userId, folder.storageFolderId, objectId, file.name)
+            : `${userId}/${objectId}.${(file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'}`
           const up = await supabase.storage
             .from(USER_IMAGES_BUCKET)
             .upload(path, file, { contentType: file.type, upsert: false })
@@ -5517,7 +5572,7 @@ export default function DashboardPage() {
               size_bytes: file.size,
               mime_type: file.type,
               category: 'product',
-              title: trimmedName || file.name.replace(/\.[^/.]+$/, '').slice(0, 100) || null,
+              title: folder.name,
             })
             .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title, description')
             .single()
@@ -5530,7 +5585,9 @@ export default function DashboardPage() {
           errors.push(`${file.name}: ${msg}`)
         }
       }
-      if (uploadedCount > 0) setProductName('')
+      if (uploadedCount > 0 && draftProductFolder?.groupId === folder.groupId) {
+        setDraftProductFolder(null)
+      }
       if (errors.length > 0) {
         setProductUploadError(
           `${uploadedCount} uploaded, ${errors.length} failed: ${errors.join('; ')}`,
@@ -9594,7 +9651,7 @@ export default function DashboardPage() {
                     : archiveTab === 'images'
                       ? archiveImages.length
                       : archiveTab === 'products'
-                        ? archiveProductGroups.length
+                        ? archiveProductGroups.length + (draftProductFolder ? 1 : 0)
                         : archiveAudio.length}
                 </span>
               </div>
@@ -9661,7 +9718,7 @@ export default function DashboardPage() {
               >
                 <Package className="h-3.5 w-3.5" aria-hidden="true" />
                 Product Photos
-                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductGroups.length}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductGroups.length + (draftProductFolder ? 1 : 0)}</span>
               </button>
             </div>
           </DialogHeader>
@@ -9674,7 +9731,7 @@ export default function DashboardPage() {
                   : archiveTab === 'images'
                     ? archiveImages.map((i) => i.id)
                     : archiveTab === 'products'
-                      ? archiveProductImages.map((i) => i.id)
+                      ? (activeProductGroup?.photos ?? []).map((i) => i.id)
                       : archiveAudio.map((a) => a.id)
               if (currentIds.length === 0) return null
               const selectedCount = currentIds.filter((id) => selectedArchiveIds.has(id)).length
@@ -9733,12 +9790,129 @@ export default function DashboardPage() {
               )
             })()}
             {archiveTab === 'products' ? (() => {
+              if (!activeProductFolder) {
+                return (
+                  <div className="space-y-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-semibold text-foreground/90">Product folders</h2>
+                        <p className="mt-1 text-xs text-muted-foreground">Each folder is one product. Open a folder to add and manage its angle photos.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setIsCreatingProductFolder(true); setProductUploadError(null) }}
+                        disabled={!userId}
+                        className="inline-flex items-center gap-2 rounded-lg border border-accent-cool/30 bg-accent-cool/10 px-3 py-2 text-xs font-semibold text-accent-cool transition hover:bg-accent-cool/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <FolderPlus className="h-4 w-4" aria-hidden="true" />
+                        New Folder
+                      </button>
+                    </div>
+
+                    {isCreatingProductFolder ? (
+                      <div className="rounded-2xl border border-dashed border-accent-cool/30 bg-accent-cool/5 p-4">
+                        <label htmlFor="new-product-folder-name" className="text-xs font-semibold text-foreground/90">Product folder name</label>
+                        <p className="mt-1 text-xs text-muted-foreground">Use the product's real name. You will add all of its angles after creating the folder.</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <input
+                            id="new-product-folder-name"
+                            type="text"
+                            value={productFolderName}
+                            onChange={(event) => setProductFolderName(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') createProductFolder()
+                              if (event.key === 'Escape') { setIsCreatingProductFolder(false); setProductFolderName('') }
+                            }}
+                            maxLength={100}
+                            autoFocus
+                            placeholder="e.g. Rebar Stirrup"
+                            className="min-w-56 flex-1 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none transition focus:border-accent-cool/40"
+                          />
+                          <button
+                            type="button"
+                            onClick={createProductFolder}
+                            className="rounded-lg bg-accent-cool px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110"
+                          >
+                            Create Folder
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setIsCreatingProductFolder(false); setProductFolderName(''); setProductUploadError(null) }}
+                            className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-muted-foreground transition hover:bg-accent/60 hover:text-foreground"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {productUploadError ? <p className="mt-2 text-xs text-action-rose">{productUploadError}</p> : null}
+                      </div>
+                    ) : null}
+
+                    {archiveLoading && archiveProductImages.length === 0 ? (
+                      <div className="grid min-h-[10rem] place-items-center text-muted-foreground">
+                        <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+                      </div>
+                    ) : archiveProductGroups.length === 0 && !draftProductFolder ? (
+                      <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
+                        <div>
+                          <FolderPlus className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                          <p className="mt-3 text-sm font-medium text-foreground/80">No product folders yet</p>
+                          <p className="mt-2 text-xs leading-5 text-muted-foreground">Create a folder first, then upload the product's different angles.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                        {draftProductFolder ? (
+                          <button
+                            type="button"
+                            onClick={() => setActiveProductFolder(draftProductFolder)}
+                            className="rounded-2xl border border-dashed border-accent-cool/40 bg-accent-cool/5 p-4 text-left transition hover:bg-accent-cool/10"
+                          >
+                            <FolderOpen className="h-7 w-7 text-accent-cool" aria-hidden="true" />
+                            <p className="mt-4 truncate text-sm font-semibold text-foreground/90">{draftProductFolder.name}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Empty folder · add photos</p>
+                          </button>
+                        ) : null}
+                        {archiveProductGroups.map((group) => (
+                          <button
+                            type="button"
+                            key={group.id}
+                            onClick={() => openProductFolder(group)}
+                            className="overflow-hidden rounded-2xl border border-border bg-accent/20 text-left transition hover:border-accent-cool/40 hover:bg-accent/35"
+                          >
+                            <div className="grid aspect-[4/3] grid-cols-2 gap-0.5 bg-surface-2/60">
+                              {group.photos.slice(0, 4).map((photo) => (
+                                <img key={photo.id} src={photo.storage_path} alt="" loading="lazy" className="h-full min-h-0 w-full object-cover" />
+                              ))}
+                            </div>
+                            <div className="p-3">
+                              <div className="flex items-center gap-2">
+                                <FolderOpen className="h-4 w-4 shrink-0 text-accent-cool" aria-hidden="true" />
+                                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground/90">{group.name}</span>
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">{group.photos.length} angle{group.photos.length === 1 ? '' : 's'}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+
               return (
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-accent/20 px-4 py-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground/90">Upload product angles</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">Give every angle of the same product the same product name. JPG, PNG or WEBP — up to 10 MB. Angles are grouped into one folder and rotated across film scenes.</p>
+                      <button
+                        type="button"
+                        onClick={() => { setActiveProductFolder(null); setSelectedArchiveIds(new Set()) }}
+                        className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-accent-cool hover:underline"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                        All product folders
+                      </button>
+                      <p className="text-sm font-semibold text-foreground/90">{activeProductFolder.name}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">Upload multiple views of this same product. JPG, PNG or WEBP — up to 10 MB. All angles stay one product in Make Full Film.</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">Or bulk-import captions: upload <span className="text-foreground/80">.txt</span> files named like the photos (e.g. <span className="text-foreground/80">circular_tie_001.txt</span> → <span className="text-foreground/80">circular_tie_001</span>) to attach each text to its matching image.</p>
                       {productUploadError ? (
                         <p className="mt-1 text-xs text-action-rose">{productUploadError}</p>
@@ -9764,15 +9938,6 @@ export default function DashboardPage() {
                       onChange={(e) => { void handleCaptionFilesSelected(e) }}
                     />
                     <div className="flex shrink-0 items-center gap-2">
-                      <input
-                        type="text"
-                        value={productName}
-                        onChange={(e) => setProductName(e.target.value)}
-                        maxLength={100}
-                        placeholder="Product name (optional)"
-                        disabled={isUploadingProductPhoto || !userId}
-                        className="w-44 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none transition focus:border-accent-cool/40 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
                       <button
                         type="button"
                         onClick={handlePickProductPhoto}
@@ -9784,13 +9949,13 @@ export default function DashboardPage() {
                         ) : (
                           <Package className="h-4 w-4" aria-hidden="true" />
                         )}
-                        {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
+                        {isUploadingProductPhoto ? 'Uploading…' : 'Add product photos'}
                       </button>
                       <button
                         type="button"
                         onClick={handlePickCaptionFiles}
-                        disabled={isImportingCaptions || !userId || archiveProductImages.length === 0}
-                        title={archiveProductImages.length === 0 ? 'Upload product photos first, then import captions' : 'Import .txt captions matched by file name'}
+                        disabled={isImportingCaptions || !userId || !activeProductGroup || activeProductGroup.photos.length === 0}
+                        title={!activeProductGroup ? 'Upload product photos first, then import captions' : 'Import .txt captions matched by file name'}
                         className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-accent/40 px-3 py-2 text-xs font-semibold text-foreground/90 transition hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isImportingCaptions ? (
@@ -9803,23 +9968,23 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {archiveLoading && archiveProductImages.length === 0 ? (
+                  {archiveLoading && !activeProductGroup && !draftProductFolder ? (
                     <div className="grid min-h-[10rem] place-items-center text-muted-foreground">
                       <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
                     </div>
-                  ) : archiveProductImages.length === 0 ? (
+                  ) : !activeProductGroup ? (
                     <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
                       <div>
-                        <Package className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
-                        <p className="mt-3 text-sm font-medium text-foreground/80">No product photos yet</p>
+                        <ImagePlus className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                        <p className="mt-3 text-sm font-medium text-foreground/80">This product folder is empty</p>
                         <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                          Upload a product image to store it here.
+                          Add two or more angle photos so the AI can keep this product consistent across scenes.
                         </p>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {archiveProductGroups.map((group) => (
+                      {[activeProductGroup].map((group) => (
                         <section key={group.id} className="rounded-2xl border border-border bg-accent/20 p-4">
                           <div className="mb-3 flex items-center gap-2">
                             <FolderOpen className="h-4 w-4 text-accent-cool" aria-hidden="true" />

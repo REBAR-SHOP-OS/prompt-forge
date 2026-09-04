@@ -5,12 +5,24 @@ import { describe, expect, it } from 'vitest'
 import source from './DashboardPage.tsx?raw'
 
 describe('Storage Product Photos folders', () => {
-  it('renders canonical product groups as folders containing their angle cards', () => {
+  it('requires creating or opening a product folder before adding angle photos', () => {
     expect(source).toContain('groupProductPhotos(archiveProductImages)')
+    expect(source).toContain('New Folder')
+    expect(source).toContain('Create Folder')
+    expect(source).toContain('createProductFolder')
+    expect(source).toContain('openProductFolder(group)')
+    expect(source).toContain('All product folders')
+    expect(source).toContain('Add product photos')
+    expect(source).toContain('productPhotoStoragePath(userId, folder.storageFolderId, objectId, file.name)')
+    expect(source).toContain('title: folder.name')
+  })
+
+  it('renders folder cards separately from the selected folder angle grid', () => {
     expect(source).toContain('archiveProductGroups.map((group) =>')
     expect(source).toContain('<FolderOpen')
     expect(source).toContain('{group.name}')
+    expect(source).toContain('{[activeProductGroup].map((group) =>')
     expect(source).toContain('group.photos.map((img) =>')
-    expect(source).toContain("Angles are grouped into one folder and rotated across film scenes.")
+    expect(source).toContain('All angles stay one product in Make Full Film.')
   })
 })
