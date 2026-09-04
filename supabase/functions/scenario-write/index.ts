@@ -21,6 +21,7 @@ import {
   runAntiDuplicatePass,
   type ScenarioHistoryEntry,
 } from "./scenario-fingerprint.ts";
+import { releaseScenarioLease } from "./scenario-lease.ts";
 
 interface ProductAdOpts {
   productName?: string;
@@ -794,10 +795,12 @@ Deno.serve(async (req) => {
       });
     } finally {
       if (leaseToken) {
-        await serviceClient.rpc("generator_release_scenario_lease", {
-          _user_id: auth.userId,
-          _token: leaseToken,
-        }).catch((relErr) => console.error("scenario-write lease release error", relErr));
+        await releaseScenarioLease(() =>
+          serviceClient.rpc("generator_release_scenario_lease", {
+            _user_id: auth.userId,
+            _token: leaseToken,
+          })
+        );
       }
     }
   } catch (e) {
