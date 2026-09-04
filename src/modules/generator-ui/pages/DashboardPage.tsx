@@ -167,13 +167,16 @@ import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/gene
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
 import {
   groupProductPhotos,
+  mergeEmptyProductFolders,
   normalizeProductFolderName,
   productFolderNameKey,
+  productFolderStorageId,
   productPhotoStoragePath,
   storedProductFolderId,
+  type ProductFolderRecord,
   type ProductPhotoGroup,
 } from '@/modules/generator-ui/lib/productPhotoGroups'
-import { buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
+import { buildSceneEditRequestBody, buildSceneGenerateRequestBody, buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
 import {
   GlobalSceneBatchError,
   queueSceneBatch,
@@ -1715,9 +1718,23 @@ export default function DashboardPage() {
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
   const [archiveProductImages, setArchiveProductImages] = useState<UserImageItem[]>([])
-  const archiveProductGroups = useMemo(() => groupProductPhotos(archiveProductImages), [archiveProductImages])
+  // Durable folder records (product_folders table). A folder created with zero
+  // photos has no generator_user_images row to derive a group from, so without
+  // this it would vanish on remount/reload — the draft slot below is in-memory
+  // only. Merged into archiveProductGroups so an empty folder still renders as
+  // a folder card and stays a valid upload target after reload.
+  const [productFolders, setProductFolders] = useState<ProductFolderRecord[]>([])
+  const archiveProductGroups = useMemo(
+    () => mergeEmptyProductFolders(groupProductPhotos(archiveProductImages), productFolders),
+    [archiveProductImages, productFolders],
+  )
   const [activeProductFolder, setActiveProductFolder] = useState<ProductFolderTarget | null>(null)
   const [draftProductFolder, setDraftProductFolder] = useState<ProductFolderTarget | null>(null)
+  // The freshly-created draft folder gives instant feedback before the first
+  // reload; once archiveProductGroups also carries it (either optimistically
+  // or after the persisted row loads back), stop rendering it a second time.
+  const draftFolderVisible = draftProductFolder !== null
+    && !archiveProductGroups.some((group) => group.id === draftProductFolder.groupId)
   const [isCreatingProductFolder, setIsCreatingProductFolder] = useState(false)
   const [productFolderName, setProductFolderName] = useState('')
   const activeProductGroup = useMemo<ProductPhotoGroup<UserImageItem> | null>(
@@ -1737,20 +1754,51 @@ export default function DashboardPage() {
   // Per-image draft text for the "Describe for AI" field (keyed by image id).
   const [productDescDraft, setProductDescDraft] = useState<Record<string, string>>({})
   const [archiveLoading, setArchiveLoading] = useState(false)
+  // Loads the durable folder records (product_folders) so an empty folder
+  // survives a remount/reload — generator_user_images alone has no row to
+  // derive such a folder's group from. Best-effort: a failure here must not
+  // block the photo list from loading.
+  const loadProductFolders = useCallback(async () => {
+    if (!userId) {
+      setProductFolders([])
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('product_folders')
+        .select('storage_folder_id, name')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setProductFolders(
+        ((data ?? []) as Array<{ storage_folder_id: string; name: string }>).map((row) => ({
+          storageFolderId: row.storage_folder_id,
+          name: row.name,
+        })),
+      )
+    } catch (err) {
+      console.error('Could not load product folders', err)
+    }
+  }, [userId])
   const loadProductImages = useCallback(async (): Promise<UserImageItem[]> => {
     if (!userId) {
       setArchiveProductImages([])
+      setProductFolders([])
       return []
     }
     setArchiveLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('generator_user_images')
-        .select(USER_IMAGE_ROW_SELECT)
-        .eq('user_id', userId)
-        .eq('category', 'product')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
+      const [imagesResult] = await Promise.all([
+        supabase
+          .from('generator_user_images')
+          .select(USER_IMAGE_ROW_SELECT)
+          .eq('user_id', userId)
+          .eq('category', 'product')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false }),
+        loadProductFolders(),
+      ])
+      const { data, error } = imagesResult
       if (error) throw error
 
       const signedProducts = await signUserImageRows(((data ?? []) as UserImageItem[]))
@@ -1786,7 +1834,7 @@ export default function DashboardPage() {
     } finally {
       setArchiveLoading(false)
     }
-  }, [userId])
+  }, [userId, loadProductFolders])
 
   const loadArchive = async () => {
     setArchiveLoading(true)
@@ -1810,6 +1858,7 @@ export default function DashboardPage() {
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : Promise.resolve({ data: [] as UserAudioItem[] }),
+        loadProductFolders(),
       ])
       setArchiveJobs(jobs)
       setArchiveVideos(videos)
@@ -5525,14 +5574,48 @@ export default function DashboardPage() {
     setProductFolderName('')
     setProductUploadError(null)
     setIsCreatingProductFolder(false)
+    // Persist the folder immediately — without this an empty folder (no
+    // photos uploaded yet) has no row anywhere and disappears on reload; the
+    // draft slot above is in-memory only. Optimistically add it to
+    // productFolders too so archiveProductGroups already carries it before
+    // the round-trip completes.
+    setProductFolders((prev) => [{ storageFolderId, name }, ...prev])
+    if (userId) {
+      void supabase
+        .from('product_folders')
+        .insert({ user_id: userId, storage_folder_id: storageFolderId, name })
+        .then(({ error }) => {
+          if (error) setProductUploadError(`Folder was not saved: ${error.message}`)
+        })
+    }
   }
 
   const openProductFolder = (group: ProductPhotoGroup<UserImageItem>) => {
-    setActiveProductFolder({
-      groupId: group.id,
-      name: group.name,
-      storageFolderId: storedProductFolderId(group.photos[0]),
-    })
+    // storedProductFolderId needs a photo row to read the folder id from; an
+    // empty folder (a persisted row with no photos uploaded yet) has none, so
+    // fall back to the persisted product_folders record. Resolved ONCE, before
+    // activating, rather than activating with an undefined id and correcting
+    // it afterwards.
+    const hasPhotos = group.photos.length > 0
+    const storageFolderId = hasPhotos
+      ? storedProductFolderId(group.photos[0])
+      : productFolderStorageId(group, productFolders)
+
+    // A null id is CORRECT for a legacy title-grouped folder — its photos live
+    // at the flat path and handleProductPhotoSelected's fallback puts new ones
+    // there too, which is where the rest of that group already is. So only the
+    // EMPTY case is guarded: an empty group exists solely because a
+    // product_folders row produced it, so an unresolvable id there means the
+    // record has not arrived, and activating anyway would send uploads to the
+    // flat path — outside the folder on screen. They would then reappear as a
+    // second, title-grouped folder of the same name, since the rows still carry
+    // the folder name as their title.
+    if (!hasPhotos && !storageFolderId) {
+      setProductUploadError('This folder is still loading. Try again in a moment.')
+      return
+    }
+
+    setActiveProductFolder({ groupId: group.id, name: group.name, storageFolderId })
     setSelectedArchiveIds(new Set())
     setProductUploadError(null)
   }
@@ -7847,12 +7930,15 @@ export default function DashboardPage() {
   async function generateFilmSceneImage(
     sceneText: string,
     aspect?: FilmAspect,
-    productUrl?: string,
+    productUrls?: string[],
     characterUrl?: string,
     noText?: boolean,
     creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string },
     characterSheet?: boolean,
   ): Promise<string> {
+    // Every grouped angle of the selected product folder, not just one picked
+    // by round-robin — the full group is what should ground each generation.
+    const productUrlList = (productUrls ?? []).filter((u): u is string => !!u)
     // Preview images are generated at the ratio the clips will use, so the seed
     // frame matches the video (submitScenesAsJobs uses aspectRatio too).
     // The wizard's own aspect choice wins when it supplies one. FilmAspect is
@@ -7882,15 +7968,15 @@ export default function DashboardPage() {
       imagePrompt = `${imagePrompt}\n\nCAMERA: ${creative.cameraStyle}`
     }
     // When BOTH a product and a character are present, compose them into a
-    // single frame the same way Product Ad does — via ai-image-edit with the
-    // product as Image 1 (base) and the character as Image 2 (reference). This
-    // reliably keeps both identities together in the shot, while the scene text
-    // still supplies the environment and events. The shared prompt builder is
-    // the single source of truth for this composition.
-    if (productUrl && characterUrl) {
+    // single frame the same way Product Ad does — via ai-image-edit with
+    // every grouped product angle plus the character as visual references.
+    // This reliably keeps both identities together in the shot, while the
+    // scene text still supplies the environment and events. The shared
+    // request builder is the single source of truth for this array shape.
+    if (productUrlList.length > 0 && characterUrl) {
       const composePrompt = buildSceneCompositionPrompt({
         sceneText: imagePrompt,
-        productUrl,
+        productUrls: productUrlList,
         characterUrl,
         cameraStyle: creative?.cameraStyle,
         theme: creative?.theme,
@@ -7899,13 +7985,13 @@ export default function DashboardPage() {
       })
       if (!composePrompt) throw new Error('Could not build the scene composition prompt')
       const { data: cData, error: cErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: {
+        body: buildSceneEditRequestBody({
           prompt: composePrompt,
-          imageUrls: [productUrl, characterUrl],
-          referenceRoles: ['product', 'character'],
-          referenceCharacterSheets: [false, !!characterSheet],
+          productUrls: productUrlList,
+          characterUrl,
+          characterSheet,
           aspectRatio: ratio,
-        },
+        }),
       })
       if (cErr) throw cErr
       const composedUrl = (cData as { dataUrl?: unknown } | null)?.dataUrl
@@ -7913,9 +7999,9 @@ export default function DashboardPage() {
       return await stageImageIntoFramesBucket(composedUrl)
     }
     // Single-identity path (product-only or character-only): keep the existing
-    // ai-image-generate flow, which preserves a single reference identity.
-    if (productUrl) {
-      imagePrompt += `\n\nREFERENCE PRODUCT image: ${productUrl}\nThis product MUST appear prominently in this scene.`
+    // ai-image-generate flow, which preserves the selected identity/identities.
+    if (productUrlList.length > 0) {
+      imagePrompt += `\n\nREFERENCE PRODUCT image: ${productUrlList[0]}\nThis product MUST appear prominently in this scene.`
     } else if (characterUrl) {
       imagePrompt += `\n\nREFERENCE CHARACTER image: ${characterUrl}\nThis character MUST appear prominently in this scene.`
       if (characterSheet) {
@@ -7928,20 +8014,14 @@ export default function DashboardPage() {
     if (noText) {
       imagePrompt = `${imagePrompt}\n\nStrictly no text of any kind in the image: no words, letters, numbers, captions, subtitles, signage text, logos, or watermarks.`
     }
-    const referenceImageUrls = [productUrl, characterUrl].filter((u): u is string => !!u)
-    // Role labels aligned 1:1 with referenceImageUrls so the model knows which
-    // image is the product vs the character and preserves BOTH identities.
-    const referenceRoles = [
-      ...(productUrl ? ["product"] : []),
-      ...(characterUrl ? ["character"] : []),
-    ]
-    // Per-reference character-sheet flag aligned 1:1 with referenceImageUrls.
-    const referenceCharacterSheets = [
-      ...(productUrl ? [false] : []),
-      ...(characterUrl ? [!!characterSheet] : []),
-    ]
     const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
-      body: { prompt: imagePrompt, aspectRatio: ratio, referenceImageUrls, referenceRoles, referenceCharacterSheets },
+      body: buildSceneGenerateRequestBody({
+        prompt: imagePrompt,
+        productUrls: productUrlList,
+        characterUrl,
+        characterSheet,
+        aspectRatio: ratio,
+      }),
     })
     if (iErr) throw iErr
     const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
@@ -9704,7 +9784,7 @@ export default function DashboardPage() {
                     : archiveTab === 'images'
                       ? archiveImages.length
                       : archiveTab === 'products'
-                        ? archiveProductGroups.length + (draftProductFolder ? 1 : 0)
+                        ? archiveProductGroups.length + (draftFolderVisible ? 1 : 0)
                         : archiveAudio.length}
                 </span>
               </div>
@@ -9771,7 +9851,7 @@ export default function DashboardPage() {
               >
                 <Package className="h-3.5 w-3.5" aria-hidden="true" />
                 Product Photos
-                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductGroups.length + (draftProductFolder ? 1 : 0)}</span>
+                <span className="ml-1 rounded-full bg-surface-2 px-1.5 text-[10px] tabular-nums">{archiveProductGroups.length + (draftFolderVisible ? 1 : 0)}</span>
               </button>
             </div>
           </DialogHeader>
@@ -9904,7 +9984,7 @@ export default function DashboardPage() {
                       <div className="grid min-h-[10rem] place-items-center text-muted-foreground">
                         <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
                       </div>
-                    ) : archiveProductGroups.length === 0 && !draftProductFolder ? (
+                    ) : archiveProductGroups.length === 0 && !draftFolderVisible ? (
                       <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-border px-5 text-center">
                         <div>
                           <FolderPlus className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
@@ -9914,7 +9994,7 @@ export default function DashboardPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                        {draftProductFolder ? (
+                        {draftFolderVisible && draftProductFolder ? (
                           <button
                             type="button"
                             onClick={() => setActiveProductFolder(draftProductFolder)}
@@ -11095,8 +11175,8 @@ export default function DashboardPage() {
         defaultAspect={aspectRatio}
         userId={userId}
         writeScenario={writeFilmScenario}
-        generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet) =>
-          generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)
+        generateSceneImage={(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet) =>
+          generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
