@@ -123,6 +123,11 @@ import { DraggablePreview } from '@/modules/generator-ui/components/DraggablePre
 import { usePreviewPosition } from '@/modules/generator-ui/hooks/usePreviewPosition'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
+import { LibraryCardPreview } from '@/modules/generator-ui/components/LibraryCardPreview'
+import {
+  resolveDraftLibraryPreview,
+  type LibraryCardPreviewAsset,
+} from '@/modules/generator-ui/lib/libraryCardPreview'
 import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
@@ -3127,59 +3132,6 @@ export default function DashboardPage() {
     })
   }
 
-
-  // Single source of truth for what a Draft card should display. A draft's
-  // own `entry.video` can be stale/empty (e.g. its first clip had no
-  // storage_path the moment the snapshot was taken), so we always prefer the
-  // first PLAYABLE clip/image from the draft's snapshot maps. Returns the
-  // best preview asset plus the real clip count.
-  const resolveDraftDisplay = (
-    draftId: string,
-    entry?: JobDetail,
-  ): { video: JobDetail['video']; clipCount: number; hasPlayable: boolean } => {
-    const clips = draftSourceJobs[draftId] ?? []
-    const images = draftSourceImages[draftId] ?? []
-    const clipCount = clips.length + images.length
-
-    // 1) First clip that actually has a storage_path.
-    const firstClip = clips.find((c) => !!c.video?.storage_path)
-    if (firstClip?.video?.storage_path) {
-      return {
-        video: {
-          id: firstClip.video.id ?? draftId,
-          storage_path: firstClip.video.storage_path,
-          thumbnail_url: firstClip.video.thumbnail_url ?? null,
-          aspect_ratio: firstClip.video.aspect_ratio ?? entry?.requested_aspect_ratio ?? null,
-          duration: firstClip.video.duration ?? null,
-        },
-        clipCount,
-        hasPlayable: true,
-      }
-    }
-
-    // 2) First image with a storage_path.
-    const firstImg = images.find((i) => !!i.storage_path)
-    if (firstImg?.storage_path) {
-      return {
-        video: {
-          id: draftId,
-          storage_path: firstImg.storage_path,
-          thumbnail_url: firstImg.storage_path,
-          aspect_ratio: entry?.requested_aspect_ratio ?? null,
-          duration: null,
-        },
-        clipCount,
-        hasPlayable: true,
-      }
-    }
-
-    // 3) Fall back to the entry's own stored asset only if it is real.
-    if (entry?.video?.storage_path) {
-      return { video: entry.video, clipCount, hasPlayable: true }
-    }
-
-    return { video: entry?.video ?? null, clipCount, hasPlayable: false }
-  }
 
   // Resolve a CORS-safe URL for the trim dialog whenever it opens.
   useEffect(() => {
@@ -12759,10 +12711,17 @@ export default function DashboardPage() {
               // a stale/empty entry.video never shows a blank card. New finals
               // persist their own poster (video.thumbnail_url) so the card shows
               // a real preview even if the heavy merged file later disappears.
-              const display =
+              const display: LibraryCardPreviewAsset | null =
                 variant === 'draft'
-                  ? resolveDraftDisplay(video.id, video).video
-                  : video.video
+                  ? resolveDraftLibraryPreview(
+                      video.id,
+                      draftSourceJobs[video.id] ?? [],
+                      draftSourceImages[video.id] ?? [],
+                      video,
+                    )
+                  : video.video?.storage_path
+                    ? { kind: 'video', video: video.video }
+                    : null
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
               // Status-only theming: Draft = soft yellow, Final Film = soft green.
@@ -12813,32 +12772,14 @@ export default function DashboardPage() {
                       {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
                     </button>
                   ) : null}
-                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-border bg-surface-2">
-                    {display?.storage_path ? (
-                      <PlayableVideo
-                        thumbnail
-                        className="h-full w-full bg-black object-cover"
-                        src={getCardVideoSrc(video.id, display.storage_path)}
-                        poster={display.thumbnail_url ?? undefined}
-                        muted
-                        playsInline
-                        preload="metadata"
-                        onLoadedMetadata={(event) => {
-                          const el = event.currentTarget
-                          try {
-                            if (el.currentTime === 0) {
-                              const dur = Number.isFinite(el.duration) ? el.duration : 0
-                              el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
-                            }
-                          } catch { /* ignore */ }
-                        }}
-                      />
-                    ) : (
-                      <div className="grid h-full w-full place-items-center text-muted-foreground">
-                        <Clapperboard className="h-6 w-6" aria-hidden="true" />
-                      </div>
-                    )}
-                  </div>
+                  <LibraryCardPreview
+                    preview={display}
+                    videoSrc={
+                      display?.kind === 'video'
+                        ? getCardVideoSrc(video.id, display.video.storage_path)
+                        : undefined
+                    }
+                  />
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                     <div className="flex items-start justify-between gap-2">
                       <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-foreground/90">
