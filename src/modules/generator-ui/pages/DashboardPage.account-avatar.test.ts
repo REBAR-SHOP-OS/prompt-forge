@@ -57,9 +57,6 @@ describe('DashboardPage account avatar header control', () => {
   })
 
   it('Avatar and Library are inside the same flex container div', () => {
-    // Find the flex container that holds the top-left icon row.
-    const containerStart = source.indexOf('fixed left-4 top-4')
-    expect(containerStart).toBeGreaterThan(-1)
     // Find the flex container that holds the top-left control group. It is a
     // vertical rail: `fixed left-4 top-4 flex flex-col items-center gap-2.5`.
     const containerStart = source.indexOf(HEADER_CONTAINER)
@@ -89,9 +86,8 @@ describe('DashboardPage account avatar header control', () => {
     expect(oldIconRowCount).toBe(0)
   })
 
-  it('Avatar is the first child and Library dropdown is the second child in the flex row', () => {
+  it('Avatar dropdown is the first child and Library is the second child in the flex row', () => {
     // Extract the flex container content and verify child order.
-    const containerStart = source.indexOf('fixed left-4 top-4')
     // Assert the marker was found before slicing on it: indexOf returns -1 when
     // the class list is reworded, and `slice(-1, 3999)` then returns the last
     // character of the file, so every assertion below would fail pointing at
@@ -100,14 +96,16 @@ describe('DashboardPage account avatar header control', () => {
     expect(containerStart, 'header container marker not found').toBeGreaterThan(-1)
     const containerSlice = source.slice(containerStart, containerStart + 8000)
 
-    // First child: the DropdownMenu wrapping the Avatar button
+    // First control: the DropdownMenu wrapping the Avatar button.
     const dropdownMenuIdx = containerSlice.indexOf('<DropdownMenu>')
-    // Second child: the Library button (inside its own Tooltip, not the outer TooltipProvider)
-    const libraryTooltipIdx = containerSlice.indexOf('aria-label="Library"')
+    // Second control: the Library button. Compare against the button itself,
+    // not <TooltipProvider> — the provider wraps the whole rail, so it is
+    // always first and would pass no matter how the controls are ordered.
+    const libraryIdx = containerSlice.indexOf('aria-label="Library"')
 
     expect(dropdownMenuIdx).toBeGreaterThan(-1)
-    expect(libraryTooltipIdx).toBeGreaterThan(-1)
-    expect(dropdownMenuIdx).toBeLessThan(libraryTooltipIdx)
+    expect(libraryIdx).toBeGreaterThan(-1)
+    expect(dropdownMenuIdx).toBeLessThan(libraryIdx)
   })
 
   // Carried over from the superseded #219: the two controls the user reads as a
