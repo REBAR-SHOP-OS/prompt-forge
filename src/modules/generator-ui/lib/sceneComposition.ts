@@ -18,9 +18,14 @@
 export interface SceneCompositionInput {
   /** The scene's scenario text (environment + events). */
   sceneText: string
-  /** Product reference URL (Image 1 / base). */
-  productUrl?: string | null
-  /** Character reference URL (Image 2 / reference). */
+  /**
+   * Product reference URLs — every grouped angle of one product, in stable
+   * order. All of them go into the composed image's reference set; the FIRST
+   * one is the "Image 1" / primary product angle referenced by name in the
+   * text prompt below.
+   */
+  productUrls?: readonly string[] | null
+  /** Character reference URL (last image / reference). */
   characterUrl?: string | null
   /** Camera style directive (e.g. "Close-up shot, intimate framing."). */
   cameraStyle?: string
@@ -35,27 +40,34 @@ export interface SceneCompositionInput {
 /**
  * Build the `ai-image-edit` composition prompt for a Make Full Film scene.
  *
- * The product is Image 1 (the base) and the character is Image 2 (the
- * reference), exactly as Product Ad's buildFirstFrame does. The scene text
- * supplies the environment and events; camera/theme/no-text/character-sheet are
- * appended as directives. Returns null when there is no product+character pair
- * to compose (callers should fall back to the single-identity generate path).
+ * Every grouped product angle is composed alongside the character, exactly as
+ * Product Ad's buildFirstFrame does for a single product image. The scene text
+ * supplies the environment and events; camera/theme/no-text/character-sheet
+ * are appended as directives. Returns null when there is no product+character
+ * pair to compose (callers should fall back to the single-identity generate
+ * path).
  */
 export function buildSceneCompositionPrompt(input: SceneCompositionInput): string | null {
-  const { sceneText, productUrl, characterUrl } = input
-  if (!productUrl || !characterUrl) return null
+  const { sceneText, characterUrl } = input
+  const productUrls = (input.productUrls ?? []).filter((url): url is string => !!url)
+  if (productUrls.length === 0 || !characterUrl) return null
+
+  const characterImageIndex = productUrls.length + 1
+  const productImageLabel = productUrls.length > 1 ? `images 1-${productUrls.length}` : 'image 1'
 
   const lines: string[] = [
-    'Image 1 is the PRODUCT. Image 2 is the on-screen CHARACTER / presenter.',
+    productUrls.length > 1
+      ? `Images 1-${productUrls.length} are different angles of the SAME PRODUCT. Image ${characterImageIndex} is the on-screen CHARACTER / presenter.`
+      : 'Image 1 is the PRODUCT. Image 2 is the on-screen CHARACTER / presenter.',
     'Compose a single photorealistic scene image for a film in which the character is presenting, holding, or interacting with the product, with the product clearly visible as the hero of the shot.',
     `The scene and its events are: ${sceneText.trim()}`,
-    "Keep the character's face, hair, wardrobe and body identical to image 2, and keep the product's exact shape, colors and label from image 1.",
+    `Keep the character's face, hair, wardrobe and body identical to image ${characterImageIndex}, and keep the product's exact shape, colors and label from ${productImageLabel}.`,
     'The product and the character MUST appear together prominently in the same shot, interacting with each other.',
   ]
 
   if (input.characterSheet) {
     lines.push(
-      'The character reference (image 2) is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) — never substitute a different person.',
+      `The character reference (image ${characterImageIndex}) is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) — never substitute a different person.`,
     )
   }
   if (input.cameraStyle) {
@@ -71,4 +83,76 @@ export function buildSceneCompositionPrompt(input: SceneCompositionInput): strin
   }
 
   return lines.join('\n')
+}
+
+export interface SceneEditRequestInput {
+  prompt: string
+  /** Every grouped product angle, in stable order. */
+  productUrls: readonly string[]
+  characterUrl: string
+  characterSheet?: boolean
+  aspectRatio: string | null
+}
+
+export interface SceneEditRequestBody {
+  prompt: string
+  imageUrls: string[]
+  referenceRoles: string[]
+  referenceCharacterSheets: boolean[]
+  aspectRatio?: string
+}
+
+/**
+ * Build the `ai-image-edit` request body for a product+character scene
+ * composite: one 'product' role entry per grouped product angle (all of them
+ * — this is generation-grounding, not identity-eval strictness, which is
+ * handled separately by identity-eval's selectEvaluatedSpecs), the character
+ * always last. This is the single source of truth for that array shape so the
+ * UI call site and its tests share one definition of "reaches every angle".
+ */
+export function buildSceneEditRequestBody(input: SceneEditRequestInput): SceneEditRequestBody {
+  const productUrls = input.productUrls.filter((url): url is string => !!url)
+  return {
+    prompt: input.prompt,
+    imageUrls: [...productUrls, input.characterUrl],
+    referenceRoles: [...productUrls.map(() => 'product'), 'character'],
+    referenceCharacterSheets: [...productUrls.map(() => false), !!input.characterSheet],
+    ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+  }
+}
+
+export interface SceneGenerateRequestInput {
+  prompt: string
+  /** Every grouped product angle, in stable order. */
+  productUrls: readonly string[]
+  /** Absent for a character-only scene. */
+  characterUrl?: string | null
+  characterSheet?: boolean
+  aspectRatio: string
+}
+
+export interface SceneGenerateRequestBody {
+  prompt: string
+  aspectRatio: string
+  referenceImageUrls: string[]
+  referenceRoles: string[]
+  referenceCharacterSheets: boolean[]
+}
+
+/**
+ * Build the `ai-image-generate` request body for a single-identity scene
+ * (product-only, with every grouped angle, or character-only). One 'product'
+ * role entry per grouped product angle; the character is appended when
+ * present.
+ */
+export function buildSceneGenerateRequestBody(input: SceneGenerateRequestInput): SceneGenerateRequestBody {
+  const productUrls = input.productUrls.filter((url): url is string => !!url)
+  const characterUrl = input.characterUrl ?? undefined
+  return {
+    prompt: input.prompt,
+    aspectRatio: input.aspectRatio,
+    referenceImageUrls: [...productUrls, ...(characterUrl ? [characterUrl] : [])],
+    referenceRoles: [...productUrls.map(() => 'product'), ...(characterUrl ? ['character'] : [])],
+    referenceCharacterSheets: [...productUrls.map(() => false), ...(characterUrl ? [!!input.characterSheet] : [])],
+  }
 }
