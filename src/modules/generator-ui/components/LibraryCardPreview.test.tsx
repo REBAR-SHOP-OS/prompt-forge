@@ -106,3 +106,42 @@ describe('LibraryCardPreview image recovery', () => {
     })
   })
 })
+
+/**
+ * DashboardPage builds `entry.video` as a stub for image-only drafts:
+ *   { storage_path: <image>, thumbnail_url: <the same image>, duration: null }
+ * The `entry.video` fallback would route that stub back onto PlayableVideo —
+ * the exact bug this feature fixes — whenever the images snapshot is empty or
+ * not yet rehydrated (cleared localStorage, another browser, first paint).
+ */
+describe('resolveDraftLibraryPreview image stub fallback', () => {
+  const imageUrl = 'user-images/abc/photo.jpg'
+  const imageStubEntry = {
+    id: 'image-draft',
+    requested_aspect_ratio: '1:1',
+    video: {
+      id: 'image-draft',
+      storage_path: imageUrl,
+      thumbnail_url: imageUrl,
+      aspect_ratio: '1:1',
+      duration: null,
+    },
+  } as JobDetail
+
+  it('treats the image stub as an image when the images snapshot is empty', () => {
+    const preview = resolveDraftLibraryPreview('image-draft', [], [], imageStubEntry)
+    expect(preview).toEqual({ kind: 'image', image: { storage_path: imageUrl } })
+  })
+
+  it('never hands an image stub to the video preview', () => {
+    const preview = resolveDraftLibraryPreview('image-draft', [], [], imageStubEntry)
+    render(<LibraryCardPreview preview={preview} videoSrc={imageUrl} />)
+    expect(screen.queryByTestId('playable-video')).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Project preview' })).toBeInTheDocument()
+  })
+
+  it('still routes a real persisted video (poster differs from the file) to the video path', () => {
+    const preview = resolveDraftLibraryPreview('video-project', [], [], videoEntry)
+    expect(preview).toMatchObject({ kind: 'video', video: { storage_path: 'videos/project.mp4' } })
+  })
+})
