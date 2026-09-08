@@ -9415,30 +9415,6 @@ export default function DashboardPage() {
 
       <div className={`fixed left-4 top-4 flex flex-col items-center gap-2.5 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
         <TooltipProvider delayDuration={150}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="Library"
-                title="Library"
-                onClick={() => setIsApprovedPanelOpen((open) => !open)}
-                className={`relative grid h-10 w-10 place-items-center rounded-full border shadow-sm transition-all duration-200 hover:scale-110 active:scale-95 ${
-                  isApprovedPanelOpen
-                    ? 'border-red-500/50 bg-red-500/15 text-danger'
-                    : 'border-red-500/30 bg-red-500/[0.08] text-danger hover:border-red-500/45 hover:bg-red-500/15'
-                }`}
-              >
-                <Library className="h-5 w-5" aria-hidden="true" />
-                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-surface-2 px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
-                  {approvedIds.size}
-                </span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs">
-              Library
-            </TooltipContent>
-          </Tooltip>
-
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -9475,6 +9451,30 @@ export default function DashboardPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Library"
+                title="Library"
+                onClick={() => setIsApprovedPanelOpen((open) => !open)}
+                className={`relative grid h-10 w-10 place-items-center rounded-full border shadow-sm transition-all duration-200 hover:scale-110 active:scale-95 ${
+                  isApprovedPanelOpen
+                    ? 'border-red-500/50 bg-red-500/15 text-danger'
+                    : 'border-red-500/30 bg-red-500/[0.08] text-danger hover:border-red-500/45 hover:bg-red-500/15'
+                }`}
+              >
+                <Library className="h-5 w-5" aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full border border-border bg-surface-2 px-1 text-[10px] font-semibold leading-none text-foreground/90 tabular-nums">
+                  {approvedIds.size}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              Library
+            </TooltipContent>
+          </Tooltip>
 
           {(() => {
             const isAlert = upcomingOccasion !== null

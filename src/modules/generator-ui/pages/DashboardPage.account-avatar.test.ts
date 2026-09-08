@@ -71,8 +71,8 @@ describe('DashboardPage account avatar header control', () => {
 
     expect(avatarIdx).toBeGreaterThan(-1)
     expect(libraryIdx).toBeGreaterThan(-1)
-    // Library must come first, with Avatar immediately after it.
-    expect(libraryIdx).toBeLessThan(avatarIdx)
+    // Avatar must come first, with Library immediately after it.
+    expect(avatarIdx).toBeLessThan(libraryIdx)
   })
 
   it('the flex container wraps both Avatar dropdown and Library button (no separate fixed div for icons)', () => {
@@ -86,7 +86,7 @@ describe('DashboardPage account avatar header control', () => {
     expect(oldIconRowCount).toBe(0)
   })
 
-  it('Library is the first child and Avatar dropdown is the second child in the flex row', () => {
+  it('Avatar dropdown is the first child and Library is the second child in the flex row', () => {
     // Extract the flex container content and verify child order.
     // Assert the marker was found before slicing on it: indexOf returns -1 when
     // the class list is reworded, and `slice(-1, 3999)` then returns the last
@@ -96,14 +96,16 @@ describe('DashboardPage account avatar header control', () => {
     expect(containerStart, 'header container marker not found').toBeGreaterThan(-1)
     const containerSlice = source.slice(containerStart, containerStart + 8000)
 
-    // First child: the TooltipProvider wrapping the Library button
-    const tooltipProviderIdx = containerSlice.indexOf('<TooltipProvider')
-    // Second child: the DropdownMenu wrapping the Avatar button
+    // First control: the DropdownMenu wrapping the Avatar button.
     const dropdownMenuIdx = containerSlice.indexOf('<DropdownMenu>')
+    // Second control: the Library button. Compare against the button itself,
+    // not <TooltipProvider> — the provider wraps the whole rail, so it is
+    // always first and would pass no matter how the controls are ordered.
+    const libraryIdx = containerSlice.indexOf('aria-label="Library"')
 
     expect(dropdownMenuIdx).toBeGreaterThan(-1)
-    expect(tooltipProviderIdx).toBeGreaterThan(-1)
-    expect(tooltipProviderIdx).toBeLessThan(dropdownMenuIdx)
+    expect(libraryIdx).toBeGreaterThan(-1)
+    expect(dropdownMenuIdx).toBeLessThan(libraryIdx)
   })
 
   // Carried over from the superseded #219: the two controls the user reads as a

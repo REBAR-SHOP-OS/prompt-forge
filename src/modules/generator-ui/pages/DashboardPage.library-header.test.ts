@@ -32,7 +32,7 @@ describe('DashboardPage Library header icon', () => {
     expect(source).toContain('<TooltipContent side="right"')
   })
 
-  it('renders Library as an equally sized circular first control before the profile avatar', () => {
+  it('renders Library as an equally sized circular control directly after the profile avatar', () => {
     // Assert each lookup succeeded BEFORE using its result. indexOf returns -1
     // and match returns undefined when the markup is renamed, and slicing from
     // -1 quietly hands back almost the whole file while `.toContain` on
@@ -46,7 +46,8 @@ describe('DashboardPage Library header icon', () => {
     const avatarIdx = containerSlice.indexOf('aria-label="Open account menu"')
     expect(libraryIdx, 'Library control not found in the header container').toBeGreaterThan(-1)
     expect(avatarIdx, 'account avatar not found in the header container').toBeGreaterThan(-1)
-    expect(libraryIdx).toBeLessThan(avatarIdx)
+    // Avatar first, Library second.
+    expect(avatarIdx).toBeLessThan(libraryIdx)
 
     const libraryButton = containerSlice.match(/aria-label="Library"[\s\S]*?<\/button>/)?.[0]
     expect(libraryButton, 'Library <button> markup not matched').toBeDefined()
