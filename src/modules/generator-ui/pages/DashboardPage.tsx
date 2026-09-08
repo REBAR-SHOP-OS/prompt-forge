@@ -114,6 +114,14 @@ import { toast } from 'sonner'
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
+import { UserImageView } from '@/modules/generator-ui/components/UserImageView'
+import {
+  FRAMES_BUCKET,
+  USER_IMAGES_BUCKET,
+  resolveImageBucketKey,
+  signUserImageRows,
+  signUserImageUrl,
+} from '@/modules/generator-ui/lib/userImageUrl'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
@@ -377,7 +385,6 @@ type UserAudioItem = {
 }
 
 
-const FRAMES_BUCKET = 'wan-frames'
 // Error name marking a continuity seed-frame capture failure — the scenario
 // chain treats it as degradable (scene continues unseeded) rather than fatal.
 const SEED_FRAME_ERROR = 'SeedFrameCaptureError'
@@ -441,58 +448,7 @@ function buildSocialTargetOrigins(detected: string | null): string[] {
   if (detected && isAllowedSocialOrigin(detected)) origins.add(detected)
   return Array.from(origins)
 }
-const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
-
-/**
- * Private buckets (user-images, wan-frames, …) store paths as public URLs
- * (.../object/public/<bucket>/<key>) which return 400/"Bucket not found"
- * when loaded in an <img>. Detect which private bucket an object lives in and
- * return both the bucket id and the bucket-relative key so we can sign it.
- */
-const SIGNABLE_IMAGE_BUCKETS = [USER_IMAGES_BUCKET, FRAMES_BUCKET] as const
-
-function resolveImageBucketKey(
-  storagePath: string | null | undefined,
-): { bucket: string; key: string } | null {
-  if (!storagePath) return null
-  const cleanKey = (value: string) => value.split('#')[0].split('?')[0].replace(/^\/+/, '')
-  for (const bucket of SIGNABLE_IMAGE_BUCKETS) {
-    const marker = `/${bucket}/`
-    const idx = storagePath.indexOf(marker)
-    if (idx >= 0) return { bucket, key: cleanKey(storagePath.slice(idx + marker.length)) }
-  }
-  // Already a bucket-relative key (no http origin, no signed/blob/data URL).
-  if (!/^https?:|^blob:|^data:/.test(storagePath)) {
-    return { bucket: USER_IMAGES_BUCKET, key: cleanKey(storagePath) }
-  }
-  return null
-}
-
-/** Resolve a displayable signed URL for a private-bucket image. Falls back to the raw value. */
-async function signUserImageUrl(storagePath: string | null | undefined): Promise<string> {
-  const raw = storagePath ?? ''
-  // Already a directly-usable URL that isn't a (broken) public-bucket URL.
-  if (/^blob:|^data:/.test(raw)) return raw
-  const resolved = resolveImageBucketKey(raw)
-  if (!resolved) return raw
-  try {
-    const { data, error } = await supabase.storage
-      .from(resolved.bucket)
-      .createSignedUrl(resolved.key, 60 * 60 * 24 * 365)
-    if (!error && data?.signedUrl) return data.signedUrl
-  } catch {
-    /* fall through */
-  }
-  return raw
-}
-
-/** Sign every image row's storage_path so private-bucket thumbnails render. */
-async function signUserImageRows<T extends { storage_path: string }>(rows: T[]): Promise<T[]> {
-  return Promise.all(
-    rows.map(async (row) => ({ ...row, storage_path: await signUserImageUrl(row.storage_path) })),
-  )
-}
 
 function mergeUserImageRows<T extends { id: string; created_at: string }>(current: T[], incoming: T[]): T[] {
   const byId = new Map<string, T>()
@@ -500,77 +456,6 @@ function mergeUserImageRows<T extends { id: string; created_at: string }>(curren
   for (const row of incoming) byId.set(row.id, { ...(byId.get(row.id) ?? row), ...row })
   return Array.from(byId.values()).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  )
-}
-
-/**
- * Renders a private-bucket image with a self-healing fallback: if the <img>
- * fails to load (stale/unsigned URL), it re-signs once from the source path.
- * If it still fails (object deleted from storage), a clean placeholder is
- * shown instead of the browser's broken-image glyph + bare alt text.
- */
-function UserImageView({
-  src,
-  alt,
-  className,
-  imageKey,
-  loading,
-}: {
-  src: string
-  alt: string
-  className?: string
-  imageKey?: string
-  loading?: 'lazy' | 'eager'
-}) {
-  const [resolved, setResolved] = useState(src)
-  const [broken, setBroken] = useState(false)
-  const retriedRef = useRef(false)
-
-  useEffect(() => {
-    setResolved(src)
-    setBroken(false)
-    retriedRef.current = false
-  }, [src])
-
-  const handleError = useCallback(() => {
-    if (retriedRef.current) {
-      setBroken(true)
-      return
-    }
-    retriedRef.current = true
-    let active = true
-    signUserImageUrl(src)
-      .then((signed) => {
-        if (!active) return
-        if (signed && signed !== resolved) setResolved(signed)
-        else setBroken(true)
-      })
-      .catch(() => {
-        if (active) setBroken(true)
-      })
-    return () => {
-      active = false
-    }
-  }, [src, resolved])
-
-  if (broken) {
-    return (
-      <div className={`flex flex-col items-center justify-center gap-2 bg-surface-2 text-center ${className ?? ''}`}>
-        <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
-        <span className="px-2 text-xs text-muted-foreground">Image unavailable</span>
-      </div>
-    )
-  }
-
-  return (
-    <img
-      key={imageKey ?? src}
-      src={resolved}
-      alt={alt}
-      className={className}
-      loading={loading}
-      onError={handleError}
-    />
   )
 }
 

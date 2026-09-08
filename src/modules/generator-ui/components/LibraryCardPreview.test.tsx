@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LibraryCardPreview } from '@/modules/generator-ui/components/LibraryCardPreview'
@@ -7,6 +7,11 @@ import type { JobDetail } from '@/modules/job-orchestrator/contract'
 
 vi.mock('@/modules/generator-ui/components/PlayableVideo', () => ({
   PlayableVideo: ({ src }: { src: string }) => <div data-testid="playable-video" data-src={src} />,
+}))
+
+const signUserImageUrl = vi.fn(async (path: string) => `https://signed.example/${path}?token=abc`)
+vi.mock('@/modules/generator-ui/lib/userImageUrl', () => ({
+  signUserImageUrl: (path: string) => signUserImageUrl(path),
 }))
 
 const videoEntry = {
@@ -64,6 +69,40 @@ describe('LibraryCardPreview', () => {
     expect(preview).toMatchObject({
       kind: 'video',
       video: { storage_path: 'videos/project.mp4' },
+    })
+  })
+})
+
+/**
+ * A stored `storage_path` is a PUBLIC-bucket URL into a PRIVATE bucket, which
+ * returns 400/"Bucket not found" when a browser loads it in an <img> (see
+ * resolveImageBucketKey). Rendering the image preview as a bare <img> would
+ * therefore show the broken-image glyph for exactly the paths this feature
+ * exists to display — the tests above only pass because they hand in an
+ * already-signed https URL. The preview must go through UserImageView, which
+ * re-signs once on error and falls back to a clean placeholder.
+ */
+describe('LibraryCardPreview image recovery', () => {
+  it('re-signs an unsigned storage path instead of leaving a broken image', async () => {
+    signUserImageUrl.mockClear()
+    const rawPath = 'user-images/abc/photo.jpg'
+
+    render(
+      <LibraryCardPreview preview={{ kind: 'image', image: { storage_path: rawPath } }} />,
+    )
+
+    const img = screen.getByRole('img', { name: 'Project preview' })
+    expect(img).toHaveAttribute('src', rawPath)
+
+    // What the browser does when the unsigned public-bucket URL 400s.
+    fireEvent.error(img)
+
+    await waitFor(() => {
+      expect(signUserImageUrl).toHaveBeenCalledWith(rawPath)
+      expect(screen.getByRole('img', { name: 'Project preview' })).toHaveAttribute(
+        'src',
+        `https://signed.example/${rawPath}?token=abc`,
+      )
     })
   })
 })
