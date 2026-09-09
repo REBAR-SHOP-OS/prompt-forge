@@ -72,6 +72,30 @@ export async function queueSceneBatch(
   return result
 }
 
+export async function queueSequentialSceneBatch(
+  scenes: string[],
+  queueScene: (scene: string, sceneIndex: number, previousLastFrameUrl?: string) => Promise<string>,
+  waitForLastFrame: (jobId: string, sceneIndex: number) => Promise<string>,
+): Promise<string[]> {
+  const sceneEntries = scenes
+    .map((scene, sceneIndex) => ({ scene: scene.trim(), sceneIndex }))
+    .filter(({ scene }) => scene.length > 0)
+  const jobIds: string[] = []
+  let previousLastFrameUrl: string | undefined
+
+  for (let entryIndex = 0; entryIndex < sceneEntries.length; entryIndex += 1) {
+    const { scene, sceneIndex } = sceneEntries[entryIndex]
+    const jobId = await queueScene(scene, sceneIndex, previousLastFrameUrl)
+    jobIds.push(jobId)
+
+    if (entryIndex < sceneEntries.length - 1) {
+      previousLastFrameUrl = await waitForLastFrame(jobId, sceneIndex)
+    }
+  }
+
+  return jobIds
+}
+
 export async function waitForSceneBatch(
   jobIds: string[],
   getJob: (jobId: string) => Promise<BatchJob>,
