@@ -294,7 +294,7 @@ describe('final-film narration review integration contracts', () => {
     expect(panelSource).toContain('void runTranscription()')
   })
 
-  it('takes expected narration from film metadata, never from the prompt', () => {
+  it('keeps narration metadata independent from the removed Library shortcut', () => {
     // The panel now compares heard speech against the Final Film's saved
     // narration_text (metadata), not the prompt. It must not derive expected
     // narration from the prompt via extractNarration.
@@ -302,8 +302,10 @@ describe('final-film narration review integration contracts', () => {
     expect(panelSource).toContain('expectedNarration')
     expect(panelSource).toContain('reviewNarration')
     expect(panelSource).not.toContain('prompt:')
-    expect(dashboardSource).toContain('aria-label="Transcribe film audio"')
-    expect(dashboardSource).toContain('libraryTranscript')
+    expect(dashboardSource).not.toContain('aria-label="Transcribe film audio"')
+    expect(dashboardSource).not.toContain('libraryTranscript')
+    expect(dashboardSource).toContain('aria-label="Show transcript"')
+    expect(dashboardSource).toContain('transcriptOpen')
     expect(dashboardSource).not.toContain('narrationReview')
   })
 

@@ -59,12 +59,10 @@ import {
   FileText,
   FolderOpen,
   FolderPlus,
-  MessageSquareQuote,
   Contact,
   Eye,
   EyeOff,
   Building2,
-  ScanText,
   X
 } from 'lucide-react'
 import {
@@ -174,7 +172,6 @@ import MakeFilmWizardDialog, { type FilmAspect, type FilmIdentity, type FilmCrea
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
-import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
@@ -1017,8 +1014,6 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
-  const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
-  const [libraryTranscript, setLibraryTranscript] = useState<{ cardId: string; videoUrl: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -6689,7 +6684,6 @@ export default function DashboardPage() {
   // immediately keep working on them — opening a draft == resuming it.
   function openLibraryEntry(video: JobDetail) {
     setLastMergedPreview(null)
-    setIsApprovedPanelOpen(false)
     setPreviewDismissed(false)
 
     if (video.id.startsWith('draft-')) {
@@ -12301,39 +12295,6 @@ export default function DashboardPage() {
                       >
                         {video.input_prompt}
                       </button>
-                      {(() => {
-                        const canonical = (video as { narration_text?: string | null }).narration_text ?? null
-                        const narration = canonical
-                          ? canonical.split('\n').map((l) => l.trim()).filter(Boolean)
-                          : extractNarration(video.input_prompt)
-                        const hasNarration = narration.length > 0
-                        return (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setNarrationViewer({
-                                cardId: video.id,
-                                prompt: video.input_prompt ?? null,
-                                narrationText: canonical,
-                                videoStoragePath: video.video?.storage_path ?? null,
-                              })
-                            }}
-                            aria-label="Narration for this card"
-                            title={hasNarration ? 'Narration for this card' : 'No narration detected in this card'}
-                            className={`relative grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
-                              hasNarration
-                                ? 'border-violet-400/40 bg-violet-500/10 text-action-violet hover:border-action-violet/60 hover:bg-violet-500/20 hover:text-action-violet-strong'
-                                : 'border-border bg-accent/30 text-muted-foreground hover:border-border hover:text-foreground/80'
-                            }`}
-                          >
-                            <MessageSquareQuote className="h-3.5 w-3.5" aria-hidden="true" />
-                            {hasNarration ? (
-                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-ring" aria-hidden="true" />
-                            ) : null}
-                          </button>
-                        )
-                      })()}
                       {!isReadOnlyProject && (
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
@@ -12514,13 +12475,6 @@ export default function DashboardPage() {
                         }}
                       </LiveJobProgress>
                     ) : null}
-                    <NarrationDialog
-                      open={narrationViewer?.cardId === video.id}
-                      onClose={() => setNarrationViewer(null)}
-                      prompt={narrationViewer?.prompt ?? null}
-                      narrationText={narrationViewer?.narrationText ?? null}
-                      videoStoragePath={narrationViewer?.videoStoragePath ?? null}
-                    />
                   </article>
                   {!isLast ? (
                     <div
@@ -12860,26 +12814,6 @@ export default function DashboardPage() {
                             <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
-                        {variant === 'final' ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              const storagePath = video.video?.storage_path ?? ''
-                              setLibraryTranscript({ cardId: video.id, videoUrl: null })
-                              void signStorageUrl(storagePath).then((signed) => {
-                                setLibraryTranscript((prev) =>
-                                  prev?.cardId === video.id ? { cardId: video.id, videoUrl: signed ?? storagePath } : prev,
-                                )
-                              })
-                            }}
-                            aria-label="Transcribe film audio"
-                            title="Transcribe speech from this film"
-                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-action-violet/20 text-action-violet/70 transition hover:border-action-violet/50 hover:bg-action-violet/10 hover:text-action-violet"
-                          >
-                            <ScanText className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        ) : null}
                         <button
                           type="button"
                           onClick={(event) => {
@@ -12911,14 +12845,6 @@ export default function DashboardPage() {
                       <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
                     </div>
                   </div>
-                  {variant === 'final' && libraryTranscript?.cardId === video.id && libraryTranscript.videoUrl ? (
-                    <div className="fixed inset-0 z-50">
-                      <TranscriptPanel
-                        videoUrl={libraryTranscript.videoUrl}
-                        onClose={() => setLibraryTranscript(null)}
-                      />
-                    </div>
-                  ) : null}
                 </article>
               )
             }
