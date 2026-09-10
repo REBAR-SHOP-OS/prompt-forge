@@ -167,6 +167,25 @@ describe("runAntiDuplicatePass", () => {
     expect(result.attempts).toBe(2);
   });
 
+  it("fails closed with a controlled reason when the semantic judge errors", async () => {
+    const history = [entry(coffee())];
+    const candidate = scenario("Coffee", "wide", "zoom", "the barista grins and passes the mug");
+    const regenerate = vi.fn(async () => steel());
+    const judge = vi.fn(async () => {
+      throw new Error("temporary gateway failure");
+    });
+
+    const result = await runAntiDuplicatePass(candidate, history, regenerate, judge);
+
+    expect(result).toEqual({
+      accepted: false,
+      scenes: [],
+      attempts: 1,
+      reason: "judge-error",
+    });
+    expect(regenerate).not.toHaveBeenCalled();
+  });
+
   it("flags a re-told story with a new identity as a duplicate (identity is metadata)", async () => {
     // Same story, but the candidate uses a different product identity.
     const history = [entry(coffee(), PRODUCT_A)];

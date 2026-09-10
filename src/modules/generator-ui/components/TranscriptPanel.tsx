@@ -54,6 +54,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   const [displayText, setDisplayText] = useState<string>('')
   const [language, setLanguage] = useState<string>(ORIGINAL)
   const [loading, setLoading] = useState(false)
+  const [translating, setTranslating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pronouncing, setPronouncing] = useState<number | null>(null)
   const [playingWord, setPlayingWord] = useState<number | null>(null)
@@ -215,7 +216,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
         return
       }
 
-      setLoading(true)
+      setTranslating(true)
       try {
         const { data, error: fnError } = await supabase.functions.invoke<TranscriptResponse>(
           'video-transcript',
@@ -229,7 +230,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to translate.')
       } finally {
-        setLoading(false)
+        setTranslating(false)
       }
     },
     [transcript],
@@ -240,7 +241,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <span className="text-sm font-semibold text-foreground">Transcript</span>
         <div className="flex items-center gap-2">
-          <Select value={language} onValueChange={handleLanguageChange} disabled={!transcript || loading}>
+          <Select value={language} onValueChange={handleLanguageChange} disabled={!transcript || loading || translating}>
             <SelectTrigger className="h-8 w-[130px] border-border bg-accent/40 text-xs text-foreground/90">
               <SelectValue placeholder="Language" />
             </SelectTrigger>
@@ -335,12 +336,19 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {translationLabel}
                 </div>
-                <p
-                  dir={translationRtl ? 'rtl' : 'ltr'}
-                  className="whitespace-pre-wrap text-[15px] leading-7 text-foreground/90"
-                >
-                  {displayText}
-                </p>
+                {translating ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    <span>Translating…</span>
+                  </div>
+                ) : (
+                  <p
+                    dir={translationRtl ? 'rtl' : 'ltr'}
+                    className="whitespace-pre-wrap text-[15px] leading-7 text-foreground/90"
+                  >
+                    {displayText}
+                  </p>
+                )}
               </div>
             ) : null}
           </div>

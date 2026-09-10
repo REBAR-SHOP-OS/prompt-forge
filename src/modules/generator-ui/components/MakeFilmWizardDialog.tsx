@@ -46,7 +46,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
 import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
-import { groupProductPhotos, productPhotoForScene, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
+import { groupProductPhotos, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 
@@ -163,7 +163,7 @@ export interface MakeFilmWizardDialogProps {
   defaultAspect: FilmAspect
   userId: string | null
   writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
-  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean) => Promise<string>
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrls?: string[], characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
 }
 
@@ -769,8 +769,15 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     for (let i = 0; i < plans.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
       try {
-        const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], i) ?? snapshot.product?.url
-        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        // The FULL grouped set of product angles reaches generation, not one
+        // rotated by scene index — a single generated shot only shows one
+        // angle, but every angle still grounds the model at once.
+        const productUrls = snapshot.product?.urls?.length
+          ? snapshot.product.urls
+          : snapshot.product?.url
+            ? [snapshot.product.url]
+            : []
+        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, productUrls, snapshot.character?.url, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -793,8 +800,12 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const characterSheet = snapshot.character?.characterSheet ?? false
-      const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], index) ?? snapshot.product?.url
-      const url = await generateSceneImage(plans[index].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const productUrls = snapshot.product?.urls?.length
+        ? snapshot.product.urls
+        : snapshot.product?.url
+          ? [snapshot.product.url]
+          : []
+      const url = await generateSceneImage(plans[index].scenarioText, aspect, productUrls, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
