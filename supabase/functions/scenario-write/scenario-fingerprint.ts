@@ -38,6 +38,37 @@ export interface ScenarioHistoryEntry {
   scenarioText: string
 }
 
+/**
+ * Hydrate a persisted history row without trusting its JSON shape. Older or
+ * partially-written fingerprints can be valid JSON objects while missing the
+ * arrays required by fingerprintSimilarity; rebuild those from the canonical
+ * scenario text so one incompatible row cannot crash the whole request.
+ */
+export function hydrateScenarioHistoryEntry(
+  fingerprint: unknown,
+  scenarioText: string,
+): ScenarioHistoryEntry | null {
+  const text = scenarioText.trim()
+  if (!text) return null
+
+  const value = fingerprint as Partial<ScenarioFingerprint> | null
+  const valid =
+    value !== null &&
+    typeof value === 'object' &&
+    typeof value.opening === 'string' &&
+    typeof value.ending === 'string' &&
+    Array.isArray(value.concept) && value.concept.every((word) => typeof word === 'string') &&
+    Array.isArray(value.camera) && value.camera.every((move) => typeof move === 'string') &&
+    typeof value.subjectCombo === 'string'
+
+  return {
+    fingerprint: valid
+      ? value as ScenarioFingerprint
+      : buildScenarioFingerprint(text, typeof value?.subjectCombo === 'string' ? value.subjectCombo : ''),
+    scenarioText: text,
+  }
+}
+
 /** Function words dropped from the concept signature so they don't inflate similarity. */
 const STOPWORDS = new Set([
   'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'so', 'as', 'at', 'by',

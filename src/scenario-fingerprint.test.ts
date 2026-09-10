@@ -4,6 +4,7 @@ import {
   buildSemanticJudgePrompt,
   buildVariationInstruction,
   fingerprintSimilarity,
+  hydrateScenarioHistoryEntry,
   normalizeText,
   parseSemanticJudgeResult,
   runAntiDuplicatePass,
@@ -57,6 +58,26 @@ describe("buildScenarioFingerprint", () => {
     const fp = buildScenarioFingerprint(joined, PRODUCT_A);
     expect(fp.opening).toContain("tea opening");
     expect(fp.ending).toContain("tea ending");
+  });
+});
+
+describe("hydrateScenarioHistoryEntry", () => {
+  it("rebuilds a legacy or malformed persisted fingerprint from scenario text", () => {
+    const scenarioText = coffee().join("\n\n");
+    const entry = hydrateScenarioHistoryEntry(
+      { opening: "legacy", subjectCombo: PRODUCT_A },
+      scenarioText,
+    );
+
+    expect(entry).not.toBeNull();
+    expect(entry?.fingerprint.concept.length).toBeGreaterThan(0);
+    expect(entry?.fingerprint.camera).toContain("wide");
+    expect(entry?.fingerprint.subjectCombo).toBe(PRODUCT_A);
+    expect(() => fingerprintSimilarity(buildScenarioFingerprint(steel()), entry!.fingerprint)).not.toThrow();
+  });
+
+  it("rejects rows without canonical scenario text", () => {
+    expect(hydrateScenarioHistoryEntry({}, "   ")).toBeNull();
   });
 });
 

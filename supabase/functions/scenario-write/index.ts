@@ -17,6 +17,7 @@ import {
 import {
   buildScenarioFingerprint,
   buildSemanticJudgePrompt,
+  hydrateScenarioHistoryEntry,
   parseSemanticJudgeResult,
   runAntiDuplicatePass,
   type ScenarioHistoryEntry,
@@ -433,11 +434,9 @@ Deno.serve(async (req) => {
         }
         const rows = pageRows ?? [];
         for (const r of rows) {
-          const fp = r?.fingerprint;
           const text = typeof r?.scenario_text === "string" ? r.scenario_text : "";
-          if (fp && typeof fp === "object" && text) {
-            historyEntries.push({ fingerprint: fp as ScenarioHistoryEntry["fingerprint"], scenarioText: text });
-          }
+          const entry = hydrateScenarioHistoryEntry(r?.fingerprint, text);
+          if (entry) historyEntries.push(entry);
         }
         if (rows.length < PAGE) break;
         from += PAGE;
