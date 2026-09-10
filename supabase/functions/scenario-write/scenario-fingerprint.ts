@@ -298,10 +298,11 @@ export async function runAntiDuplicatePass(
         let isDup: boolean
         try {
           isDup = await judge(candidateText, entry.scenarioText)
-        } catch {
+        } catch (error) {
           // Fail closed without escalating a recoverable judge failure into the
           // edge function's generic 500 catch. The caller maps this reason to a
           // retryable, user-safe response and never persists the candidate.
+          console.error('scenario-write semantic judge error', error)
           return { accepted: false, scenes: [], attempts, reason: 'judge-error' }
         }
         if (isDup) {
@@ -319,7 +320,16 @@ export async function runAntiDuplicatePass(
       return { accepted: false, scenes: [], attempts, reason: 'duplicate' }
     }
 
-    const next = await regenerate(buildVariationInstruction())
+    let next: string[] | null
+    try {
+      next = await regenerate(buildVariationInstruction())
+    } catch (error) {
+      // A duplicate-regeneration gateway/parser failure is another verification
+      // failure. Keep it fail-closed and observable instead of letting it escape
+      // to the handler's generic Internal error response.
+      console.error('scenario-write duplicate regeneration error', error)
+      return { accepted: false, scenes: [], attempts, reason: 'judge-error' }
+    }
     if (!next || next.length === 0) {
       return { accepted: false, scenes: [], attempts, reason: 'empty' }
     }
