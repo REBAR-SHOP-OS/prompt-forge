@@ -1434,8 +1434,8 @@ export default function DashboardPage() {
   const previewWorkspaceRef = useRef<HTMLElement | null>(null)
   const previewRightSidebarRef = useRef<HTMLElement | null>(null)
   const previewLeftSidebarRef = useRef<HTMLElement | null>(null)
-  const previewFrameRef = useRef<HTMLElement | null>(null)
-  const previewHeaderRef = useRef<HTMLElement | null>(null)
+  const previewFrameRef = useRef<HTMLDivElement | null>(null)
+  const previewHeaderRef = useRef<HTMLDivElement | null>(null)
   const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
     if (typeof window === 'undefined') return 600
     return Math.max(240, Math.round(Math.min(window.innerHeight - 320, window.innerHeight * 0.72) * 0.88))
