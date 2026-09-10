@@ -27,9 +27,17 @@ describe('Final Film flow contract', () => {
     expect(dashboardSource).toContain('onClick={handleMergeAllVideos}')
   })
 
-  it('guards last-frame chaining out of wizard batches', () => {
-    expect(dashboardSource).toContain('if (!isIndependentSceneBatch && i > 0 && previousJobId)')
-    expect(dashboardSource).toContain('if (!isIndependentSceneBatch) previousJobId = seededJob.id')
-    expect(dashboardSource).toContain('startFrameUrl = i === 0 ? firstSceneImageUrl : undefined')
+  it('chains 30s+ wizard cards while preserving independent short-film queueing', () => {
+    expect(dashboardSource).toContain(
+      'const requiresSequentialContinuity = isWizardSceneBatch && totalDuration >= 30',
+    )
+    expect(dashboardSource).toContain('if (requiresSequentialContinuity) {')
+    expect(dashboardSource).toContain('queueSequentialSceneBatch(')
+    expect(dashboardSource).toContain(
+      '(jobId, sceneIndex) => waitForLastFrameUrl(jobId, `Scene ${sceneIndex + 1}`)',
+    )
+    expect(dashboardSource).toContain('startFrameUrl = previousLastFrameUrl')
+    expect(dashboardSource).toContain('totalDuration >= 30 ||')
+    expect(dashboardSource).toContain('} else if (isIndependentSceneBatch) {')
   })
 })

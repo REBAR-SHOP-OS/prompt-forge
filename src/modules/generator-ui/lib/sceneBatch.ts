@@ -72,6 +72,42 @@ export async function queueSceneBatch(
   return result
 }
 
+/**
+ * Queue scenes strictly in order, handing each completed card's real last
+ * frame to the next one.
+ *
+ * `onJobQueued` fires the moment a job exists, BEFORE the wait for its last
+ * frame. That matters: any failure in the chain rejects, and without this the
+ * caller's only record of the batch is the resolved array it never receives —
+ * so clips that are already rendering, already visible in the UI and already
+ * costing credits get reported as "nothing queued".
+ */
+export async function queueSequentialSceneBatch(
+  scenes: string[],
+  queueScene: (scene: string, sceneIndex: number, previousLastFrameUrl?: string) => Promise<string>,
+  waitForLastFrame: (jobId: string, sceneIndex: number) => Promise<string>,
+  onJobQueued?: (jobId: string, sceneIndex: number) => void,
+): Promise<string[]> {
+  const sceneEntries = scenes
+    .map((scene, sceneIndex) => ({ scene: scene.trim(), sceneIndex }))
+    .filter(({ scene }) => scene.length > 0)
+  const jobIds: string[] = []
+  let previousLastFrameUrl: string | undefined
+
+  for (let entryIndex = 0; entryIndex < sceneEntries.length; entryIndex += 1) {
+    const { scene, sceneIndex } = sceneEntries[entryIndex]
+    const jobId = await queueScene(scene, sceneIndex, previousLastFrameUrl)
+    jobIds.push(jobId)
+    onJobQueued?.(jobId, sceneIndex)
+
+    if (entryIndex < sceneEntries.length - 1) {
+      previousLastFrameUrl = await waitForLastFrame(jobId, sceneIndex)
+    }
+  }
+
+  return jobIds
+}
+
 export async function waitForSceneBatch(
   jobIds: string[],
   getJob: (jobId: string) => Promise<BatchJob>,
