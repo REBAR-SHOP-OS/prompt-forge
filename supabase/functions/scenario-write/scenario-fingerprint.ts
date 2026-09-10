@@ -295,7 +295,15 @@ export async function runAntiDuplicatePass(
         break
       }
       if (fast >= fastThreshold) {
-        const isDup = await judge(candidateText, entry.scenarioText)
+        let isDup: boolean
+        try {
+          isDup = await judge(candidateText, entry.scenarioText)
+        } catch {
+          // Fail closed without escalating a recoverable judge failure into the
+          // edge function's generic 500 catch. The caller maps this reason to a
+          // retryable, user-safe response and never persists the candidate.
+          return { accepted: false, scenes: [], attempts, reason: 'judge-error' }
+        }
         if (isDup) {
           duplicate = true
           break
