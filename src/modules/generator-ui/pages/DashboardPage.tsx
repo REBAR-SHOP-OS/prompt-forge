@@ -194,6 +194,8 @@ import {
   productIdentityCategory,
   productViewsForScene,
   refreshProductIdentity,
+  persistProjectProductIdentity,
+  mergeRestoredProductIdentities,
   type ProductIdentityCategoryId,
 } from '@/modules/generator-ui/lib/productIdentity'
 import { buildSceneEditRequestBody, buildSceneGenerateRequestBody, buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
@@ -2849,8 +2851,10 @@ export default function DashboardPage() {
   const [projectProductIdentities, setProjectProductIdentities] = useState<Record<string, ProjectProduct>>({})
   const projectProductIdentitiesKey = userId ? `project-product-identities:${userId}` : null
   const productIdentityScopeId = selectedProjectId ?? activeDraftId
+  const touchedProductScopes = useRef(new Set<string>())
   useEffect(() => {
     let cancelled = false
+    touchedProductScopes.current = new Set()
     setProjectProductIdentities({})
     if (!projectProductIdentitiesKey) return
     void (async () => {
@@ -2867,37 +2871,37 @@ export default function DashboardPage() {
             }, signStorageUrl)
             return restored ? [id, restored] as const : null
           }))
-        if (!cancelled) setProjectProductIdentities((current) => ({ ...Object.fromEntries(entries.filter((entry) => entry !== null)), ...current }))
+        if (!cancelled) setProjectProductIdentities((current) => mergeRestoredProductIdentities(
+          Object.fromEntries(entries.filter((entry) => entry !== null)), current, touchedProductScopes.current,
+        ))
       } catch {
         if (!cancelled) setProjectProductIdentities({})
       }
     })()
     return () => { cancelled = true }
   }, [projectProductIdentitiesKey, signStorageUrl])
-  function persistProjectProductIdentities(next: Record<string, ProjectProduct>) {
-    if (!projectProductIdentitiesKey) return
-    try { window.localStorage.setItem(projectProductIdentitiesKey, JSON.stringify(next)) } catch { /* ignore */ }
-  }
   function assignProductToCurrentProject(product: ProjectProduct) {
     const scopeId = productIdentityScopeId ?? ensureActiveDraftId()
     const normalized: ProjectProduct = {
       ...product,
       urls: approvedProductViewUrls(product.url, product.urls),
     }
+    touchedProductScopes.current.add(scopeId)
+    if (projectProductIdentitiesKey) {
+      try { persistProjectProductIdentity(window.localStorage, projectProductIdentitiesKey, scopeId, normalized) } catch { /* Storage may be unavailable. */ }
+    }
     setSelectedProduct(normalized)
-    setProjectProductIdentities((current) => {
-      const next = { ...current, [scopeId]: normalized }
-      persistProjectProductIdentities(next)
-      return next
-    })
+    setProjectProductIdentities((current) => ({ ...current, [scopeId]: normalized }))
   }
   function clearProductFromCurrentProject() {
     setSelectedProduct(null)
     if (!productIdentityScopeId) return
+    touchedProductScopes.current.add(productIdentityScopeId)
+    if (projectProductIdentitiesKey) {
+      try { persistProjectProductIdentity(window.localStorage, projectProductIdentitiesKey, productIdentityScopeId, null) } catch { /* Storage may be unavailable. */ }
+    }
     setProjectProductIdentities((current) => {
-      if (!(productIdentityScopeId in current)) return current
       const { [productIdentityScopeId]: _removed, ...next } = current
-      persistProjectProductIdentities(next)
       return next
     })
   }

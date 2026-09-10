@@ -96,3 +96,31 @@ export async function refreshProductIdentity<T extends ProductIdentitySelection>
   ))
   return urls.length ? { ...identity, url: urls[0], urls } : null
 }
+
+/** Change one draft without replacing identities still being restored in memory. */
+export function persistProjectProductIdentity(
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
+  key: string,
+  projectId: string,
+  product: ProductIdentitySelection | null,
+): void {
+  let identities: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(key) ?? '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      identities = { ...parsed }
+    }
+  } catch { /* Invalid stored JSON has no recoverable identities. */ }
+  if (product) identities[projectId] = product
+  else delete identities[projectId]
+  storage.setItem(key, JSON.stringify(identities))
+}
+
+/** Late URL refresh must not restore a selection changed or removed by the user. */
+export function mergeRestoredProductIdentities<T>(
+  restored: Readonly<Record<string, T>>,
+  current: Readonly<Record<string, T>>,
+  touched: ReadonlySet<string>,
+): Record<string, T> {
+  return { ...Object.fromEntries(Object.entries(restored).filter(([id]) => !touched.has(id))), ...current }
+}

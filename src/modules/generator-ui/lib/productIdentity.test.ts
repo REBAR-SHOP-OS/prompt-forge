@@ -9,6 +9,8 @@ import {
   normalizeProductIdentity,
   productViewsForScene,
   refreshProductIdentity,
+  persistProjectProductIdentity,
+  mergeRestoredProductIdentities,
 } from './productIdentity'
 
 type Photo = { id: string; title: string; storagePath: string }
@@ -114,5 +116,33 @@ describe('restoring product identity', () => {
   })
   it('does not restore an identity with no accessible references', async () => {
     expect(await refreshProductIdentity(product, async () => null)).toBeNull()
+  })
+})
+
+describe('selection changes while a draft is restoring', () => {
+  const oldProduct = normalizeProductIdentity({ id: 'folder:old', category: 'products', url: 'expired' })
+  const newProduct = normalizeProductIdentity({ id: 'folder:new', category: 'products', url: 'new' })
+  it('preserves other draft identities after deferred signing, selection, and reload', async () => {
+    const key = 'product-identities-race'
+    localStorage.setItem(key, JSON.stringify({ olderDraft: oldProduct }))
+    let finish: (url: string) => void
+    const restoring = refreshProductIdentity(oldProduct, () => new Promise<string>((resolve) => { finish = resolve }))
+    persistProjectProductIdentity(localStorage, key, 'newDraft', newProduct)
+    finish('fresh-old')
+    const restored = await restoring
+    const state = mergeRestoredProductIdentities({ olderDraft: restored }, { newDraft: newProduct }, new Set(['newDraft']))
+    expect(Object.keys(state).sort()).toEqual(['newDraft', 'olderDraft'])
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ olderDraft: oldProduct, newDraft: newProduct })
+  })
+  it('does not resurrect a removed identity when signing finishes later', async () => {
+    const key = 'product-identities-remove-race'
+    localStorage.setItem(key, JSON.stringify({ draft: oldProduct, other: newProduct }))
+    let finish: (url: string) => void
+    const restoring = refreshProductIdentity(oldProduct, () => new Promise<string>((resolve) => { finish = resolve }))
+    persistProjectProductIdentity(localStorage, key, 'draft', null)
+    finish('fresh-old')
+    const restored = await restoring
+    expect(mergeRestoredProductIdentities({ draft: restored }, {}, new Set(['draft']))).toEqual({})
+    expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ other: newProduct })
   })
 })
