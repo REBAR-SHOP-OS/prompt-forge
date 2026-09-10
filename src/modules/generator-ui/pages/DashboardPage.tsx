@@ -196,6 +196,7 @@ import {
   summarizeAutoFilmBatch,
 } from '@/modules/generator-ui/lib/autoFilmPreview'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
+import { PromptOptimizerPopover, type PromptOptimizationRequest } from '@/modules/generator-ui/components/PromptOptimizerPopover'
 
 
 
@@ -204,20 +205,6 @@ import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl, parseStorageRef } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
-import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
-import {
-  CAMERA_STYLES,
-  GENRE_STYLES,
-  SCENE_STYLES,
-  TEMPLATE_STYLES,
-  SCENE_GROUP_ORDER,
-  TEMPLATE_GROUP_ORDER,
-  buildStyleHints,
-  countSelectedStyles,
-  emptyStyleSelection,
-  type StyleItem,
-  type StyleSelection,
-} from '@/modules/generator-ui/lib/promptStyles'
 
 /**
  * Generates a unique random id. Uses WebCrypto (randomUUID / getRandomValues) when
@@ -261,57 +248,6 @@ function secureRandomId(): string {
   const hiRes = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : 0
   return `${Date.now().toString(36)}-${Math.floor(hiRes * 1000).toString(36)}`
 }
-
-function StyleSection({
-  title,
-  items,
-  selectedIds,
-  onToggle,
-}: {
-  title: string
-  items: StyleItem[]
-  selectedIds: string[]
-  onToggle: (id: string) => void
-}) {
-  return (
-    <div className="space-y-1.5">
-      <h2 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
-      <div className="flex flex-wrap gap-1.5">
-        {items.map((item) => {
-          const active = selectedIds.includes(item.id)
-          const chip = (
-            <button
-              key={item.id}
-              type="button"
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
-                active
-                  ? 'border-amber-300 bg-accent-warm/15 text-accent-warm'
-                  : 'border-border bg-accent/30 text-foreground/80 hover:border-border hover:bg-accent/60'
-              }`}
-            >
-              <span aria-hidden="true">{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          )
-          return (
-            <StylePreviewCard
-              key={item.id}
-              title={item.label}
-              description={item.prompt}
-              preview={item.preview}
-              selected={active}
-              onSelect={() => onToggle(item.id)}
-            >
-              {chip}
-            </StylePreviewCard>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
@@ -3863,22 +3799,6 @@ export default function DashboardPage() {
       return 'gpt-oss:20b'
     }
   })
-  const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
-  const [narratorScript, setNarratorScript] = useState('')
-  const [styleMode, setStyleMode] = useState<'idle' | 'input'>('idle')
-  const [scenarioMode, setScenarioMode] = useState<'idle' | 'input'>('idle')
-  const [selectedStyles, setSelectedStyles] = useState<StyleSelection>(emptyStyleSelection)
-  const selectedStyleCount = useMemo(() => countSelectedStyles(selectedStyles), [selectedStyles])
-  const toggleStyle = (kind: keyof StyleSelection, id: string) => {
-    setSelectedStyles((prev) => {
-      const has = prev[kind].includes(id)
-      return {
-        ...prev,
-        [kind]: has ? prev[kind].filter((x) => x !== id) : [...prev[kind], id],
-      }
-    })
-  }
-
   // Must be declared before pickerModels: the dep array [localStatus?.status] is evaluated
   // eagerly by useMemo(); reading a const in TDZ crashes the minified production bundle.
   const [localStatus, setLocalStatus] = useState<LocalVideoStatusResult | null>(null)
@@ -3943,11 +3863,10 @@ export default function DashboardPage() {
   async function rewriteVideoPrompt(params: {
     prompt: string
     imageUrls: string[]
-    mode: 'silent' | 'narrated' | 'styles'
+    mode: 'silent' | 'narrated'
     narratorScript?: string
     styleHints?: string
   }): Promise<string> {
-    const invokeMode = params.mode === 'styles' ? 'silent' : params.mode
     // Source text for planning: fall back to narrator script / style hints when
     // the prompt box is empty so the local planner never gets an empty prompt.
     const effectivePrompt = (
@@ -3959,8 +3878,8 @@ export default function DashboardPage() {
     const body = {
       prompt: effectivePrompt,
       imageUrls: params.imageUrls,
-      mode: invokeMode,
-      narratorScript: params.narratorScript ?? '',
+      mode: params.mode,
+      ...(params.mode === 'narrated' ? { narratorScript: params.narratorScript ?? '' } : {}),
       styleHints: params.styleHints ?? '',
     }
 
@@ -4018,27 +3937,15 @@ export default function DashboardPage() {
 
 
 
-  const runEnhancePrompt = async (
-    options: { mode: 'silent' | 'narrated' | 'styles'; narratorScript?: string; styleHints?: string },
-  ) => {
+  const runEnhancePrompt = async (request: PromptOptimizationRequest) => {
     if (isEnhancingPrompt || isSubmitting) return
-    const current = promptText.trim()
-    if (options.mode === 'silent' && !current) {
-      setComposerError('Type a short idea first, then choose No narrator.')
+    const current = request.prompt.trim()
+    if (!current) {
+      setComposerError('Type a short idea first, then optimize the prompt.')
       return
     }
-    if (options.mode === 'styles') {
-      if (!current) {
-        setComposerError('Type a short idea first, then pick styles.')
-        return
-      }
-      if (!(options.styleHints ?? '').trim()) {
-        setComposerError('Pick at least one style to optimize the prompt.')
-        return
-      }
-    }
-    if (options.mode === 'narrated' && !(options.narratorScript ?? '').trim()) {
-      setComposerError('Please write the narrator script.')
+    if (request.withNarration && !(request.narratorScript ?? '').trim()) {
+      setComposerError('Please write the narration text.')
       return
     }
     setIsEnhancingPrompt(true)
@@ -4050,116 +3957,17 @@ export default function DashboardPage() {
       const enhanced = await rewriteVideoPrompt({
         prompt: current,
         imageUrls,
-        mode: options.mode,
-        narratorScript: options.narratorScript,
-        styleHints: options.styleHints,
+        mode: request.withNarration ? 'narrated' : 'silent',
+        narratorScript: request.withNarration ? request.narratorScript : undefined,
+        styleHints: request.styleHints,
       })
       setPromptText(enhanced)
       setIsPromptMenuOpen(false)
-      setNarratorMode('idle')
-      setNarratorScript('')
-      setStyleMode('idle')
-      setSelectedStyles(emptyStyleSelection())
     } catch (e) {
       const status = (e as unknown as { context?: { status?: number } })?.context?.status
       if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
       else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
       else setComposerError('Could not enhance prompt. Please try again.')
-    } finally {
-      setIsEnhancingPrompt(false)
-    }
-  }
-
-  // Write an AI scenario tuned to the pinned product. Short durations (5/10/15)
-  // fill the prompt box with a single product prompt; long durations (30/45/135)
-  // produce a scene-by-scene scenario routed through the multi-scene flow. Uses
-  // the chosen duration and any selected styles automatically.
-  const runProductScenario = async () => {
-    if (isEnhancingPrompt || isSubmitting) return
-    const product = selectedProduct
-    if (!product) {
-      setComposerError('Pin a product first (Add product), then write its scenario.')
-      return
-    }
-    setIsEnhancingPrompt(true)
-    setComposerError(null)
-    try {
-      const idea = promptText.trim()
-      const styleHints = buildStyleHints(selectedStyles)
-      const name = product.title?.trim()
-      const desc = product.description?.trim()
-      const productBrief = [
-        `Advertised product${name ? ` ("${name}")` : ''}.`,
-        desc ? `Product details: ${desc}` : '',
-        idea ? `User's idea/direction: ${idea}` : 'No extra direction — build a compelling product ad from the product itself.',
-      ]
-        .filter(Boolean)
-        .join('\n')
-
-      const isLong = durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
-      if (isLong) {
-        let businessInfo = ''
-        if (userId) {
-          const { data: profile } = await supabase
-            .from('generator_business_profiles')
-            .select('business_info')
-            .eq('user_id', userId)
-            .maybeSingle()
-          businessInfo = profile?.business_info?.trim() ?? ''
-        }
-        if (!businessInfo) {
-          setComposerError('Add your business info (About your business) before writing a product scenario.')
-          return
-        }
-        const { data, error } = await supabase.functions.invoke('scenario-write', {
-          body: {
-            idea: [productBrief, styleHints ? `Visual styles to honor: ${styleHints}` : ''].filter(Boolean).join('\n\n'),
-            durationSeconds,
-            imageUrl: product.url,
-            businessInfo,
-          },
-        })
-        if (error) {
-          const status = (error as unknown as { context?: { status?: number } })?.context?.status
-          if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
-          else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
-          else setComposerError('Could not write the product scenario. Please try again.')
-          return
-        }
-        const rawScenes = (data as { scenes?: unknown } | null)?.scenes
-        const scenes = Array.isArray(rawScenes)
-          ? rawScenes.map((s) => (typeof s === 'string' ? s.trim() : '')).filter((s) => s.length > 0)
-          : []
-        if (scenes.length === 0) {
-          setComposerError('Could not write the product scenario. Please try again.')
-          return
-        }
-        const tagged = scenes.map((s, i) => `=== Scene ${i + 1} ===\n${s}`).join('\n\n')
-        setPromptText(tagged)
-      } else {
-        const seedPrompt = applyProductPrefix(
-          idea || `A polished ${durationSeconds}s cinematic product advertisement.`,
-          product,
-        )
-        const enhanced = await rewriteVideoPrompt({
-          prompt: seedPrompt,
-          imageUrls: [product.url],
-          mode: 'silent',
-          styleHints,
-        })
-        setPromptText(enhanced)
-      }
-      setIsPromptMenuOpen(false)
-      setNarratorMode('idle')
-      setNarratorScript('')
-      setStyleMode('idle')
-      setScenarioMode('idle')
-      setSelectedStyles(emptyStyleSelection())
-    } catch (e) {
-      const status = (e as unknown as { context?: { status?: number } })?.context?.status
-      if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
-      else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
-      else setComposerError('Could not write the product scenario. Please try again.')
     } finally {
       setIsEnhancingPrompt(false)
     }
@@ -14051,301 +13859,14 @@ export default function DashboardPage() {
 
 
 
-            <Popover
+            <PromptOptimizerPopover
               open={isPromptMenuOpen}
-              onOpenChange={(open) => {
-                setIsPromptMenuOpen(open)
-                if (!open) {
-                  setNarratorMode('idle')
-                  setNarratorScript('')
-                  setStyleMode('idle')
-                  setScenarioMode('idle')
-                  setSelectedStyles(emptyStyleSelection())
-                }
-              }}
-            >
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  disabled={isEnhancingPrompt || isSubmitting}
-                  aria-label="Enhance prompt with AI"
-                  className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-border bg-muted/60 px-4 text-sm font-semibold text-foreground/80 transition hover:border-accent-warm/60 hover:bg-accent/50 hover:text-accent-warm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-muted/60 disabled:hover:text-foreground/80"
-                >
-                  {isEnhancingPrompt ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" aria-hidden="true" />
-                  )}
-                  Prompt
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                side="top"
-                align="end"
-                className={`${styleMode === 'input' || scenarioMode === 'input' ? 'w-[min(26rem,calc(100vw-2rem))]' : 'w-80'} border-border bg-card p-2 text-foreground/90 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
-              >
-                <button
-                  type="button"
-                  onClick={() => runEnhancePrompt({ mode: 'silent' })}
-                  disabled={isEnhancingPrompt || promptText.trim().length === 0}
-                  className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border bg-accent/40 text-foreground/80">
-                    <MicOff className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-foreground">No narrator</span>
-                    <span className="block text-xs leading-5 text-muted-foreground">
-                      Enhance the prompt so the video has no voice-over, dialogue, or talking.
-                    </span>
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setNarratorMode('input')}
-                  disabled={isEnhancingPrompt}
-                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40 ${
-                    narratorMode === 'input' ? 'bg-accent/40' : ''
-                  }`}
-                >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
-                    <Mic className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-foreground">With narrator</span>
-                    <span className="block text-xs leading-5 text-muted-foreground">
-                      Provide the script — the prompt will be built around the narrator's words.
-                    </span>
-                  </span>
-                </button>
-
-                {narratorMode === 'input' ? (
-                  <div className="mt-2 space-y-2 border-t border-border px-1 pt-3">
-                    <label htmlFor="narrator-script" className="block text-xs font-medium text-muted-foreground">
-                      Narrator script
-                    </label>
-                    <textarea
-                      id="narrator-script"
-                      value={narratorScript}
-                      onChange={(e) => setNarratorScript(e.target.value)}
-                      rows={4}
-                      maxLength={1500}
-                      placeholder="Type the exact words the narrator should say…"
-                      className="w-full rounded-md border border-border bg-surface-2/60 px-3 py-2 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus:border-accent-warm/40"
-                    />
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-muted-foreground">{narratorScript.length}/1500</span>
-                      <button
-                        type="button"
-                        onClick={() => runEnhancePrompt({ mode: 'narrated', narratorScript })}
-                        disabled={isEnhancingPrompt || narratorScript.trim().length === 0}
-                        className="inline-flex h-8 items-center gap-2 rounded-full bg-amber-300 px-3 text-xs font-semibold text-zinc-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {isEnhancingPrompt ? (
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
-                        Apply
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                <button
-                  type="button"
-                  onClick={() => setScenarioMode((m) => (m === 'input' ? 'idle' : 'input'))}
-                  disabled={isEnhancingPrompt || !selectedProduct}
-                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40 ${
-                    scenarioMode === 'input' ? 'bg-accent/40' : ''
-                  }`}
-                >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
-                    {selectedProduct ? (
-                      <img src={selectedProduct.url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <Package className="h-4 w-4" aria-hidden="true" />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                      Scenario for this product
-                      {selectedProduct && selectedStyleCount > 0 ? (
-                        <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-zinc-950">
-                          {selectedStyleCount}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="block text-xs leading-5 text-muted-foreground">
-                      {selectedProduct
-                        ? `Pick styles, then write a ${durationSeconds}s ad scenario for the pinned product.`
-                        : 'Pin a product first (Add product) to write its scenario.'}
-                    </span>
-                  </span>
-                  {selectedProduct ? (
-                    <ChevronDown
-                      className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition ${scenarioMode === 'input' ? 'rotate-180' : ''}`}
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                </button>
-
-                {scenarioMode === 'input' ? (
-                  <div className="mt-2 space-y-3 border-t border-border px-1 pt-3">
-                    <div className="max-h-[44vh] space-y-3 overflow-y-auto pr-1">
-                      <StyleSection
-                        title="Camera style"
-                        items={CAMERA_STYLES}
-                        selectedIds={selectedStyles.camera}
-                        onToggle={(id) => toggleStyle('camera', id)}
-                      />
-                      <StyleSection
-                        title="Genre & atmosphere"
-                        items={GENRE_STYLES}
-                        selectedIds={selectedStyles.genre}
-                        onToggle={(id) => toggleStyle('genre', id)}
-                      />
-                      {SCENE_GROUP_ORDER.map((group) => (
-                        <StyleSection
-                          key={group}
-                          title={`Scene · ${group}`}
-                          items={SCENE_STYLES.filter((s) => s.group === group)}
-                          selectedIds={selectedStyles.scene}
-                          onToggle={(id) => toggleStyle('scene', id)}
-                        />
-                      ))}
-                      {TEMPLATE_GROUP_ORDER.map((group) => (
-                        <StyleSection
-                          key={group}
-                          title={`Template · ${group}`}
-                          items={TEMPLATE_STYLES.filter((t) => t.group === group)}
-                          selectedIds={selectedStyles.template}
-                          onToggle={(id) => toggleStyle('template', id)}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedStyles(emptyStyleSelection())}
-                        disabled={isEnhancingPrompt || selectedStyleCount === 0}
-                        className="text-[11px] text-muted-foreground transition hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void runProductScenario()}
-                        disabled={isEnhancingPrompt || !selectedProduct}
-                        className="inline-flex h-8 items-center gap-2 rounded-full bg-amber-300 px-3 text-xs font-semibold text-zinc-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {isEnhancingPrompt ? (
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
-                        Write scenario
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-
-
-
-
-                <button
-                  type="button"
-                  onClick={() => setStyleMode((m) => (m === 'input' ? 'idle' : 'input'))}
-                  disabled={isEnhancingPrompt}
-                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-40 ${
-                    styleMode === 'input' ? 'bg-accent/40' : ''
-                  }`}
-                >
-                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-accent-warm/30 bg-accent-warm/10 text-accent-warm">
-                    <Wand2 className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                      Styles
-                      {selectedStyleCount > 0 ? (
-                        <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-zinc-950">
-                          {selectedStyleCount}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="block text-xs leading-5 text-muted-foreground">
-                      Pick camera, genre, scene or template styles — the prompt is optimized for them.
-                    </span>
-                  </span>
-                  <ChevronDown
-                    className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition ${styleMode === 'input' ? 'rotate-180' : ''}`}
-                    aria-hidden="true"
-                  />
-                </button>
-
-                {styleMode === 'input' ? (
-                  <div className="mt-2 space-y-3 border-t border-border px-1 pt-3">
-                    <div className="max-h-[44vh] space-y-3 overflow-y-auto pr-1">
-                      <StyleSection
-                        title="Camera style"
-                        items={CAMERA_STYLES}
-                        selectedIds={selectedStyles.camera}
-                        onToggle={(id) => toggleStyle('camera', id)}
-                      />
-                      <StyleSection
-                        title="Genre & atmosphere"
-                        items={GENRE_STYLES}
-                        selectedIds={selectedStyles.genre}
-                        onToggle={(id) => toggleStyle('genre', id)}
-                      />
-                      {SCENE_GROUP_ORDER.map((group) => (
-                        <StyleSection
-                          key={group}
-                          title={`Scene · ${group}`}
-                          items={SCENE_STYLES.filter((s) => s.group === group)}
-                          selectedIds={selectedStyles.scene}
-                          onToggle={(id) => toggleStyle('scene', id)}
-                        />
-                      ))}
-                      {TEMPLATE_GROUP_ORDER.map((group) => (
-                        <StyleSection
-                          key={group}
-                          title={`Template · ${group}`}
-                          items={TEMPLATE_STYLES.filter((t) => t.group === group)}
-                          selectedIds={selectedStyles.template}
-                          onToggle={(id) => toggleStyle('template', id)}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedStyles(emptyStyleSelection())}
-                        disabled={isEnhancingPrompt || selectedStyleCount === 0}
-                        className="text-[11px] text-muted-foreground transition hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => runEnhancePrompt({ mode: 'styles', styleHints: buildStyleHints(selectedStyles) })}
-                        disabled={isEnhancingPrompt || selectedStyleCount === 0 || promptText.trim().length === 0}
-                        className="inline-flex h-8 items-center gap-2 rounded-full bg-amber-300 px-3 text-xs font-semibold text-zinc-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {isEnhancingPrompt ? (
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                        )}
-                        Optimize
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </PopoverContent>
-            </Popover>
+              onOpenChange={setIsPromptMenuOpen}
+              initialPrompt={promptText}
+              disabled={isSubmitting}
+              optimizing={isEnhancingPrompt}
+              onOptimize={runEnhancePrompt}
+            />
 
             <button
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-foreground text-background transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
