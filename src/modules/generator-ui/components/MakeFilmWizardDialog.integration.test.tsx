@@ -646,6 +646,14 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual(
       Array.from({ length: 6 }, () => ['https://x/user/stirrup-008.png', 'https://x/user/stirrup-007.png']),
     )
+
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+    expect(onApprove.mock.calls[0][2].identity).toMatchObject({
+      productUrl: 'https://x/user/stirrup-008.png',
+      productUrls: ['https://x/user/stirrup-008.png', 'https://x/user/stirrup-007.png'],
+      productName: 'Rebar Stirrup',
+    })
   }, 15_000)
 
   it('uses an explicit product-folder id to keep differently labelled views together, all reaching every scene', async () => {

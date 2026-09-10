@@ -186,6 +186,16 @@ import {
   type ProductFolderRecord,
   type ProductPhotoGroup,
 } from '@/modules/generator-ui/lib/productPhotoGroups'
+import {
+  PRODUCT_IDENTITY_CATEGORIES,
+  activeProjectProductIdentity,
+  approvedProductViewUrls,
+  filterProductIdentityGroups,
+  productIdentityCategory,
+  productViewsForScene,
+  refreshProductIdentity,
+  type ProductIdentityCategoryId,
+} from '@/modules/generator-ui/lib/productIdentity'
 import { buildSceneEditRequestBody, buildSceneGenerateRequestBody, buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
 import {
   GlobalSceneBatchError,
@@ -1474,9 +1484,17 @@ export default function DashboardPage() {
   const [characterListLoading, setCharacterListLoading] = useState(false)
   // Persistent project product (the item chosen in Product AD or pinned manually).
   // Its reference image is sent on EVERY card so the product/logo never drifts.
-  type ProjectProduct = { id: string; url: string; title: string | null; description?: string | null }
+  type ProjectProduct = {
+    id: string
+    url: string
+    urls: string[]
+    category: ProductIdentityCategoryId
+    title: string | null
+    description?: string | null
+  }
   const [selectedProduct, setSelectedProduct] = useState<ProjectProduct | null>(null)
   const [productMenuOpen, setProductMenuOpen] = useState(false)
+  const [productPickerCategory, setProductPickerCategory] = useState<ProductIdentityCategoryId>('products')
   // Cache of generated character descriptions, keyed by character image id.
   const characterDescCacheRef = useRef<Record<string, string>>({})
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
@@ -1550,6 +1568,24 @@ export default function DashboardPage() {
     () => mergeEmptyProductFolders(groupProductPhotos(archiveProductImages), productFolders),
     [archiveProductImages, productFolders],
   )
+  const availableProductPickerCategories = useMemo(
+    () => PRODUCT_IDENTITY_CATEGORIES.filter((category) =>
+      filterProductIdentityGroups(archiveProductGroups, category.id).length > 0,
+    ),
+    [archiveProductGroups],
+  )
+  const visibleArchiveProductGroups = useMemo(
+    () => filterProductIdentityGroups(archiveProductGroups, productPickerCategory),
+    [archiveProductGroups, productPickerCategory],
+  )
+  useEffect(() => {
+    if (
+      availableProductPickerCategories.length > 0
+      && !availableProductPickerCategories.some((category) => category.id === productPickerCategory)
+    ) {
+      setProductPickerCategory(availableProductPickerCategories[0].id)
+    }
+  }, [availableProductPickerCategories, productPickerCategory])
   const [activeProductFolder, setActiveProductFolder] = useState<ProductFolderTarget | null>(null)
   const [draftProductFolder, setDraftProductFolder] = useState<ProductFolderTarget | null>(null)
   // The freshly-created draft folder gives instant feedback before the first
@@ -1643,6 +1679,8 @@ export default function DashboardPage() {
           ? {
               id: fresh.id,
               url: fresh.storage_path,
+              urls: approvedProductViewUrls(fresh.storage_path),
+              category: 'legacy',
               title: fresh.title?.trim() || prev.title,
               description: fresh.description ?? null,
             }
@@ -2806,6 +2844,67 @@ export default function DashboardPage() {
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
+  // One product identity per project/draft. Keeping the full approved view set
+  // here prevents both cross-project leakage and the old single-angle collapse.
+  const [projectProductIdentities, setProjectProductIdentities] = useState<Record<string, ProjectProduct>>({})
+  const projectProductIdentitiesKey = userId ? `project-product-identities:${userId}` : null
+  const productIdentityScopeId = selectedProjectId ?? activeDraftId
+  useEffect(() => {
+    let cancelled = false
+    setProjectProductIdentities({})
+    if (!projectProductIdentitiesKey) return
+    void (async () => {
+      try {
+        const raw = window.localStorage.getItem(projectProductIdentitiesKey)
+        const parsed = raw ? JSON.parse(raw) as Record<string, ProjectProduct> : {}
+        const entries = await Promise.all(Object.entries(parsed && typeof parsed === 'object' ? parsed : {})
+          .map(async ([id, product]) => {
+            if (!product || typeof product.url !== 'string') return null
+            const restored = await refreshProductIdentity({
+              ...product,
+              category: product.category ?? 'legacy',
+              urls: Array.isArray(product.urls) ? product.urls.filter((url) => typeof url === 'string') : [],
+            }, signStorageUrl)
+            return restored ? [id, restored] as const : null
+          }))
+        if (!cancelled) setProjectProductIdentities((current) => ({ ...Object.fromEntries(entries.filter((entry) => entry !== null)), ...current }))
+      } catch {
+        if (!cancelled) setProjectProductIdentities({})
+      }
+    })()
+    return () => { cancelled = true }
+  }, [projectProductIdentitiesKey, signStorageUrl])
+  function persistProjectProductIdentities(next: Record<string, ProjectProduct>) {
+    if (!projectProductIdentitiesKey) return
+    try { window.localStorage.setItem(projectProductIdentitiesKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function assignProductToCurrentProject(product: ProjectProduct) {
+    const scopeId = productIdentityScopeId ?? ensureActiveDraftId()
+    const normalized: ProjectProduct = {
+      ...product,
+      urls: approvedProductViewUrls(product.url, product.urls),
+    }
+    setSelectedProduct(normalized)
+    setProjectProductIdentities((current) => {
+      const next = { ...current, [scopeId]: normalized }
+      persistProjectProductIdentities(next)
+      return next
+    })
+  }
+  function clearProductFromCurrentProject() {
+    setSelectedProduct(null)
+    if (!productIdentityScopeId) return
+    setProjectProductIdentities((current) => {
+      if (!(productIdentityScopeId in current)) return current
+      const { [productIdentityScopeId]: _removed, ...next } = current
+      persistProjectProductIdentities(next)
+      return next
+    })
+  }
+  useEffect(() => {
+    setSelectedProduct(activeProjectProductIdentity(projectProductIdentities, productIdentityScopeId))
+  }, [projectProductIdentities, productIdentityScopeId])
+
   // A finalized "Final video" project is open when a project is selected and
   // its id is NOT a draft. Such projects are READ-ONLY: the user may watch,
   // download, and delete them, but cannot edit/resume/extend them.
@@ -3638,7 +3737,7 @@ export default function DashboardPage() {
   // both the character (logo on body) and the selected product stay identical.
   const projectReferenceUrls: string[] | undefined = buildReferenceImageUrls([
     projectCharacter?.url,
-    selectedProduct?.url,
+    ...productViewsForScene(selectedProduct, 0),
   ])
   // Auto-disable continuity if the chain no longer has a previous clip — but keep
   // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
@@ -6756,10 +6855,19 @@ export default function DashboardPage() {
   // saved product when possible so the title/id are meaningful, else creates one.
   function pinProductFromImageUrl(imageUrl: string, title?: string | null) {
     const match = archiveProductImages.find((p) => p.storage_path === imageUrl)
-    setSelectedProduct({
-      id: match?.id ?? `product-${imageUrl.slice(-24)}`,
-      url: imageUrl,
-      title: match?.title?.trim() || title?.trim() || 'Selected product',
+    const group = match
+      ? archiveProductGroups.find((candidate) => candidate.photos.some((photo) => photo.id === match.id))
+      : null
+    const urls = approvedProductViewUrls(
+      imageUrl,
+      group?.photos.map((photo) => photo.storage_path),
+    )
+    assignProductToCurrentProject({
+      id: group?.id ?? match?.id ?? `product-${imageUrl.slice(-24)}`,
+      url: urls[0] ?? imageUrl,
+      urls,
+      category: group ? productIdentityCategory(group) : 'legacy',
+      title: group?.name ?? (match?.title?.trim() || title?.trim() || 'Selected product'),
       description: match?.description ?? null,
     })
   }
@@ -7222,14 +7330,8 @@ export default function DashboardPage() {
     // Content continuity for chained cards: resolve the character description once
     // and reuse it as a prefix on every scene so all cards keep the same subject.
     const continuityCharacterRef = activeCharacter
-    // Persistent identity anchor: the actual Character Sheet image URL, sent on
-    // EVERY card (card 1 included) in addition to the previous-frame seed so the
-    // provider keeps the same character instead of drifting. Independent of the
-    // text description prefix below.
-    const referenceImageUrls: string[] | undefined = buildReferenceImageUrls([
-      continuityCharacterRef?.url,
-      activeProduct?.url,
-    ])
+    // Product views are selected per scene below so the provider's bounded
+    // reference window rotates across every approved angle over the full film.
     let characterPrefixDesc: string | null = null
     if (continuityCharacterRef) {
       try {
@@ -7268,6 +7370,10 @@ export default function DashboardPage() {
       previousLastFrameUrl?: string,
     ): Promise<string> => {
       const sceneLabel = `Scene ${i + 1}`
+      const sceneProductUrls = productViewsForScene(activeProduct, i)
+      const sceneProduct = activeProduct && sceneProductUrls[0]
+        ? { ...activeProduct, url: sceneProductUrls[0] }
+        : activeProduct
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited. When the
         // wizard chose "Without narration", suppress narration entirely.
@@ -7335,9 +7441,9 @@ export default function DashboardPage() {
           // Still no start frame but a product is pinned: use the real product
           // photo as the start frame so card 1 reproduces the exact product
           // instead of drifting in pure text-to-video.
-          if (!startFrameUrl && activeProduct) {
+          if (!startFrameUrl && sceneProduct) {
             setVideoColumnMessage(`Preparing product as start frame for ${sceneLabel}…`)
-            startFrameUrl = await productStartFrame(activeProduct, effectiveRatio)
+            startFrameUrl = await productStartFrame(sceneProduct, effectiveRatio)
             startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
         } else if (previousJobId) {
@@ -7363,12 +7469,16 @@ export default function DashboardPage() {
         // Bake the pinned product into this scene's start frame so Wan reproduces
         // the exact product (it only conditions on the start frame). Skip when the
         // start frame already IS the real product photo — no redraw needed.
-        if (activeProduct && startFrameUrl && !startFrameIsProductPhoto && !startFrameIsContinuity) {
+        if (sceneProduct && startFrameUrl && !startFrameIsProductPhoto && !startFrameIsContinuity) {
           setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
-          startFrameUrl = await bakeProductIntoFrame(startFrameUrl, activeProduct, effectiveRatio)
+          startFrameUrl = await bakeProductIntoFrame(startFrameUrl, sceneProduct, effectiveRatio)
         }
 
 
+        const referenceImageUrls = buildReferenceImageUrls([
+          continuityCharacterRef?.url,
+          ...sceneProductUrls,
+        ])
         setVideoColumnMessage(`Queuing ${sceneLabel}…`)
         const createdJob = await jobOrchestratorGateway.createJob({
           providerKey: scenarioModel.providerKey,
@@ -7703,13 +7813,8 @@ export default function DashboardPage() {
       duration?: number
       aspect?: FilmAspect
       withNarration?: boolean
-      identity?: {
-        productUrl?: string
-        productName?: string | null
-        productDescription?: string | null
-        characterUrl?: string
-        characterName?: string | null
-      }
+      isPlanBased?: boolean
+      identity?: FilmIdentity
       creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string }
     },
   ): Promise<void> {
@@ -7726,6 +7831,17 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage('Queueing your approved scenes…')
     try {
+      const approvedProduct: ProjectProduct | null = options?.identity?.productUrl
+        ? {
+            id: options.identity.productId ?? 'wizard-product',
+            url: options.identity.productUrl,
+            urls: approvedProductViewUrls(options.identity.productUrl, options.identity.productUrls),
+            category: options.identity.productCategory ?? 'legacy',
+            title: options.identity.productName ?? null,
+            description: options.identity.productDescription ?? null,
+          }
+        : null
+      if (approvedProduct) assignProductToCurrentProject(approvedProduct)
       // One video job per scene, each seeded by its approved image, rendered at
       // the aspect the wizard chose (falls back to the composer's ratio). The
       // wizard's product/character identity is carried through so every job
@@ -7737,14 +7853,7 @@ export default function DashboardPage() {
         // consumes so the wizard's product/character/camera/theme actually reach
         // every job (the wizard's selections win over the composer's pinned ones).
         durationSeconds: options?.duration,
-        product: options?.identity?.productUrl
-          ? {
-              id: 'wizard-product',
-              url: options.identity.productUrl,
-              title: options.identity.productName ?? null,
-              description: options.identity.productDescription ?? null,
-            }
-          : null,
+        product: approvedProduct,
         character: options?.identity?.characterUrl
           ? {
               id: 'wizard-character',
@@ -7756,6 +7865,7 @@ export default function DashboardPage() {
         theme: options?.creative?.theme,
         withNarration: options?.withNarration,
         suppressPreviewUntilBatchSettles: true,
+        isPlanBased: options?.isPlanBased,
       })
       const requestedSceneCount = scenes.filter((scene) => scene.trim().length > 0).length
       const queueFailedCount = Math.max(0, requestedSceneCount - createdJobIds.length)
@@ -8100,7 +8210,7 @@ export default function DashboardPage() {
         referenceImageUrls:
           (job.reference_image_urls && job.reference_image_urls.length > 0
             ? job.reference_image_urls
-            : buildReferenceImageUrls([selectedProduct?.url])) ?? undefined,
+            : buildReferenceImageUrls(productViewsForScene(selectedProduct, 0))) ?? undefined,
         durationSeconds,
         aspectRatio: ratio,
         draftGroupId,
@@ -9005,7 +9115,7 @@ export default function DashboardPage() {
     // Clear the currently displayed automatic batch while preserving its
     // consumed guard, so Start Over cannot resurrect an old batch.
     dispatchAutoFilmPreview({ type: 'clear-active' })
-    // Reset the composer to a fresh state.
+    // Reset only the live selection; saved drafts keep their product identity.
     setPromptText('')
     setSelectedCharacter(null)
     setSelectedProduct(null)
@@ -13651,13 +13761,13 @@ export default function DashboardPage() {
                         onClick={(e) => {
                           e.preventDefault()
                           e.stopPropagation()
-                          setSelectedProduct(null)
+                          clearProductFromCurrentProject()
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
                             e.stopPropagation()
-                            setSelectedProduct(null)
+                            clearProductFromCurrentProject()
                           }
                         }}
                         className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-accent-warm/80 transition hover:bg-accent-warm/20 hover:text-accent-warm"
@@ -13679,56 +13789,99 @@ export default function DashboardPage() {
                   {selectedProduct ? (
                     <button
                       type="button"
-                      onClick={() => { setSelectedProduct(null); setProductMenuOpen(false) }}
+                      onClick={() => { clearProductFromCurrentProject(); setProductMenuOpen(false) }}
                       className="text-[11px] text-muted-foreground hover:text-action-rose"
                     >
                       Remove
                     </button>
                   ) : null}
                 </div>
-                {archiveLoading && archiveProductImages.length === 0 ? (
+                {archiveLoading && archiveProductGroups.length === 0 ? (
                   <div className="flex items-center justify-center py-6 text-muted-foreground">
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                   </div>
-                ) : archiveProductImages.length === 0 ? (
+                ) : archiveProductGroups.length === 0 ? (
                   <div className="px-1 py-4 text-center text-xs text-muted-foreground">
                     No products yet. Add one in Product AD.
                   </div>
                 ) : (
-                  <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1">
-                    {archiveProductImages.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          const product = {
-                            id: p.id,
-                            url: p.storage_path,
-                            title: p.title?.trim() || 'Selected product',
-                            description: p.description ?? null,
-                          }
-                          setSelectedProduct(product)
-                          setProductMenuOpen(false)
-                          if (canRestageProductStartFrame()) {
-                            setUploadTarget('Start')
-                            void handleUseImageAsStart(product.url, aspectRatio)
-                          }
-                        }}
-                        className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
-                          selectedProduct?.id === p.id
-                            ? 'border-amber-400'
-                            : 'border-border hover:border-border'
-                        }`}
-                        title={p.title ?? 'Product'}
-                      >
-                        <UserImageView
-                          src={p.storage_path}
-                          alt={p.title ?? 'Product'}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      </button>
-                    ))}
+                  <div className="space-y-2">
+                    {availableProductPickerCategories.length > 1 ? (
+                      <div className="flex flex-wrap gap-1.5 px-1" aria-label="Product categories">
+                        {availableProductPickerCategories.map((category) => (
+                          <button
+                            key={category.id}
+                            type="button"
+                            aria-pressed={productPickerCategory === category.id}
+                            onClick={() => setProductPickerCategory(category.id)}
+                            className={`rounded-full border px-2 py-1 text-[10px] transition ${
+                              productPickerCategory === category.id
+                                ? 'border-amber-400/60 bg-accent-warm/10 text-accent-warm'
+                                : 'border-border bg-accent/30 text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            {category.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto p-1">
+                      {visibleArchiveProductGroups.map((group) => {
+                        const primary = group.photos[0]
+                        const urls = approvedProductViewUrls(
+                          primary?.storage_path,
+                          group.photos.map((photo) => photo.storage_path),
+                        )
+                        const product: ProjectProduct | null = primary && urls.length > 0
+                          ? {
+                              id: group.id,
+                              url: urls[0],
+                              urls,
+                              category: productIdentityCategory(group),
+                              title: group.name,
+                              description: primary.description ?? null,
+                            }
+                          : null
+                        return (
+                          <button
+                            key={group.id}
+                            type="button"
+                            disabled={!product}
+                            onClick={() => {
+                              if (!product) return
+                              assignProductToCurrentProject(product)
+                              setProductMenuOpen(false)
+                              if (canRestageProductStartFrame()) {
+                                setUploadTarget('Start')
+                                void handleUseImageAsStart(product.url, aspectRatio)
+                              }
+                            }}
+                            className={`group overflow-hidden rounded-lg border text-left transition ${
+                              selectedProduct?.id === group.id
+                                ? 'border-amber-400'
+                                : 'border-border hover:border-border'
+                            } disabled:cursor-not-allowed disabled:opacity-50`}
+                            title={group.name}
+                          >
+                            <div className={`grid aspect-[4/3] gap-0.5 bg-accent/30 ${urls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                              {urls.slice(0, 4).map((url, index) => (
+                                <UserImageView
+                                  key={`${group.id}:${url}`}
+                                  src={url}
+                                  alt={index === 0 ? group.name : `${group.name} angle ${index + 1}`}
+                                  className="h-full min-h-0 w-full object-cover"
+                                  loading="lazy"
+                                />
+                              ))}
+                            </div>
+                            <div className="px-2 py-1.5">
+                              <div className="truncate text-[11px] font-medium text-foreground/90">{group.name}</div>
+                              <div className="text-[10px] text-muted-foreground">{urls.length} view{urls.length === 1 ? '' : 's'}</div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </PopoverContent>
