@@ -7601,11 +7601,17 @@ export default function DashboardPage() {
     }
     try {
       if (requiresSequentialContinuity) {
-        createdJobIds.push(...await queueSequentialSceneBatch(
+        // Record each id as it is created, not when the chain resolves. A 30s+
+        // film aborts on the first failed handoff, and the clips queued before
+        // that point are real: they are rendering, they are already in the
+        // clip list, and they bill. Collecting only on success reported them
+        // as "No scenes could be queued for the film."
+        await queueSequentialSceneBatch(
           scenes,
           queueScene,
           (jobId, sceneIndex) => waitForLastFrameUrl(jobId, `Scene ${sceneIndex + 1}`),
-        ))
+          (jobId) => { createdJobIds.push(jobId) },
+        )
       } else if (isIndependentSceneBatch) {
         const queueResult = await queueSceneBatch(
           scenes,
@@ -7643,7 +7649,13 @@ export default function DashboardPage() {
       }
       const message = generationStartErrorMessage(error, 'Could not start scenario generation.')
       setComposerError(message)
-      setVideoColumnMessage(message)
+      // Say plainly that earlier clips are still running, so the operator does
+      // not start the film again on top of jobs already in flight.
+      setVideoColumnMessage(
+        createdJobIds.length > 0
+          ? `${message} ${createdJobIds.length} clip${createdJobIds.length === 1 ? '' : 's'} already queued and still rendering.`
+          : message,
+      )
       throw error
     } finally {
       setIsSubmitting(false)

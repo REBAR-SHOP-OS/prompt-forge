@@ -68,6 +68,39 @@ describe('queueSequentialSceneBatch', () => {
     ])
   })
 
+  it('reports every job it queued even when the chain then fails', async () => {
+    // A 30s+ film aborts on the first failed handoff. The clips queued before
+    // that point are real: rendering, already in the clip list, already
+    // billing. Without onJobQueued the caller's only record is the array it
+    // never receives, and the operator is told nothing queued.
+    const queued: string[] = []
+
+    await expect(queueSequentialSceneBatch(
+      ['scene 1', 'scene 2', 'scene 3'],
+      async (_scene, sceneIndex) => `job-${sceneIndex + 1}`,
+      async (jobId) => {
+        if (jobId === 'job-2') throw new Error('last-frame capture failed')
+        return 'https://frames.test/last.png'
+      },
+      (jobId) => { queued.push(jobId) },
+    )).rejects.toThrow('last-frame capture failed')
+
+    expect(queued).toEqual(['job-1', 'job-2'])
+  })
+
+  it('fires onJobQueued before the wait, not after', async () => {
+    const events: string[] = []
+
+    await queueSequentialSceneBatch(
+      ['scene 1', 'scene 2'],
+      async (_scene, sceneIndex) => `job-${sceneIndex + 1}`,
+      async (jobId) => { events.push(`wait:${jobId}`); return 'https://frames.test/last.png' },
+      (jobId) => { events.push(`queued:${jobId}`) },
+    )
+
+    expect(events).toEqual(['queued:job-1', 'wait:job-1', 'queued:job-2'])
+  })
+
   it('does not queue a later card when the required last-frame handoff fails', async () => {
     const queueScene = vi.fn(async (_scene: string, sceneIndex: number) => `job-${sceneIndex + 1}`)
 
