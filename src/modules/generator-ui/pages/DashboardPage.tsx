@@ -6688,7 +6688,6 @@ export default function DashboardPage() {
   // immediately keep working on them — opening a draft == resuming it.
   function openLibraryEntry(video: JobDetail) {
     setLastMergedPreview(null)
-    setIsApprovedPanelOpen(false)
     setPreviewDismissed(false)
 
     if (video.id.startsWith('draft-')) {

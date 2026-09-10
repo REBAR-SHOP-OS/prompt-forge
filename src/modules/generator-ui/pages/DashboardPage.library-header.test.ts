@@ -70,4 +70,28 @@ describe('DashboardPage Library header icon', () => {
     expect(source).toContain('onSelect={() => setIsAccountCenterOpen(true)}')
     expect(source).toContain('Sign out')
   })
+
+  it('keeps Library open when a saved project is selected for Preview', () => {
+    const handlerStart = source.indexOf('function openLibraryEntry(video: JobDetail)')
+    const handlerEnd = source.indexOf('function parseScenarioScenes', handlerStart)
+    expect(handlerStart, 'openLibraryEntry handler not found').toBeGreaterThan(-1)
+    expect(handlerEnd, 'openLibraryEntry handler end not found').toBeGreaterThan(handlerStart)
+
+    const handler = source.slice(handlerStart, handlerEnd)
+    expect(handler).toContain('setPreviewDismissed(false)')
+    expect(handler).toContain('setPreviewVideoId(video.id)')
+    expect(handler).toContain('setSelectedProjectId(video.id)')
+    expect(handler).not.toContain('setIsApprovedPanelOpen(false)')
+  })
+
+  it('still closes Library from both the backdrop and explicit close button', () => {
+    const panelStart = source.indexOf('{/* Left library panel')
+    const panelEnd = source.indexOf('{!isReadOnlyProject && (', panelStart)
+    expect(panelStart, 'Library panel start not found').toBeGreaterThan(-1)
+    expect(panelEnd, 'Library panel end not found').toBeGreaterThan(panelStart)
+
+    const panel = source.slice(panelStart, panelEnd)
+    expect(panel.match(/aria-label="Close library"/g)).toHaveLength(2)
+    expect(panel.match(/onClick=\{\(\) => setIsApprovedPanelOpen\(false\)\}/g)).toHaveLength(2)
+  })
 })
