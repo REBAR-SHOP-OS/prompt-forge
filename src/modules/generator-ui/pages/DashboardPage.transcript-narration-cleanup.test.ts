@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import dashboardSource from './DashboardPage.tsx?raw'
 import transcriptSource from '../components/TranscriptPanel.tsx?raw'
 import voiceoverSource from '../components/VoiceoverDialog.tsx?raw'
+import optimizerSource from '../components/PromptOptimizerPopover.tsx?raw'
 
 describe('Dashboard transcript and narration cleanup', () => {
   it('keeps only the preview Transcript entry point and translation panel', () => {
@@ -23,8 +24,12 @@ describe('Dashboard transcript and narration cleanup', () => {
   })
 
   it('preserves prompt narrator choices and the Voiceover workflow', () => {
-    expect(dashboardSource).toContain('No narrator')
-    expect(dashboardSource).toContain('With narrator')
+    // The narrator choice lives in the prompt optimizer popover (With / Without
+    // narration) and the popover is mounted by the dashboard composer.
+    expect(optimizerSource).toContain('With narration')
+    expect(optimizerSource).toContain('Without narration')
+    expect(optimizerSource).toContain('narratorScript')
+    expect(dashboardSource).toContain('<PromptOptimizerPopover')
     expect(dashboardSource).toContain('<VoiceoverDialog')
     expect(voiceoverSource).toContain('Generate voiceover')
     expect(voiceoverSource).toContain('Translate narration')
