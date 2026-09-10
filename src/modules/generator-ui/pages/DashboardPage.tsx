@@ -193,6 +193,7 @@ import { buildSceneEditRequestBody, buildSceneGenerateRequestBody, buildSceneCom
 import {
   GlobalSceneBatchError,
   queueSceneBatch,
+  queueSequentialSceneBatch,
   waitForSceneBatch,
   type SceneBatchResult,
 } from '@/modules/generator-ui/lib/sceneBatch'
@@ -7445,10 +7446,12 @@ export default function DashboardPage() {
     const hasPerSceneImages = Boolean(
       opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
     )
-    // The review wizard supplies one approved image slot per scene. That makes
-    // every scene an independent job: no scene waits for a previous render or
-    // consumes its last frame. Other callers retain the legacy chained flow.
-    const isIndependentSceneBatch = Array.isArray(opts?.perSceneImageUrls)
+    // Preserve the wizard's independent queueing for short films. Supported
+    // 30s+ films must instead wait for each completed clip and hand its actual
+    // last frame to the next card as that card's visual start frame.
+    const isWizardSceneBatch = Array.isArray(opts?.perSceneImageUrls)
+    const requiresSequentialContinuity = isWizardSceneBatch && totalDuration >= 30
+    const isIndependentSceneBatch = isWizardSceneBatch && !requiresSequentialContinuity
     const scenarioModel =
       continuityCharacterRef || activeProduct || hasPerSceneImages
         ? toImageToVideoModel(selectedModel)
@@ -7457,7 +7460,11 @@ export default function DashboardPage() {
     // Job ids created in this batch, returned so the caller can report each
     // clip's terminal state. Final Film assembly remains a manual action.
     const createdJobIds: string[] = []
-    const queueScene = async (sourcePrompt: string, i: number): Promise<string> => {
+    const queueScene = async (
+      sourcePrompt: string,
+      i: number,
+      previousLastFrameUrl?: string,
+    ): Promise<string> => {
       const sceneLabel = `Scene ${i + 1}`
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited. When the
@@ -7479,18 +7486,16 @@ export default function DashboardPage() {
 
         let startFrameUrl: string | undefined
         let startFrameIsProductPhoto = false
-        // Continuity end-frame: when this scene has its own approved start image
-        // AND a previous clip exists, also pass the previous clip's last frame as
-        // the end frame so the provider interpolates between the approved start
-        // image and the previous scene's end — keeping both the approved image
-        // and visual continuity between scenes.
+        const startFrameIsContinuity = Boolean(previousLastFrameUrl)
+        // Keep each approved scene image as the visual destination when a 30s+
+        // continuation frame is present. The provider therefore starts from the
+        // completed previous card and can still converge on the approved shot.
         let endFrameUrl: string | undefined
-        // Per-scene pre-generated start image (one-button auto-film): when the
-        // caller supplied this scene's own image, seed the card from it instead
-        // of the last-frame chain. Missing entries fall through to the existing
-        // behavior below, so this stays additive + backward compatible.
         const perSceneImageUrl = opts?.perSceneImageUrls?.[i]
-        if (perSceneImageUrl) {
+        if (previousLastFrameUrl) {
+          startFrameUrl = previousLastFrameUrl
+          endFrameUrl = perSceneImageUrl
+        } else if (perSceneImageUrl) {
           startFrameUrl = perSceneImageUrl
           // Legacy chained callers may still interpolate from the previous
           // clip. Wizard batches never wait here: each approved image starts an
@@ -7537,14 +7542,16 @@ export default function DashboardPage() {
           try {
             startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
           } catch (err) {
-            // Only seed-frame CAPTURE failures are degradable. A previous scene
-            // that failed/was removed/timed out still aborts the chain — those
-            // clips would not exist to continue from.
-            if (!(err instanceof Error && err.name === SEED_FRAME_ERROR)) throw err
+            // A 30s+ film requires a real handoff, so any previous-card or
+            // final-frame failure stops the chain. Keep the legacy degradable
+            // capture behavior only for shorter multi-scene callers.
+            if (
+              totalDuration >= 30 ||
+              !(err instanceof Error && err.name === SEED_FRAME_ERROR)
+            ) throw err
             console.error(`Scene ${i + 1}: continuing without continuity seed`, err)
-            // Fall back to the scenario's original start frame (or none). The
-            // character/product referenceImageUrls still anchor the subject, so
-            // one unseeded scene beats erroring the whole 30s/45s/135s scenario.
+            // Shorter legacy callers may still fall back to their original
+            // start frame while identity references anchor the subject.
             startFrameUrl = firstSceneImageUrl
             setVideoColumnMessage(
               `Scene ${i + 1}: previous frame could not be captured — continuing without it.`,
@@ -7554,7 +7561,7 @@ export default function DashboardPage() {
         // Bake the pinned product into this scene's start frame so Wan reproduces
         // the exact product (it only conditions on the start frame). Skip when the
         // start frame already IS the real product photo — no redraw needed.
-        if (activeProduct && startFrameUrl && !startFrameIsProductPhoto) {
+        if (activeProduct && startFrameUrl && !startFrameIsProductPhoto && !startFrameIsContinuity) {
           setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
           startFrameUrl = await bakeProductIntoFrame(startFrameUrl, activeProduct, effectiveRatio)
         }
@@ -7589,11 +7596,23 @@ export default function DashboardPage() {
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
-        if (!isIndependentSceneBatch) previousJobId = seededJob.id
+        if (!isWizardSceneBatch) previousJobId = seededJob.id
         return seededJob.id
     }
     try {
-      if (isIndependentSceneBatch) {
+      if (requiresSequentialContinuity) {
+        // Record each id as it is created, not when the chain resolves. A 30s+
+        // film aborts on the first failed handoff, and the clips queued before
+        // that point are real: they are rendering, they are already in the
+        // clip list, and they bill. Collecting only on success reported them
+        // as "No scenes could be queued for the film."
+        await queueSequentialSceneBatch(
+          scenes,
+          queueScene,
+          (jobId, sceneIndex) => waitForLastFrameUrl(jobId, `Scene ${sceneIndex + 1}`),
+          (jobId) => { createdJobIds.push(jobId) },
+        )
+      } else if (isIndependentSceneBatch) {
         const queueResult = await queueSceneBatch(
           scenes,
           queueScene,
@@ -7630,7 +7649,13 @@ export default function DashboardPage() {
       }
       const message = generationStartErrorMessage(error, 'Could not start scenario generation.')
       setComposerError(message)
-      setVideoColumnMessage(message)
+      // Say plainly that earlier clips are still running, so the operator does
+      // not start the film again on top of jobs already in flight.
+      setVideoColumnMessage(
+        createdJobIds.length > 0
+          ? `${message} ${createdJobIds.length} clip${createdJobIds.length === 1 ? '' : 's'} already queued and still rendering.`
+          : message,
+      )
       throw error
     } finally {
       setIsSubmitting(false)
