@@ -13321,17 +13321,6 @@ export default function DashboardPage() {
               Product Ad
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsCharacterSheetOpen(true)}
-              aria-label="Create a film built around an uploaded character"
-              title="Create a film built around an uploaded character"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-sky-500 px-4 text-sm font-bold text-zinc-50 shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition hover:from-violet-400 hover:via-fuchsia-400 hover:to-sky-400 hover:shadow-[0_10px_28px_rgba(139,92,246,0.5)]"
-            >
-              <Drama className="h-5 w-5" aria-hidden="true" />
-              Character Sheet
-            </button>
-
             <Popover open={contactMenuOpen} onOpenChange={setContactMenuOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -13633,8 +13622,8 @@ export default function DashboardPage() {
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Add a character to this project"
-                  title="Add a character as a reference for this project"
+                  aria-label="Manage project character"
+                  title="Choose, create, or upload a project character"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     selectedCharacter
                       ? 'border-action-violet/60 bg-fuchsia-500/10 text-action-violet-strong'
@@ -13676,7 +13665,7 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <UserRound className="h-5 w-5" aria-hidden="true" />
-                      <span>Add character</span>
+                      <span>Character</span>
                     </>
                   )}
                 </button>
@@ -13694,13 +13683,24 @@ export default function DashboardPage() {
                     </button>
                   ) : null}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCharacterMenuOpen(false)
+                    setIsCharacterSheetOpen(true)
+                  }}
+                  className="mb-2 flex w-full items-center gap-2 rounded-lg border border-action-violet/40 bg-fuchsia-500/10 px-3 py-2 text-left text-xs font-semibold text-action-violet-strong transition hover:border-action-violet/70 hover:bg-fuchsia-500/15"
+                >
+                  <Drama className="h-4 w-4" aria-hidden="true" />
+                  <span>Create or upload character</span>
+                </button>
                 {characterListLoading ? (
                   <div className="flex items-center justify-center py-6 text-muted-foreground">
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                   </div>
                 ) : characterList.length === 0 ? (
                   <div className="px-1 py-4 text-center text-xs text-muted-foreground">
-                    No characters yet. Upload one in Character Sheet.
+                    No characters yet. Create or upload one above.
                   </div>
                 ) : (
                   <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1">
