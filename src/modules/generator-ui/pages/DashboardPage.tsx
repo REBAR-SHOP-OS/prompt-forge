@@ -196,6 +196,9 @@ import {
   refreshProductIdentity,
   persistProjectProductIdentity,
   mergeRestoredProductIdentities,
+  productDescriptionUpdates,
+  applyProductDescriptionUpdates,
+  persistProductDescriptionUpdates,
   type ProductIdentityCategoryId,
 } from '@/modules/generator-ui/lib/productIdentity'
 import { buildSceneEditRequestBody, buildSceneGenerateRequestBody, buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
@@ -2852,9 +2855,13 @@ export default function DashboardPage() {
   const projectProductIdentitiesKey = userId ? `project-product-identities:${userId}` : null
   const productIdentityScopeId = selectedProjectId ?? activeDraftId
   const touchedProductScopes = useRef(new Set<string>())
+  const editedProductDescriptions = useRef(new Map<string, string | null>())
+  const currentProductIdentitiesKey = useRef(projectProductIdentitiesKey)
+  currentProductIdentitiesKey.current = projectProductIdentitiesKey
   useEffect(() => {
     let cancelled = false
     touchedProductScopes.current = new Set()
+    editedProductDescriptions.current = new Map()
     setProjectProductIdentities({})
     if (!projectProductIdentitiesKey) return
     void (async () => {
@@ -2872,7 +2879,9 @@ export default function DashboardPage() {
             return restored ? [id, restored] as const : null
           }))
         if (!cancelled) setProjectProductIdentities((current) => mergeRestoredProductIdentities(
-          Object.fromEntries(entries.filter((entry) => entry !== null)), current, touchedProductScopes.current,
+          applyProductDescriptionUpdates(
+            Object.fromEntries(entries.filter((entry) => entry !== null)), editedProductDescriptions.current,
+          ), current, touchedProductScopes.current,
         ))
       } catch {
         if (!cancelled) setProjectProductIdentities({})
@@ -5519,7 +5528,7 @@ export default function DashboardPage() {
             for (const id of targetIds) next[id] = text
             return next
           })
-          setSelectedProduct((prev) => (prev && idSet.has(prev.id) ? { ...prev, description: text } : prev))
+          syncProductDescriptions(targetIds, text)
           matched += 1
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'update failed'
@@ -5570,6 +5579,18 @@ export default function DashboardPage() {
     }
   }
 
+  function syncProductDescriptions(imageIds: string[], description: string | null) {
+    if (currentProductIdentitiesKey.current !== projectProductIdentitiesKey) return
+    const updates = productDescriptionUpdates(archiveProductGroups, imageIds, description)
+    for (const [id, value] of updates) editedProductDescriptions.current.set(id, value)
+    setProjectProductIdentities((current) => applyProductDescriptionUpdates(current, updates))
+    if (projectProductIdentitiesKey) {
+      try {
+        persistProductDescriptionUpdates(window.localStorage, projectProductIdentitiesKey, updates)
+      } catch { /* Storage may be unavailable; the saved database description remains valid. */ }
+    }
+  }
+
   // Persist the per-image AI description. Called on blur so typing stays smooth.
   const saveProductDescription = async (imageId: string) => {
     if (!userId) return
@@ -5590,7 +5611,7 @@ export default function DashboardPage() {
         prev.map((i) => (i.id === imageId ? { ...i, description: value } : i)),
       )
       // Keep a pinned/selected product's description in sync with edits.
-      setSelectedProduct((prev) => (prev && prev.id === imageId ? { ...prev, description: value } : prev))
+      syncProductDescriptions([imageId], value)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not save description.'
       setProductUploadError(`Description save failed: ${msg}`)

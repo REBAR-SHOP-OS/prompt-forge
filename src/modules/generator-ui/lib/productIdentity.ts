@@ -124,3 +124,40 @@ export function mergeRestoredProductIdentities<T>(
 ): Record<string, T> {
   return { ...Object.fromEntries(Object.entries(restored).filter(([id]) => !touched.has(id))), ...current }
 }
+
+/** Description edits address image rows; selections may address their product group. */
+export function productDescriptionUpdates<T extends ProductPhotoGroupItem>(
+  groups: readonly ProductPhotoGroup<T>[],
+  imageIds: readonly string[],
+  description: string | null,
+): Map<string, string | null> {
+  const ids = new Set(imageIds)
+  const updates = new Map(imageIds.map((id) => [id, description]))
+  for (const group of groups) {
+    if (group.photos.some((photo) => ids.has(photo.id))) updates.set(group.id, description)
+  }
+  return updates
+}
+
+export function applyProductDescriptionUpdates<T extends { id: string; description?: string | null }>(
+  identities: Readonly<Record<string, T>>,
+  updates: ReadonlyMap<string, string | null>,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(identities).map(([scope, identity]) => [
+    scope,
+    identity && updates.has(identity.id) ? { ...identity, description: updates.get(identity.id) } : identity,
+  ]))
+}
+
+/** Update unloaded drafts as well as the active one, without replacing their other fields. */
+export function persistProductDescriptionUpdates(
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
+  key: string,
+  updates: ReadonlyMap<string, string | null>,
+): void {
+  const raw = storage.getItem(key)
+  if (!raw) return
+  const identities = JSON.parse(raw) as Record<string, ProductIdentitySelection>
+  if (!identities || typeof identities !== 'object' || Array.isArray(identities)) return
+  storage.setItem(key, JSON.stringify(applyProductDescriptionUpdates(identities, updates)))
+}
