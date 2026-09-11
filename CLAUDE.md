@@ -35,7 +35,7 @@ Stack: React + Vite + TypeScript + Supabase
 
 ## Build commands
 bun install && bun run dev
-bun run tsc --noEmit
+npm run typecheck
 bun run build
 
 ---
@@ -58,7 +58,7 @@ hard checklist a review must clear before a PR is handed to Sattar.
    already has prior fixes (`git log --oneline -- <path>`, recent PRs). If this
    is the Nth patch to the same area (job orchestration and provider routing
    have churned), fix the underlying cause and say so in the PR body.
-3. **Green-before-PR is absolute.** `bun run tsc --noEmit` and `bun run build`
+3. **Green-before-PR is absolute.** `npm run typecheck` and `bun run build`
    must be clean before pushing. Never open or update a red PR; never mark a
    `[WIP]` change as done.
 4. **No silent failures; status must be truthful.** Surface errors to logs and
