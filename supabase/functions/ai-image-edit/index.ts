@@ -6,7 +6,9 @@ import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import {
   buildIdentityEvalPrompt,
   classifyEvalVerdict,
+  MAX_REFERENCE_IMAGES,
   parseIdentityEvalResponse,
+  selectEvaluatedSpecs,
   validateReferenceSpecs,
   type IdentityEvalOutcome,
   type ReferenceSpec,
@@ -61,8 +63,10 @@ Deno.serve(async (req) => {
       ? body.aspectRatio as "1:1" | "9:16" | "16:9"
       : null;
 
-    // Accept either a single imageUrl (legacy) or an imageUrls array (multiple references).
-    const MAX_REFERENCE_IMAGES = 4;
+    // Accept either a single imageUrl (legacy) or an imageUrls array (multiple
+    // references). The cap is identity-eval's own MAX_REFERENCE_IMAGES — a
+    // local, smaller redeclaration here would silently truncate a multi-angle
+    // product folder that validateReferenceSpecs would otherwise accept.
     const rawUrls: string[] = Array.isArray(body?.imageUrls)
       ? body.imageUrls.filter((u: unknown) => typeof u === "string").map((u: string) => u.trim())
       : (typeof body?.imageUrl === "string" ? [body.imageUrl.trim()] : []);
@@ -222,7 +226,12 @@ Deno.serve(async (req) => {
     const FALLBACK = "google/gemini-2.5-flash-image";
     const MAX_IDENTITY_ATTEMPTS = 2;
     const evalModel = "google/gemini-3-flash-preview";
-    const evalPrompt = buildIdentityEvalPrompt(identitySpecs);
+    // Judge only the first product angle plus the character, never every
+    // grouped angle — a single generated image can only visually show one
+    // product angle, so evaluating the rest would fail spuriously. The extra
+    // product specs above are generation-only grounding.
+    const evaluatedSpecs = selectEvaluatedSpecs(identitySpecs);
+    const evalPrompt = buildIdentityEvalPrompt(evaluatedSpecs);
 
     async function evaluateIdentity(dataUrl: string) {
       const evalContent: unknown[] = [
@@ -230,8 +239,8 @@ Deno.serve(async (req) => {
         { type: "text", text: "GENERATED_OUTPUT:" },
         { type: "image_url", image_url: { url: dataUrl } },
       ];
-      for (let i = 0; i < identitySpecs.length; i++) {
-        const spec = identitySpecs[i];
+      for (let i = 0; i < evaluatedSpecs.length; i++) {
+        const spec = evaluatedSpecs[i];
         evalContent.push({ type: "text", text: `REF_${i + 1} (${spec.role.toUpperCase()}):` });
         evalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url) } });
       }
@@ -257,7 +266,7 @@ Deno.serve(async (req) => {
       const evalData = await readJsonLoose(evalResp, "ai-image-edit-identity-eval");
       const raw = String(evalData?.choices?.[0]?.message?.content ?? "").trim();
       const outcome: IdentityEvalOutcome | null = raw
-        ? parseIdentityEvalResponse(raw, identitySpecs.length)
+        ? parseIdentityEvalResponse(raw, evaluatedSpecs.length)
         : null;
       const verdict = classifyEvalVerdict(outcome);
       return verdict === "error"

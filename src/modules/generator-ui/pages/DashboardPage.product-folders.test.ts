@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 // ?raw is resolved by Vite at transform time, so the source is located the same
 // way the app locates it. Reading the TSX with node:fs and a relative path made
 // the assertion depend on the process cwd instead.
 import source from './DashboardPage.tsx?raw'
+import { groupProductPhotos, mergeEmptyProductFolders, productFolderStorageId } from '../lib/productPhotoGroups'
 
 describe('Storage Product Photos folders', () => {
   it('requires creating or opening a product folder before adding angle photos', () => {
@@ -35,8 +36,10 @@ describe('Storage Product Photos folders', () => {
     const enterPoints = [
       // createProductFolder — new draft folder becomes active
       /setActiveProductFolder\(folder\)[\s\S]{0,600}?setSelectedArchiveIds\(new Set\(\)\)/,
-      // openProductFolder — existing folder becomes active
-      /storageFolderId: storedProductFolderId\(group\.photos\[0\]\),\s*\}\)\s*setSelectedArchiveIds\(new Set\(\)\)/,
+      // openProductFolder — existing folder becomes active. The id is now
+      // resolved before activating (photo row, or the persisted record for an
+      // empty folder), so the clear follows the single setActiveProductFolder.
+      /setActiveProductFolder\(\{ groupId: group\.id, name: group\.name, storageFolderId \}\)\s*setSelectedArchiveIds\(new Set\(\)\)/,
     ]
     for (const pattern of enterPoints) expect(source).toMatch(pattern)
 
@@ -67,5 +70,100 @@ describe('Storage Product Photos folders', () => {
     // The single-target form is what regressed; it must not come back.
     expect(source).not.toMatch(/const target = byName\.get\(key\)/)
     expect(source).not.toMatch(/\.update\(\{ description: text \}\)\s*\.eq\('id', target\.id\)/)
+  })
+
+  // createProductFolder used to hold the new folder only in draftProductFolder
+  // (pure useState) — an empty folder had zero generator_user_images rows, so
+  // nothing survived a refresh/reopen. The fix persists a product_folders row
+  // at creation time and merges it back in on load.
+  it('persists a durable row for a newly created folder and loads it on the products tab', () => {
+    expect(source).toContain(".from('product_folders')")
+    expect(source).toContain('.insert({ user_id: userId, storage_folder_id: storageFolderId, name })')
+    expect(source).toContain("mergeEmptyProductFolders(groupProductPhotos(archiveProductImages), productFolders)")
+  })
+
+  // openProductFolder resolves the storage id from a photo row when there is
+  // one, and from the persisted product_folders record when there is not.
+  // The distinction matters because handleProductPhotoSelected silently falls
+  // back to the flat legacy path when the id is missing:
+  //
+  //  - legacy title-grouped folder → id is legitimately null, and the flat
+  //    path is exactly where the rest of that group already lives. Must still
+  //    open.
+  //  - empty folder with no resolvable record → the flat path would drop the
+  //    upload OUTSIDE the folder on screen, and it would then reappear as a
+  //    second title-grouped folder of the same name. Must NOT open.
+  it('opens a folder only when its uploads can land inside it', () => {
+    expect(source).toContain('const hasPhotos = group.photos.length > 0')
+    expect(source).toMatch(
+      /const storageFolderId = hasPhotos\s*\?\s*storedProductFolderId\(group\.photos\[0\]\)\s*:\s*productFolderStorageId\(group, productFolders\)/,
+    )
+    // Guarded on the empty case ONLY — `!storageFolderId` alone would refuse to
+    // open every legacy folder, since those have no folder id by definition.
+    expect(source).toContain('if (!hasPhotos && !storageFolderId) {')
+    expect(source).not.toMatch(/if \(!storageFolderId\) \{\s*setProductUploadError/)
+
+    // Resolved once, before activating. The earlier shape activated with an
+    // undefined id and corrected it in a second setState.
+    const opener = source.slice(
+      source.indexOf('const openProductFolder ='),
+      source.indexOf('const handlePickProductPhoto ='),
+    )
+    expect(opener.length).toBeGreaterThan(0)
+    expect((opener.match(/setActiveProductFolder\(/g) || []).length).toBe(1)
+  })
+
+  it('an empty product folder persists across reload', async () => {
+    // Simulate the backing store exactly as DashboardPage's loaders read it:
+    // zero generator_user_images rows (no photo was ever uploaded into the
+    // folder) but one persisted product_folders row (written by
+    // createProductFolder). This is a fresh mount reading from the persisted
+    // row, not from any in-memory draftProductFolder state.
+    // Two independently-shaped mock query builders (mirroring the real
+    // .select().eq()...order() chains loadProductImages/loadProductFolders
+    // build), so each stays concretely typed rather than a table-name union.
+    const mockFromGeneratorUserImages = vi.fn(() => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({
+              order: async () => ({ data: [] as Array<{ id: string; storagePath?: string | null }>, error: null }),
+            }),
+          }),
+        }),
+      }),
+    }))
+    const mockFromProductFolders = vi.fn(() => ({
+      select: () => ({
+        eq: () => ({
+          order: async () => ({
+            data: [{ storage_folder_id: 'folder-777', name: 'Rebar Stirrup' }],
+            error: null,
+          }),
+        }),
+      }),
+    }))
+
+    const imagesRes = await mockFromGeneratorUserImages().select().eq().eq().is().order()
+    const foldersRes = await mockFromProductFolders().select().eq().order()
+
+    // Reproduce the exact merge DashboardPage performs on load: photo-derived
+    // groups (none — the folder is empty) plus the persisted folder records.
+    const photoGroups = groupProductPhotos(imagesRes.data)
+    const productFolders = foldersRes.data.map((row) => ({
+      storageFolderId: row.storage_folder_id,
+      name: row.name,
+    }))
+    const groups = mergeEmptyProductFolders(photoGroups, productFolders)
+
+    // The folder is still present as its own card, even though it has never
+    // held a single photo.
+    expect(groups).toEqual([{ id: 'folder:folder-777', name: 'Rebar Stirrup', photos: [] }])
+
+    // And it stays a valid upload target: opening it resolves the real
+    // storage-folder id (not null), so a photo uploaded now lands under
+    // products/folder-777/... and joins this exact folder, rather than
+    // falling back to an un-folder-scoped legacy path.
+    expect(productFolderStorageId(groups[0], productFolders)).toBe('folder-777')
   })
 })

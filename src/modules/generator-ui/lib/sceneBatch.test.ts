@@ -4,6 +4,7 @@ import { ApiError } from '@/core/api/client'
 import {
   GlobalSceneBatchError,
   queueSceneBatch,
+  queueSequentialSceneBatch,
   waitForSceneBatch,
 } from '@/modules/generator-ui/lib/sceneBatch'
 
@@ -34,10 +35,83 @@ describe('queueSceneBatch', () => {
         if (sceneIndex === 1) throw new ApiError(402, 'INSUFFICIENT_CREDITS', 'No credits')
         return `job-${sceneIndex + 1}`
       },
-    )).rejects.toMatchObject<Partial<GlobalSceneBatchError>>({
+    )).rejects.toMatchObject({
       name: 'GlobalSceneBatchError',
       partial: { jobIds: ['job-1'], failed: [] },
     })
+  })
+})
+
+describe('queueSequentialSceneBatch', () => {
+  it('waits for each completed card and hands its actual last frame to the next card', async () => {
+    const events: string[] = []
+
+    const jobIds = await queueSequentialSceneBatch(
+      ['scene 1', 'scene 2', 'scene 3'],
+      async (_scene, sceneIndex, previousLastFrameUrl) => {
+        events.push(`queue:${sceneIndex + 1}:${previousLastFrameUrl ?? 'none'}`)
+        return `job-${sceneIndex + 1}`
+      },
+      async (jobId, sceneIndex) => {
+        events.push(`wait:${jobId}`)
+        return `https://frames.test/card-${sceneIndex + 1}-last.png`
+      },
+    )
+
+    expect(jobIds).toEqual(['job-1', 'job-2', 'job-3'])
+    expect(events).toEqual([
+      'queue:1:none',
+      'wait:job-1',
+      'queue:2:https://frames.test/card-1-last.png',
+      'wait:job-2',
+      'queue:3:https://frames.test/card-2-last.png',
+    ])
+  })
+
+  it('reports every job it queued even when the chain then fails', async () => {
+    // A 30s+ film aborts on the first failed handoff. The clips queued before
+    // that point are real: rendering, already in the clip list, already
+    // billing. Without onJobQueued the caller's only record is the array it
+    // never receives, and the operator is told nothing queued.
+    const queued: string[] = []
+
+    await expect(queueSequentialSceneBatch(
+      ['scene 1', 'scene 2', 'scene 3'],
+      async (_scene, sceneIndex) => `job-${sceneIndex + 1}`,
+      async (jobId) => {
+        if (jobId === 'job-2') throw new Error('last-frame capture failed')
+        return 'https://frames.test/last.png'
+      },
+      (jobId) => { queued.push(jobId) },
+    )).rejects.toThrow('last-frame capture failed')
+
+    expect(queued).toEqual(['job-1', 'job-2'])
+  })
+
+  it('fires onJobQueued before the wait, not after', async () => {
+    const events: string[] = []
+
+    await queueSequentialSceneBatch(
+      ['scene 1', 'scene 2'],
+      async (_scene, sceneIndex) => `job-${sceneIndex + 1}`,
+      async (jobId) => { events.push(`wait:${jobId}`); return 'https://frames.test/last.png' },
+      (jobId) => { events.push(`queued:${jobId}`) },
+    )
+
+    expect(events).toEqual(['queued:job-1', 'wait:job-1', 'queued:job-2'])
+  })
+
+  it('does not queue a later card when the required last-frame handoff fails', async () => {
+    const queueScene = vi.fn(async (_scene: string, sceneIndex: number) => `job-${sceneIndex + 1}`)
+
+    await expect(queueSequentialSceneBatch(
+      ['scene 1', 'scene 2', 'scene 3'],
+      queueScene,
+      async () => { throw new Error('last-frame capture failed') },
+    )).rejects.toThrow('last-frame capture failed')
+
+    expect(queueScene).toHaveBeenCalledTimes(1)
+    expect(queueScene).toHaveBeenCalledWith('scene 1', 0, undefined)
   })
 })
 

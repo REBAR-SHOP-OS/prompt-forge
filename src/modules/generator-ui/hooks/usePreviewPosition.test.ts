@@ -49,14 +49,14 @@ function makeRefs(overrides: Partial<{
   const composer = makeEl(overrides.composer ?? { left: 0, top: 700, right: 1000, bottom: 800 })
   const frame = makeEl(overrides.frame ?? { left: 400, top: 200, right: 600, bottom: 500 })
   const header = makeEl(overrides.header ?? { left: 0, top: 0, right: 1000, bottom: 76 })
-  const refs: PreviewPositionRefs = {
+  const refs = {
     workspace: { current: workspace },
     rightSidebar: { current: rightSidebar },
     leftSidebar: { current: leftSidebar },
     composer: { current: composer },
     frame: { current: frame },
     header: { current: header },
-  }
+  } satisfies PreviewPositionRefs
   return { refs, workspace, rightSidebar, leftSidebar, composer, frame, header }
 }
 
