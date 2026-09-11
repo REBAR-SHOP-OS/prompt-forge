@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import MakeFilmWizardDialog, {
   type IdentityRef,
   type IdentitySnapshot,
@@ -32,10 +31,11 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 // A controllable generateSceneImage spy that records the exact payload the
 // wizard passes (urls + characterSheet flag) for both initial and Regenerate.
-const generateSceneImage = vi.fn(async () => 'data:image/png;base64,SCENE')
+type WizardProps = Parameters<typeof MakeFilmWizardDialog>[0]
+const generateSceneImage = vi.fn<WizardProps['generateSceneImage']>(async () => 'data:image/png;base64,SCENE')
 
 // For a 30s film, expectedPlanCount returns 6 plans.
-const writeScenario = vi.fn(async () => [
+const writeScenario = vi.fn<WizardProps['writeScenario']>(async () => [
   'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
 ])
 
@@ -646,6 +646,14 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual(
       Array.from({ length: 6 }, () => ['https://x/user/stirrup-008.png', 'https://x/user/stirrup-007.png']),
     )
+
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+    expect(onApprove.mock.calls[0][2].identity).toMatchObject({
+      productUrl: 'https://x/user/stirrup-008.png',
+      productUrls: ['https://x/user/stirrup-008.png', 'https://x/user/stirrup-007.png'],
+      productName: 'Rebar Stirrup',
+    })
   }, 15_000)
 
   it('uses an explicit product-folder id to keep differently labelled views together, all reaching every scene', async () => {

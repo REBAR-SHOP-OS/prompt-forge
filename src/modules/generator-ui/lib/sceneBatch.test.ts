@@ -35,7 +35,7 @@ describe('queueSceneBatch', () => {
         if (sceneIndex === 1) throw new ApiError(402, 'INSUFFICIENT_CREDITS', 'No credits')
         return `job-${sceneIndex + 1}`
       },
-    )).rejects.toMatchObject<Partial<GlobalSceneBatchError>>({
+    )).rejects.toMatchObject({
       name: 'GlobalSceneBatchError',
       partial: { jobIds: ['job-1'], failed: [] },
     })

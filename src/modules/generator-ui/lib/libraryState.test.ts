@@ -204,7 +204,7 @@ describe("library state synchronization", () => {
   it("does not let an aborted hydration mutate local state", async () => {
     let resolveRead: (result: LibraryBackendResult<LibraryStateRow | null>) => void = () => {};
     const backend: LibraryStateBackend = {
-      read: vi.fn(() => new Promise((resolve) => { resolveRead = resolve; })),
+      read: vi.fn(() => new Promise<LibraryBackendResult<LibraryStateRow | null>>((resolve) => { resolveRead = resolve; })),
       insert: vi.fn(),
       updateIfVersion: vi.fn(),
     };

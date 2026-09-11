@@ -280,7 +280,7 @@ export function isMissingImageTypeColumnError(message: string | null | undefined
  * result shape ({ data, error }).
  */
 export async function loadCharacterRows(
-  query: (columns: string) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message: string } | null }>,
+  query: (columns: string) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
 ): Promise<{ rows: CharacterImageRow[]; fellBack: boolean }> {
   const primary = await query('id, storage_path, title, category, image_type')
   if (!primary.error) {
@@ -298,10 +298,12 @@ export async function loadCharacterRows(
 }
 
 function normalizeCharacterRows(
-  data: Array<Record<string, unknown>> | null | undefined,
+  data: unknown[] | null | undefined,
   legacy = false,
 ): CharacterImageRow[] {
-  return (data ?? []).map((r) => ({
+  return (data ?? []).filter((row): row is Record<string, unknown> =>
+    row !== null && typeof row === 'object' && !Array.isArray(row),
+  ).map((r) => ({
     id: String(r.id ?? ''),
     storage_path: (r.storage_path as string | null) ?? null,
     title: (r.title as string | null) ?? null,

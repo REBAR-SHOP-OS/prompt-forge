@@ -45,13 +45,13 @@ describe('validateReferenceSpecs', () => {
   it('rejects mismatched lengths', () => {
     const r = validateReferenceSpecs(['https://x/p.png'], ['product', 'character'])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('same length')
+    if (r.ok === false) expect(r.error).toContain('same length')
   })
 
   it('rejects an invalid role', () => {
     const r = validateReferenceSpecs(['https://x/p.png'], ['banana'])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Invalid reference role')
+    if (r.ok === false) expect(r.error).toContain('Invalid reference role')
   })
 
   // A real product photo folder can hold several angles of the same product,
@@ -79,7 +79,7 @@ describe('validateReferenceSpecs', () => {
       ['character', 'character'],
     )
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Duplicate reference role')
+    if (r.ok === false) expect(r.error).toContain('Duplicate reference role')
   })
 
   it('rejects more than the max reference count (a bounded number of product angles plus one character)', () => {
@@ -87,7 +87,7 @@ describe('validateReferenceSpecs', () => {
     const roles = Array.from({ length: MAX_REFERENCE_IMAGES + 1 }, () => 'product')
     const r = validateReferenceSpecs(urls, roles)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('At most')
+    if (r.ok === false) expect(r.error).toContain('At most')
   })
 
   it('exposes only product and character as allowed roles', () => {

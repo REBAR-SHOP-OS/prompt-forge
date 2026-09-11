@@ -4,7 +4,7 @@ import type { PreviewPosition } from '@/modules/generator-ui/hooks/usePreviewPos
 type Props = {
   position: PreviewPosition
   /** The preview frame element (untranslated, grid-centered). */
-  frameRef: React.RefObject<HTMLElement | null>
+  frameRef: React.RefObject<HTMLDivElement | null>
   children: React.ReactNode
 }
 
