@@ -71,6 +71,27 @@ function narratedSuffix(script: string): string {
 
 const DEFAULT_SUFFIX = "Keep it under 80 words.";
 
+const DURATION_PACING_GUIDANCE: Record<number, string> = {
+  5: "For 5 seconds, use one immediate visual beat: hook in the opening moment, show one decisive action, and land the payoff before the final frame; omit secondary ideas.",
+  10: "For 10 seconds, use one fluid mini-arc: hook during seconds 0-2, focused action during seconds 2-8, and a clear payoff during seconds 8-10.",
+  15: "For 15 seconds, use one complete short arc: hook during seconds 0-3, develop the central action during seconds 3-12, and resolve with the payoff during seconds 12-15.",
+  30: "For 30 seconds, pace the story across exactly 2 sequential 15-second sections: first establish the hook, subject, and need; then develop the action and finish with the product or brand payoff.",
+  45: "For 45 seconds, pace the story across exactly 3 sequential 15-second sections: first establish the hook and context; then develop the product interaction or proof; finally resolve the story with a memorable payoff.",
+  135: "For 135 seconds, pace the story across exactly 9 sequential 15-second sections: hook, context, need, product reveal, demonstration, proof, broader application, climax, and final brand payoff.",
+};
+
+export function durationGuidanceFor(duration: number | null): string {
+  if (duration === null || !Number.isFinite(duration) || duration <= 0) return "";
+  const pacing = DURATION_PACING_GUIDANCE[duration]
+    ?? `For ${duration} seconds, pace the story as one clear beginning-to-end visual arc with a readable final payoff.`;
+  return [
+    pacing,
+    "Use the timing only as internal pacing guidance.",
+    "Return one coherent cinematic prompt with smooth continuity, not separate prompts.",
+    "Do NOT output timestamps, shot lists, section headings, or scene delimiters such as ===SCENE===.",
+  ].join(" ");
+}
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -212,7 +233,7 @@ Deno.serve(async (req) => {
       filmContextParts.push(`CHARACTER: ${characterDescription}`);
     }
     if (duration !== null && duration > 0) {
-      filmContextParts.push(`DURATION: ${duration} seconds total.`);
+      filmContextParts.push(`DURATION: ${duration} seconds total. ${durationGuidanceFor(duration)}`);
     }
     if (aspectRatio) {
       filmContextParts.push(`ASPECT RATIO: ${aspectRatio}.`);

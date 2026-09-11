@@ -11,9 +11,11 @@ vi.mock('@/modules/generator-ui/components/StylePreviewCard', () => ({
 
 function Harness({
   initialPrompt = 'A rough product video',
+  durationSeconds = 5,
   onOptimize = vi.fn(),
 }: {
   initialPrompt?: string
+  durationSeconds?: number
   onOptimize?: (request: PromptOptimizationRequest) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -22,6 +24,7 @@ function Harness({
       open={open}
       onOpenChange={setOpen}
       initialPrompt={initialPrompt}
+      durationSeconds={durationSeconds}
       onOptimize={onOptimize}
     />
   )
@@ -46,6 +49,22 @@ describe('PromptOptimizerPopover', () => {
     expect(screen.queryByText(/Scenario for this product/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /write scenario/i })).not.toBeInTheDocument()
   })
+
+  it.each([5, 10, 15, 30, 45, 135])(
+    'shows and submits the selected %i-second duration',
+    (durationSeconds) => {
+      const onOptimize = vi.fn()
+      render(<Harness durationSeconds={durationSeconds} onOptimize={onOptimize} />)
+      openOptimizer()
+
+      expect(screen.getByLabelText('Selected video duration')).toHaveTextContent(
+        `Video duration: ${durationSeconds} seconds`,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Optimize prompt' }))
+
+      expect(onOptimize).toHaveBeenCalledWith(expect.objectContaining({ duration: durationSeconds }))
+    },
+  )
 
   it('only shows and submits narration text when With narration is selected', () => {
     const onOptimize = vi.fn()
