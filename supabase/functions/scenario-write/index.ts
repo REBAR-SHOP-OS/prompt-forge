@@ -23,6 +23,7 @@ import {
   type ScenarioHistoryEntry,
 } from "./scenario-fingerprint.ts";
 import { releaseScenarioLease } from "./scenario-lease.ts";
+import { readScenarioAssistantText, requestScenarioGateway } from "./scenario-gateway.ts";
 
 async function callGateway(
   apiKey: string,
@@ -66,20 +67,27 @@ async function callGateway(
     ? `${baseUserContent}\n\n${correctiveInstruction}`
     : baseUserContent;
 
-  return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration, unit) },
-        { role: "user", content: userContent },
-      ],
+  return await requestScenarioGateway(
+    () => fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration, unit) },
+          { role: "user", content: userContent },
+        ],
+      }),
     }),
-  });
+    {
+      durationSeconds: duration,
+      unit,
+      stage: correctiveInstruction ? "retry" : "initial",
+    },
+  );
 }
 
 // The AI gateway fetches image URLs itself, but our storage buckets (e.g.
@@ -289,13 +297,13 @@ Deno.serve(async (req) => {
       const text = await resp.text().catch(() => "");
       console.error("scenario-write gateway error", resp.status, text);
       return new Response(JSON.stringify({ error: "AI gateway error" }), {
-        status: 500,
+        status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await readJsonLoose(resp, "scenario-write");
-    const raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
+    const raw = readScenarioAssistantText(data, "scenario-write");
 
     // Use plan-based quality pass when unit === "plan".
     const quality = unit === "plan"
@@ -319,7 +327,7 @@ Deno.serve(async (req) => {
           return null;
         }
         const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
-        return (retryData?.choices?.[0]?.message?.content ?? "").trim();
+        return readScenarioAssistantText(retryData, "scenario-write corrective retry");
       })
       : await runScenarioQualityPass(duration, raw, async (correctiveInstruction) => {
         const retryResp = await callGateway(
@@ -341,7 +349,7 @@ Deno.serve(async (req) => {
           return null;
         }
         const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
-        return (retryData?.choices?.[0]?.message?.content ?? "").trim();
+        return readScenarioAssistantText(retryData, "scenario-write corrective retry");
       });
 
     const scenes = quality.scenes;
@@ -450,25 +458,28 @@ Deno.serve(async (req) => {
 
       // Stage-2 semantic judge via the existing Lovable gateway.
       const judge = async (candidateText: string, historyText: string): Promise<boolean> => {
-        const judgeResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
-            messages: [
-              { role: "user", content: buildSemanticJudgePrompt(candidateText, historyText) },
-            ],
+        const judgeResp = await requestScenarioGateway(
+          () => fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-3-flash-preview",
+              messages: [
+                { role: "user", content: buildSemanticJudgePrompt(candidateText, historyText) },
+              ],
+            }),
           }),
-        });
+          { durationSeconds: duration, unit, stage: "semantic-judge" },
+        );
         if (!judgeResp.ok) {
           // Fail closed: an unreadable judge result must not let a duplicate through.
           throw new Error(`semantic judge error ${judgeResp.status}`);
         }
         const judgeData = await readJsonLoose(judgeResp, "scenario-write semantic judge");
-        const judgeRaw = (judgeData?.choices?.[0]?.message?.content ?? "").trim();
+        const judgeRaw = readScenarioAssistantText(judgeData, "scenario-write semantic judge");
         const verdict = parseSemanticJudgeResult(judgeRaw);
         if (verdict === null) {
           throw new Error("semantic judge returned an unparseable verdict");
@@ -499,7 +510,7 @@ Deno.serve(async (req) => {
             return null;
           }
           const retryData = await readJsonLoose(retryResp, "scenario-write anti-duplicate retry");
-          const retryRaw = (retryData?.choices?.[0]?.message?.content ?? "").trim();
+          const retryRaw = readScenarioAssistantText(retryData, "scenario-write anti-duplicate retry");
           if (!retryRaw) return null;
           const retryQuality = unit === "plan"
             ? await runPlanQualityPass(duration, retryRaw, async () => null)
