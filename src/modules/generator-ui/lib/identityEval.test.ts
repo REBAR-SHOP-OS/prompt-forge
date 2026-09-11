@@ -45,22 +45,32 @@ describe('validateReferenceSpecs', () => {
   it('rejects mismatched lengths', () => {
     const r = validateReferenceSpecs(['https://x/p.png'], ['product', 'character'])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('same length')
+    if (r.ok === false) expect(r.error).toContain('same length')
   })
 
   it('rejects an invalid role', () => {
     const r = validateReferenceSpecs(['https://x/p.png'], ['banana'])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Invalid reference role')
+    if (r.ok === false) expect(r.error).toContain('Invalid reference role')
   })
 
-  it('rejects a duplicate product role', () => {
+  // A real product photo folder can hold several angles of the same product,
+  // and every angle should reach generation together — so multiple "product"
+  // entries are now accepted. Only "character" stays capped at one (see the
+  // next test). This is an intentional relaxation, not the duplicate-role
+  // rejection this test used to pin.
+  it('accepts multiple product roles (every grouped angle of one product), in original relative order', () => {
     const r = validateReferenceSpecs(
       ['https://x/p1.png', 'https://x/p2.png'],
       ['product', 'product'],
     )
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Duplicate reference role')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.specs).toEqual([
+        { url: 'https://x/p1.png', role: 'product', characterSheet: false },
+        { url: 'https://x/p2.png', role: 'product', characterSheet: false },
+      ])
+    }
   })
 
   it('rejects a duplicate character role', () => {
@@ -69,15 +79,15 @@ describe('validateReferenceSpecs', () => {
       ['character', 'character'],
     )
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Duplicate reference role')
+    if (r.ok === false) expect(r.error).toContain('Duplicate reference role')
   })
 
-  it('rejects more than the max reference count (one product + one character)', () => {
+  it('rejects more than the max reference count (a bounded number of product angles plus one character)', () => {
     const urls = Array.from({ length: MAX_REFERENCE_IMAGES + 1 }, (_, i) => `https://x/${i}.png`)
     const roles = Array.from({ length: MAX_REFERENCE_IMAGES + 1 }, () => 'product')
     const r = validateReferenceSpecs(urls, roles)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('At most')
+    if (r.ok === false) expect(r.error).toContain('At most')
   })
 
   it('exposes only product and character as allowed roles', () => {

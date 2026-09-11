@@ -50,7 +50,7 @@ export function previewBody(raw: string, max = 200): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readJsonLoose<T = any>(res: Response, label = "upstream"): Promise<T | null> {
   const result = await readJsonSafe<T>(res);
-  if (result.ok) return result.data;
+  if (result.ok === true) return result.data;
   console.error(`${label}: non-JSON response`, {
     status: res.status,
     contentType: result.contentType,

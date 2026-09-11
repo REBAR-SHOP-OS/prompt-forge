@@ -38,6 +38,37 @@ export interface ScenarioHistoryEntry {
   scenarioText: string
 }
 
+/**
+ * Hydrate a persisted history row without trusting its JSON shape. Older or
+ * partially-written fingerprints can be valid JSON objects while missing the
+ * arrays required by fingerprintSimilarity; rebuild those from the canonical
+ * scenario text so one incompatible row cannot crash the whole request.
+ */
+export function hydrateScenarioHistoryEntry(
+  fingerprint: unknown,
+  scenarioText: string,
+): ScenarioHistoryEntry | null {
+  const text = scenarioText.trim()
+  if (!text) return null
+
+  const value = fingerprint as Partial<ScenarioFingerprint> | null
+  const valid =
+    value !== null &&
+    typeof value === 'object' &&
+    typeof value.opening === 'string' &&
+    typeof value.ending === 'string' &&
+    Array.isArray(value.concept) && value.concept.every((word) => typeof word === 'string') &&
+    Array.isArray(value.camera) && value.camera.every((move) => typeof move === 'string') &&
+    typeof value.subjectCombo === 'string'
+
+  return {
+    fingerprint: valid
+      ? value as ScenarioFingerprint
+      : buildScenarioFingerprint(text, typeof value?.subjectCombo === 'string' ? value.subjectCombo : ''),
+    scenarioText: text,
+  }
+}
+
 /** Function words dropped from the concept signature so they don't inflate similarity. */
 const STOPWORDS = new Set([
   'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'so', 'as', 'at', 'by',
@@ -295,7 +326,16 @@ export async function runAntiDuplicatePass(
         break
       }
       if (fast >= fastThreshold) {
-        const isDup = await judge(candidateText, entry.scenarioText)
+        let isDup: boolean
+        try {
+          isDup = await judge(candidateText, entry.scenarioText)
+        } catch (error) {
+          // Fail closed without escalating a recoverable judge failure into the
+          // edge function's generic 500 catch. The caller maps this reason to a
+          // retryable, user-safe response and never persists the candidate.
+          console.error('scenario-write semantic judge error', error)
+          return { accepted: false, scenes: [], attempts, reason: 'judge-error' }
+        }
         if (isDup) {
           duplicate = true
           break
@@ -311,7 +351,16 @@ export async function runAntiDuplicatePass(
       return { accepted: false, scenes: [], attempts, reason: 'duplicate' }
     }
 
-    const next = await regenerate(buildVariationInstruction())
+    let next: string[] | null
+    try {
+      next = await regenerate(buildVariationInstruction())
+    } catch (error) {
+      // A duplicate-regeneration gateway/parser failure is another verification
+      // failure. Keep it fail-closed and observable instead of letting it escape
+      // to the handler's generic Internal error response.
+      console.error('scenario-write duplicate regeneration error', error)
+      return { accepted: false, scenes: [], attempts, reason: 'judge-error' }
+    }
     if (!next || next.length === 0) {
       return { accepted: false, scenes: [], attempts, reason: 'empty' }
     }
