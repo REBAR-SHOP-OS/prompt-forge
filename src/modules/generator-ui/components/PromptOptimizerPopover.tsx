@@ -18,6 +18,7 @@ import {
 
 export type PromptOptimizationRequest = {
   prompt: string
+  duration: number
   withNarration: boolean
   narratorScript?: string
   styleHints?: string
@@ -27,6 +28,7 @@ type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPrompt: string
+  durationSeconds: number
   disabled?: boolean
   optimizing?: boolean
   onOptimize: (request: PromptOptimizationRequest) => void | Promise<void>
@@ -81,6 +83,7 @@ export function PromptOptimizerPopover({
   open,
   onOpenChange,
   initialPrompt,
+  durationSeconds,
   disabled = false,
   optimizing = false,
   onOptimize,
@@ -144,6 +147,9 @@ export function PromptOptimizerPopover({
           <h2 className="text-sm font-semibold text-foreground">Optimize prompt</h2>
           <p className="text-xs leading-5 text-muted-foreground">
             Refine your idea, choose narration, and optionally add a visual style.
+          </p>
+          <p className="text-xs font-medium text-accent-warm" aria-label="Selected video duration">
+            Video duration: {durationSeconds} seconds
           </p>
         </div>
 
@@ -270,6 +276,7 @@ export function PromptOptimizerPopover({
           type="button"
           onClick={() => void onOptimize({
             prompt: draftPrompt.trim(),
+            duration: durationSeconds,
             withNarration,
             ...(withNarration ? { narratorScript: narratorScript.trim() } : {}),
             styleHints: buildStyleHints(selectedStyles),
