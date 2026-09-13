@@ -682,6 +682,29 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     )
   }, 15_000)
 
+  it('switches compact categories without splitting product identities into angle cards', async () => {
+    mockImageRows([
+      { id: 'front', title: 'Folder Product', image_type: null, storage_path: 'user-1/products/folder-9/front.png' },
+      { id: 'side', title: 'Side view', image_type: null, storage_path: 'user-1/products/folder-9/side.png' },
+      { id: 'legacy', title: 'Legacy Mesh', image_type: null, storage_path: 'user-1/legacy.png' },
+    ])
+    mockStorage.from.mockImplementation(() => ({
+      createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
+    }))
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Products' })).toBeInTheDocument())
+    expect(screen.getByText('Folder Product')).toBeInTheDocument()
+    expect(screen.getByText('2 angles')).toBeInTheDocument()
+    expect(screen.queryByText('Side view')).not.toBeInTheDocument()
+    expect(screen.queryByText('Legacy Mesh')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Legacy' }))
+    expect(screen.getByText('Legacy Mesh')).toBeInTheDocument()
+    expect(screen.queryByText('Folder Product')).not.toBeInTheDocument()
+  })
+
   // Grouping put up to four <img> tiles behind one card. The card's onError
   // path was written when there was exactly one image per card, where "this
   // image broke" and "this card is unusable" were the same statement. They are
