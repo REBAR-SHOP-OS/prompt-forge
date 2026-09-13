@@ -145,6 +145,7 @@ import { mergeVideoUrls, MergeCancelledError, type TransitionId, type Transition
 import { TRANSITION_LABEL, DEFAULT_TRANSITION_DURATION, transitionSpecFor, applyTransitionToAll } from '@/modules/generator-ui/lib/transitions'
 import { mergeVideoUrlsWebCodecs, canEncodeWithWebCodecs, WebCodecsUnsupportedError } from '@/modules/generator-ui/lib/mergeVideosWebCodecs'
 import { awaitUploadWithLateCleanup, createFinalFilmPipeline } from '@/modules/generator-ui/lib/finalFilmPipeline'
+import { selectActiveContactOverlay } from '@/modules/generator-ui/lib/contactOverlaySelection'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
   loadContinuity,
@@ -2242,7 +2243,10 @@ export default function DashboardPage() {
     offset: null,
     scale: 1,
     logoUrl: '',
-    logoEnabled: true,
+    // Loading a logo from the business profile must not opt the user into a
+    // video burn-in. A previously saved explicit preference still overrides
+    // this default through the local-storage merge below.
+    logoEnabled: false,
     panelEnabled: true,
     panelColor: '#000000',
     panelOpacity: 0.45,
@@ -2418,8 +2422,14 @@ export default function DashboardPage() {
     ],
   )
 
-  const contactLogoActive = contactOverlay.logoEnabled && !!contactOverlay.logoUrl
-  const contactActive = contactOverlay.enabled && (contactLines.length > 0 || contactLogoActive)
+  const activeContactOverlay = selectActiveContactOverlay({
+    textEnabled: contactOverlay.enabled,
+    lines: contactLines,
+    logoEnabled: contactOverlay.logoEnabled,
+    logoUrl: contactOverlay.logoUrl,
+    panelEnabled: contactOverlay.panelEnabled,
+  })
+  const contactActive = activeContactOverlay.active
 
 
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
@@ -8705,7 +8715,7 @@ export default function DashboardPage() {
           }
         : undefined
       const overlayArg = contactActive
-        ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
+        ? { lines: activeContactOverlay.lines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: activeContactOverlay.logoUrl, scale: contactOverlay.scale ?? 1, panelEnabled: activeContactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
         : undefined
       const mergeProgressCb = (p: import('@/modules/generator-ui/lib/mergeVideos').MergeProgress) => {
         // Map stages into a monotonic 1..99 percent so the UI keeps
@@ -11563,20 +11573,20 @@ export default function DashboardPage() {
                       const padX = `calc(${previewWidth} * 0.04)`
                       const radius = padY
                       const logoH = `calc(${previewHeight} * ${0.12 * scale})`
-                      const logoMarginBottom = contactLines.length
+                      const logoMarginBottom = activeContactOverlay.lines.length
                         ? `max(1.5px, calc(${previewHeight} * ${0.0048 * scale}))`
                         : 0
                       const content = (
                         <>
-                          {contactLogoActive ? (
+                          {activeContactOverlay.logoUrl ? (
                             <img
-                              src={contactOverlay.logoUrl}
+                              src={activeContactOverlay.logoUrl}
                               alt="Company logo"
                               className="w-auto object-contain"
                               style={{ height: logoH, marginBottom: logoMarginBottom }}
                             />
                           ) : null}
-                          {contactLines.map((line, i) => (
+                          {activeContactOverlay.lines.map((line, i) => (
 
                             <span
                               key={i}
@@ -11590,7 +11600,7 @@ export default function DashboardPage() {
                         </>
                       )
                       const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-foreground/0 hover:ring-foreground/40'}`
-                      const panelBg = contactOverlay.panelEnabled
+                      const panelBg = activeContactOverlay.panelEnabled
                         ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
                         : 'transparent'
                       const panelStyle: React.CSSProperties = {
@@ -11602,6 +11612,13 @@ export default function DashboardPage() {
                         paddingTop: padY,
                         paddingBottom: padY,
                       }
+                      const presetBackdrop = activeContactOverlay.panelEnabled
+                        ? contactOverlay.position === 'top'
+                          ? 'bg-gradient-to-b from-black/65 to-transparent'
+                          : contactOverlay.position === 'bottom'
+                            ? 'bg-gradient-to-b from-transparent to-black/65'
+                            : ''
+                        : ''
                       // Custom dragged position: absolutely centered at the stored point.
                       if (contactOverlay.offset) {
                         return (
@@ -11624,10 +11641,10 @@ export default function DashboardPage() {
                         <div
                           className={`pointer-events-none absolute z-20 flex px-4 py-3 ${
                             contactOverlay.position === 'top'
-                              ? 'inset-x-0 top-0 items-start justify-center bg-gradient-to-b from-black/65 to-transparent'
+                              ? `inset-x-0 top-0 items-start justify-start ${presetBackdrop}`
                               : contactOverlay.position === 'center'
                                 ? 'inset-0 items-center justify-center'
-                                : 'inset-x-0 bottom-0 items-end justify-center bg-gradient-to-b from-transparent to-black/65'
+                                : `inset-x-0 bottom-0 items-end justify-start ${presetBackdrop}`
                           }`}
                         >
                           <div
@@ -13459,7 +13476,7 @@ export default function DashboardPage() {
                   ) : null}
                 </div>
                 <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-accent/30 px-3 py-2">
-                  <span className="text-xs font-medium text-foreground/90">Show on video</span>
+                  <span className="text-xs font-medium text-foreground/90">Show contact text on video</span>
                   <Switch
                     checked={contactOverlay.enabled}
                     onCheckedChange={(v) => updateContact({ enabled: v })}
@@ -13529,7 +13546,7 @@ export default function DashboardPage() {
                     />
                   </div>
                   <p className="text-[11px] leading-snug text-muted-foreground">
-                    The shaded layer behind the logo, website, phone and address.
+                    The shaded layer behind contact text. Logo-only mode stays transparent.
                   </p>
                   {contactOverlay.panelEnabled ? (
                     <>
