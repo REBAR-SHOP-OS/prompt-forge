@@ -26,8 +26,16 @@ describe('DashboardPage unified character control', () => {
   })
 
   it('opens Character Sheet creation from inside the same menu', () => {
-    expect(characterMenu).toContain('<span>Create or upload character</span>')
-    expect(characterMenu).toMatch(
+    const labelStart = characterMenu.indexOf('<span>Create or upload character</span>')
+    const buttonStart = characterMenu.lastIndexOf('<button', labelStart)
+    const buttonEnd = characterMenu.indexOf('</button>', labelStart)
+
+    expect(labelStart).toBeGreaterThan(-1)
+    expect(buttonStart).toBeGreaterThan(-1)
+    expect(buttonEnd).toBeGreaterThan(labelStart)
+
+    const createButton = characterMenu.slice(buttonStart, buttonEnd)
+    expect(createButton).toMatch(
       /setCharacterMenuOpen\(false\)[\s\S]*setIsCharacterSheetOpen\(true\)/,
     )
     expect(source.match(/setIsCharacterSheetOpen\(true\)/g)).toHaveLength(1)
