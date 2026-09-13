@@ -2243,7 +2243,10 @@ export default function DashboardPage() {
     offset: null,
     scale: 1,
     logoUrl: '',
-    logoEnabled: true,
+    // Loading a logo from the business profile must not opt the user into a
+    // video burn-in. A previously saved explicit preference still overrides
+    // this default through the local-storage merge below.
+    logoEnabled: false,
     panelEnabled: true,
     panelColor: '#000000',
     panelOpacity: 0.45,
@@ -11638,10 +11641,10 @@ export default function DashboardPage() {
                         <div
                           className={`pointer-events-none absolute z-20 flex px-4 py-3 ${
                             contactOverlay.position === 'top'
-                              ? `inset-x-0 top-0 items-start justify-center ${presetBackdrop}`
+                              ? `inset-x-0 top-0 items-start justify-start ${presetBackdrop}`
                               : contactOverlay.position === 'center'
                                 ? 'inset-0 items-center justify-center'
-                                : `inset-x-0 bottom-0 items-end justify-center ${presetBackdrop}`
+                                : `inset-x-0 bottom-0 items-end justify-start ${presetBackdrop}`
                           }`}
                         >
                           <div

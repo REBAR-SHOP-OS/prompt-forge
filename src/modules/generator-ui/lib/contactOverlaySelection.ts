@@ -2,7 +2,8 @@ export interface ContactOverlaySelectionInput {
   textEnabled: boolean
   lines: string[]
   logoEnabled: boolean
-  logoUrl: string
+  /** Persisted browser data is untrusted at runtime, despite its TS shape. */
+  logoUrl: unknown
   panelEnabled: boolean
 }
 
@@ -23,8 +24,11 @@ export function selectActiveContactOverlay(
   const lines = input.textEnabled
     ? input.lines.map((line) => line.trim()).filter(Boolean)
     : []
-  const logoUrl = input.logoEnabled && input.logoUrl.trim()
-    ? input.logoUrl
+  const normalizedLogoUrl = typeof input.logoUrl === 'string'
+    ? input.logoUrl.trim()
+    : ''
+  const logoUrl = input.logoEnabled && normalizedLogoUrl
+    ? normalizedLogoUrl
     : undefined
   const hasText = lines.length > 0
 

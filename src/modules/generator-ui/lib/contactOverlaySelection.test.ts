@@ -46,4 +46,32 @@ describe('selectActiveContactOverlay', () => {
       panelEnabled: false,
     })
   })
+
+  it.each([null, { url: 'data:image/png;base64,logo' }, 42])(
+    'ignores a non-string persisted logo URL (%j)',
+    (logoUrl) => {
+      expect(selectActiveContactOverlay({
+        textEnabled: false,
+        lines: [],
+        logoEnabled: true,
+        logoUrl,
+        panelEnabled: false,
+      })).toEqual({
+        active: false,
+        lines: [],
+        logoUrl: undefined,
+        panelEnabled: false,
+      })
+    },
+  )
+
+  it('normalizes surrounding whitespace from a valid logo URL', () => {
+    expect(selectActiveContactOverlay({
+      textEnabled: false,
+      lines: [],
+      logoEnabled: true,
+      logoUrl: '  data:image/png;base64,logo  ',
+      panelEnabled: false,
+    }).logoUrl).toBe('data:image/png;base64,logo')
+  })
 })
