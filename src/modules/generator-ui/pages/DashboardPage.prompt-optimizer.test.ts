@@ -44,9 +44,9 @@ describe('DashboardPage Prompt optimizer integration', () => {
     expect(source).not.toContain('const runProductScenario')
   })
 
-  it('preserves the separate Scenario and Make Full Film surfaces', () => {
-    expect(source).toContain('<ScenarioWriterDialog')
-    expect(source).toContain('aria-label="Write a scenario from your idea"')
+  it('preserves the Make Full Film surface after Scenario Writer removal', () => {
+    expect(source).not.toContain('<ScenarioWriterDialog')
+    expect(source).not.toContain('aria-label="Write a scenario from your idea"')
     expect(source).toContain('<MakeFilmWizardDialog')
     expect(source).toContain('aria-label="Open the Make Full Film review wizard"')
   })

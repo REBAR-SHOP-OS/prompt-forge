@@ -168,7 +168,6 @@ import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDi
 
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
-import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 import MakeFilmWizardDialog, { type FilmAspect, type FilmIdentity, type FilmCreative } from '@/modules/generator-ui/components/MakeFilmWizardDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
@@ -1475,7 +1474,6 @@ export default function DashboardPage() {
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
-  const [isScenarioDialogOpen, setIsScenarioDialogOpen] = useState(false)
   const [isProductAdOpen, setIsProductAdOpen] = useState(false)
   const [isCharacterSheetOpen, setIsCharacterSheetOpen] = useState(false)
   // Character picked as a *descriptive reference* for the current project's film.
@@ -11106,33 +11104,6 @@ export default function DashboardPage() {
         }}
       />
 
-      <ScenarioWriterDialog
-        open={isScenarioDialogOpen}
-        onOpenChange={setIsScenarioDialogOpen}
-        defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
-        userId={userId}
-        onUseAsPrompt={(text, imageUrl, duration) => {
-          if (duration) setDurationSeconds(duration)
-          setPromptText(text)
-          if (imageUrl) {
-            setUploadTarget('Start')
-            void handleUseImageAsStart(imageUrl)
-          }
-        }}
-        onSendScenes={async (scenes, imageUrl, duration) => {
-          if (duration) setDurationSeconds(duration)
-          const tagged = scenes
-            .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
-            .join('\n\n')
-          setPromptText(tagged)
-          if (imageUrl) {
-            setUploadTarget('Start')
-            await handleUseImageAsStart(imageUrl)
-          }
-          await submitScenesAsJobs(scenes, imageUrl ?? undefined)
-        }}
-      />
-
       <ProductAdDialog
         open={isProductAdOpen}
         onOpenChange={setIsProductAdOpen}
@@ -13087,16 +13058,6 @@ export default function DashboardPage() {
             <span className="text-xs font-semibold">AI Image</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setIsScenarioDialogOpen(true)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-pink-500 px-3 text-zinc-950 shadow-[0_4px_14px_rgba(251,146,60,0.45)] transition hover:from-amber-300 hover:via-orange-300 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(251,146,60,0.6)]"
-            aria-label="Write a scenario from your idea"
-            title="Write a scenario from your idea"
-          >
-            <Clapperboard className="h-4 w-4" aria-hidden="true" />
-            <span className="text-xs font-semibold">Scenario</span>
-          </button>
         </div>
 
         {/* Continuity Mode is automatic for multi-card durations (30s/45s/135s) —
@@ -13336,17 +13297,6 @@ export default function DashboardPage() {
             >
               <Heart className="h-5 w-5 animate-heartbeat" aria-hidden="true" />
               Product Ad
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsCharacterSheetOpen(true)}
-              aria-label="Create a film built around an uploaded character"
-              title="Create a film built around an uploaded character"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-sky-500 px-4 text-sm font-bold text-zinc-50 shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition hover:from-violet-400 hover:via-fuchsia-400 hover:to-sky-400 hover:shadow-[0_10px_28px_rgba(139,92,246,0.5)]"
-            >
-              <Drama className="h-5 w-5" aria-hidden="true" />
-              Character Sheet
             </button>
 
             <Popover open={contactMenuOpen} onOpenChange={setContactMenuOpen}>
@@ -13650,8 +13600,8 @@ export default function DashboardPage() {
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label="Add a character to this project"
-                  title="Add a character as a reference for this project"
+                  aria-label="Manage project character"
+                  title="Choose, create, or upload a project character"
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                     selectedCharacter
                       ? 'border-action-violet/60 bg-fuchsia-500/10 text-action-violet-strong'
@@ -13693,7 +13643,7 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <UserRound className="h-5 w-5" aria-hidden="true" />
-                      <span>Add character</span>
+                      <span>Character</span>
                     </>
                   )}
                 </button>
@@ -13711,13 +13661,24 @@ export default function DashboardPage() {
                     </button>
                   ) : null}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCharacterMenuOpen(false)
+                    setIsCharacterSheetOpen(true)
+                  }}
+                  className="mb-2 flex w-full items-center gap-2 rounded-lg border border-action-violet/40 bg-fuchsia-500/10 px-3 py-2 text-left text-xs font-semibold text-action-violet-strong transition hover:border-action-violet/70 hover:bg-fuchsia-500/15"
+                >
+                  <Drama className="h-4 w-4" aria-hidden="true" />
+                  <span>Create or upload character</span>
+                </button>
                 {characterListLoading ? (
                   <div className="flex items-center justify-center py-6 text-muted-foreground">
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                   </div>
                 ) : characterList.length === 0 ? (
                   <div className="px-1 py-4 text-center text-xs text-muted-foreground">
-                    No characters yet. Upload one in Character Sheet.
+                    No characters yet. Create or upload one above.
                   </div>
                 ) : (
                   <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1">
