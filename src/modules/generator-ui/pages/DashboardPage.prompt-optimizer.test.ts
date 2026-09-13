@@ -14,6 +14,7 @@ describe('DashboardPage Prompt optimizer integration', () => {
   it('wires the focused popup into the bottom composer and returns the enhanced prompt', () => {
     const popup = promptPopupWiring()
     expect(popup).toContain('initialPrompt={promptText}')
+    expect(popup).toContain('durationSeconds={durationSeconds}')
     expect(popup).toContain('onOptimize={runEnhancePrompt}')
 
     const handlerStart = source.indexOf('const runEnhancePrompt = async')
@@ -21,6 +22,19 @@ describe('DashboardPage Prompt optimizer integration', () => {
     const handler = source.slice(handlerStart, handlerEnd)
     expect(handler).toContain('setPromptText(enhanced)')
     expect(handler).toContain('setIsPromptMenuOpen(false)')
+  })
+
+  it('forwards the duration selected by the optimizer to enhance-prompt', () => {
+    const handlerStart = source.indexOf('const runEnhancePrompt = async')
+    const handlerEnd = source.indexOf('const startUploadCount', handlerStart)
+    const handler = source.slice(handlerStart, handlerEnd)
+    expect(handler).toContain('duration: request.duration')
+
+    const rewriteStart = source.indexOf('async function rewriteVideoPrompt')
+    const rewriteEnd = source.indexOf('// Cost preview / confirm dialog state', rewriteStart)
+    const rewrite = source.slice(rewriteStart, rewriteEnd)
+    expect(rewrite).toContain('duration: params.duration')
+    expect(rewrite).toContain("supabase.functions.invoke('enhance-prompt', { body })")
   })
 
   it('removes product-scenario writing only from the Prompt popup', () => {

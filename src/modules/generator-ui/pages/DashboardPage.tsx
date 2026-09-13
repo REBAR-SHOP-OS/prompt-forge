@@ -3864,6 +3864,7 @@ export default function DashboardPage() {
   async function rewriteVideoPrompt(params: {
     prompt: string
     imageUrls: string[]
+    duration: number
     mode: 'silent' | 'narrated'
     narratorScript?: string
     styleHints?: string
@@ -3879,6 +3880,7 @@ export default function DashboardPage() {
     const body = {
       prompt: effectivePrompt,
       imageUrls: params.imageUrls,
+      duration: params.duration,
       mode: params.mode,
       ...(params.mode === 'narrated' ? { narratorScript: params.narratorScript ?? '' } : {}),
       styleHints: params.styleHints ?? '',
@@ -3893,7 +3895,7 @@ export default function DashboardPage() {
           ...body,
           model: localPlannerModel,
           videoModel: selectedModel.model,
-          durationSeconds,
+          durationSeconds: params.duration,
           aspectRatio,
         },
       })
@@ -3958,6 +3960,7 @@ export default function DashboardPage() {
       const enhanced = await rewriteVideoPrompt({
         prompt: current,
         imageUrls,
+        duration: request.duration,
         mode: request.withNarration ? 'narrated' : 'silent',
         narratorScript: request.withNarration ? request.narratorScript : undefined,
         styleHints: request.styleHints,
@@ -13935,6 +13938,7 @@ export default function DashboardPage() {
               open={isPromptMenuOpen}
               onOpenChange={setIsPromptMenuOpen}
               initialPrompt={promptText}
+              durationSeconds={durationSeconds}
               disabled={isSubmitting}
               optimizing={isEnhancingPrompt}
               onOptimize={runEnhancePrompt}
