@@ -6,8 +6,8 @@ const finalFilmStart = dashboardSource.indexOf('const overlayArg = contactActive
 const finalFilmEnd = dashboardSource.indexOf('const mergeProgressCb', finalFilmStart)
 const finalFilmWiring = dashboardSource.slice(finalFilmStart, finalFilmEnd)
 
-const previewStart = dashboardSource.indexOf('{contactActive && !isMergedFinalPreview')
-const previewEnd = dashboardSource.indexOf('{transcriptOpen &&', previewStart)
+const previewStart = dashboardSource.indexOf('const renderContactPreviewOverlay')
+const previewEnd = dashboardSource.indexOf('// Stores durable public URLs', previewStart)
 const previewWiring = dashboardSource.slice(previewStart, previewEnd)
 
 describe('DashboardPage contact overlay wiring', () => {
@@ -28,10 +28,19 @@ describe('DashboardPage contact overlay wiring', () => {
     expect(previewWiring).toContain('activeContactOverlay.panelEnabled')
   })
 
-  it('does not enable a hydrated profile logo without an explicit saved opt-in', () => {
+  it('restores explicit saved visibility preferences without profile hydration changing them', () => {
     expect(dashboardSource).toMatch(/logoUrl:\s*'',\s*[\s\S]{0,300}logoEnabled:\s*false/)
-    expect(dashboardSource).toContain('base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>), enabled: false }')
+    expect(dashboardSource).toContain('base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>) }')
+    expect(dashboardSource).not.toContain('base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>), enabled: false }')
     expect(dashboardSource).toContain("logoUrl: (data as { contact_logo_url?: string | null }).contact_logo_url ?? ''")
+  })
+
+  it('mounts the same overlay renderer on video, image, and multi-clip previews', () => {
+    expect(dashboardSource).toContain('overlay={renderContactPreviewOverlay()}')
+    expect(dashboardSource).toContain('{renderContactPreviewOverlay()}\n                  <button')
+    expect(dashboardSource).toContain('{!isMergedFinalPreview ? renderContactPreviewOverlay() : null}')
+    expect(dashboardSource).toContain('frameRef={setContactBoxRef}')
+    expect(dashboardSource).toContain('ref={setContactBoxRef}\n                  className="relative overflow-hidden bg-black"')
   })
 
   it('left-aligns top and bottom presets in both preview and exported film', () => {
