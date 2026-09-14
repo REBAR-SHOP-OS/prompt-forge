@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, Pause, Play, X, AlertCircle } from 'lucide-react'
 import { usePlayableVideoUrl, usePlayableVideoUrls } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
@@ -62,6 +62,10 @@ type Props = {
   voiceoverTimeline?: [number, number]
   /** Volume of the clip's own audio track in preview (0..1). */
   clipVolume?: number
+  /** Editable layers rendered over every clip in the sequence preview. */
+  overlay?: ReactNode
+  /** Gives the parent the exact video-frame bounds for draggable overlays. */
+  frameRef?: (element: HTMLDivElement | null) => void
 }
 
 export function SequentialClipPlayer({
@@ -84,6 +88,8 @@ export function SequentialClipPlayer({
   voiceoverRange,
   voiceoverTimeline,
   clipVolume = 1,
+  overlay,
+  frameRef,
 }: Props) {
   const [index, setIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(true)
@@ -458,6 +464,7 @@ export function SequentialClipPlayer({
         }}
       >
         <div
+          ref={frameRef}
           className="relative overflow-hidden bg-black"
           style={{
             aspectRatio: ratioToCss(frameRatio),
@@ -565,6 +572,8 @@ export function SequentialClipPlayer({
               className="h-full w-full bg-black object-contain"
             />
           )}
+
+          {overlay}
 
           {/* Hidden double-buffer: pre-download the next clip's bytes so the
               swap at the clip boundary is instant (no black/loading gap). It is

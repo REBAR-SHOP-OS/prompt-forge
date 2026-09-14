@@ -2264,7 +2264,7 @@ export default function DashboardPage() {
     let base = emptyContact()
     try {
       const raw = window.localStorage.getItem(contactKey)
-      if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>), enabled: false }
+      if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>) }
     } catch { /* ignore */ }
     setContactOverlay(base)
     // Contact text (website / phone / address) and logo are sourced from the
@@ -2430,6 +2430,106 @@ export default function DashboardPage() {
     panelEnabled: contactOverlay.panelEnabled,
   })
   const contactActive = activeContactOverlay.active
+
+  const renderContactPreviewOverlay = () => {
+    if (!contactActive) return null
+    // Mirror the burn-in ratios from mergeVideos.ts so the live
+    // overlay matches the final film exactly (WYSIWYG). `scale`
+    // is baked into the CSS metrics once, just like drawOverlay.
+    const scale = Math.min(2, Math.max(0.5, contactOverlay.scale ?? 1))
+    const previewHeight = 'var(--preview-video-height, 0px)'
+    const previewWidth = 'var(--preview-video-width, 0px)'
+    const fontSize = `max(10px, calc(${previewHeight} * ${0.032 * scale}))`
+    const lineGap = `max(4.5px, calc(${previewHeight} * ${0.0144 * scale}))`
+    const lineHeight = `max(14.5px, calc(${previewHeight} * ${0.0464 * scale}))`
+    const padY = `max(6px, calc(${previewHeight} * ${0.0192 * scale}))`
+    const padX = `calc(${previewWidth} * 0.04)`
+    const radius = padY
+    const logoH = `calc(${previewHeight} * ${0.12 * scale})`
+    const logoMarginBottom = activeContactOverlay.lines.length
+      ? `max(1.5px, calc(${previewHeight} * ${0.0048 * scale}))`
+      : 0
+    const content = (
+      <>
+        {activeContactOverlay.logoUrl ? (
+          <img
+            src={activeContactOverlay.logoUrl}
+            alt="Company logo"
+            className="w-auto object-contain"
+            style={{ height: logoH, marginBottom: logoMarginBottom }}
+          />
+        ) : null}
+        {activeContactOverlay.lines.map((line, i) => (
+
+          <span
+            key={i}
+            className="truncate font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+            style={{ fontSize, lineHeight, color: contactOverlay.textColor ?? '#ffffff', fontFamily: contactOverlay.fontFamily || undefined }}
+          >
+            {line}
+          </span>
+        ))}
+
+      </>
+    )
+    const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-foreground/0 hover:ring-foreground/40'}`
+    const panelBg = activeContactOverlay.panelEnabled
+      ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
+      : 'transparent'
+    const panelStyle: React.CSSProperties = {
+      gap: lineGap,
+      borderRadius: radius,
+      backgroundColor: panelBg,
+      paddingLeft: padX,
+      paddingRight: padX,
+      paddingTop: padY,
+      paddingBottom: padY,
+    }
+    const presetBackdrop = activeContactOverlay.panelEnabled
+      ? contactOverlay.position === 'top'
+        ? 'bg-gradient-to-b from-black/65 to-transparent'
+        : contactOverlay.position === 'bottom'
+          ? 'bg-gradient-to-b from-transparent to-black/65'
+          : ''
+      : ''
+    // Custom dragged position: absolutely centered at the stored point.
+    if (contactOverlay.offset) {
+      return (
+        <div
+          onPointerDown={handleContactPointerDown}
+          className={`pointer-events-auto absolute z-20 ${panelClass}`}
+          style={{
+            ...panelStyle,
+            left: `${contactOverlay.offset.x * 100}%`,
+            top: `${contactOverlay.offset.y * 100}%`,
+            transform: `translate(-50%, -50%)`,
+          }}
+        >
+          {content}
+        </div>
+      )
+    }
+    // Preset position: wrapper handles layout, inner panel is draggable.
+    return (
+      <div
+        className={`pointer-events-none absolute z-20 flex px-4 py-3 ${
+          contactOverlay.position === 'top'
+            ? `inset-x-0 top-0 items-start justify-start ${presetBackdrop}`
+            : contactOverlay.position === 'center'
+              ? 'inset-0 items-center justify-center'
+              : `inset-x-0 bottom-0 items-end justify-start ${presetBackdrop}`
+        }`}
+      >
+        <div
+          onPointerDown={handleContactPointerDown}
+          className={`pointer-events-auto ${panelClass}`}
+          style={panelStyle}
+        >
+          {content}
+        </div>
+      </div>
+    )
+  }
 
 
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
@@ -11431,6 +11531,8 @@ export default function DashboardPage() {
               maxHeightPx={previewMaxHeightPx}
               autoPlayAttemptId={previewItem.autoPlayAttemptId}
               onClose={closePreview}
+              frameRef={setContactBoxRef}
+              overlay={renderContactPreviewOverlay()}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
               musicUrl={musicUrl}
               musicRange={musicRange}
@@ -11459,6 +11561,7 @@ export default function DashboardPage() {
                 }}
               >
                 <div
+                  ref={setContactBoxRef}
                   className="relative overflow-hidden bg-black"
                   style={{
                     aspectRatio: ratioToCss(aspectRatio),
@@ -11472,6 +11575,7 @@ export default function DashboardPage() {
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
                   />
+                  {renderContactPreviewOverlay()}
                   <button
                     type="button"
                     onClick={closePreview}
@@ -11559,104 +11663,7 @@ export default function DashboardPage() {
                           : (voiceoverUrl ? voiceoverClipVolume : 1)
                       }
                     />
-                    {contactActive && !isMergedFinalPreview ? (() => {
-                      // Mirror the burn-in ratios from mergeVideos.ts so the live
-                      // overlay matches the final film exactly (WYSIWYG). `scale`
-                      // is baked into the CSS metrics once, just like drawOverlay.
-                      const scale = Math.min(2, Math.max(0.5, contactOverlay.scale ?? 1))
-                      const previewHeight = 'var(--preview-video-height, 0px)'
-                      const previewWidth = 'var(--preview-video-width, 0px)'
-                      const fontSize = `max(10px, calc(${previewHeight} * ${0.032 * scale}))`
-                      const lineGap = `max(4.5px, calc(${previewHeight} * ${0.0144 * scale}))`
-                      const lineHeight = `max(14.5px, calc(${previewHeight} * ${0.0464 * scale}))`
-                      const padY = `max(6px, calc(${previewHeight} * ${0.0192 * scale}))`
-                      const padX = `calc(${previewWidth} * 0.04)`
-                      const radius = padY
-                      const logoH = `calc(${previewHeight} * ${0.12 * scale})`
-                      const logoMarginBottom = activeContactOverlay.lines.length
-                        ? `max(1.5px, calc(${previewHeight} * ${0.0048 * scale}))`
-                        : 0
-                      const content = (
-                        <>
-                          {activeContactOverlay.logoUrl ? (
-                            <img
-                              src={activeContactOverlay.logoUrl}
-                              alt="Company logo"
-                              className="w-auto object-contain"
-                              style={{ height: logoH, marginBottom: logoMarginBottom }}
-                            />
-                          ) : null}
-                          {activeContactOverlay.lines.map((line, i) => (
-
-                            <span
-                              key={i}
-                              className="truncate font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-                              style={{ fontSize, lineHeight, color: contactOverlay.textColor ?? '#ffffff', fontFamily: contactOverlay.fontFamily || undefined }}
-                            >
-                              {line}
-                            </span>
-                          ))}
-
-                        </>
-                      )
-                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-foreground/0 hover:ring-foreground/40'}`
-                      const panelBg = activeContactOverlay.panelEnabled
-                        ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
-                        : 'transparent'
-                      const panelStyle: React.CSSProperties = {
-                        gap: lineGap,
-                        borderRadius: radius,
-                        backgroundColor: panelBg,
-                        paddingLeft: padX,
-                        paddingRight: padX,
-                        paddingTop: padY,
-                        paddingBottom: padY,
-                      }
-                      const presetBackdrop = activeContactOverlay.panelEnabled
-                        ? contactOverlay.position === 'top'
-                          ? 'bg-gradient-to-b from-black/65 to-transparent'
-                          : contactOverlay.position === 'bottom'
-                            ? 'bg-gradient-to-b from-transparent to-black/65'
-                            : ''
-                        : ''
-                      // Custom dragged position: absolutely centered at the stored point.
-                      if (contactOverlay.offset) {
-                        return (
-                          <div
-                            onPointerDown={handleContactPointerDown}
-                            className={`pointer-events-auto absolute z-20 ${panelClass}`}
-                            style={{
-                              ...panelStyle,
-                              left: `${contactOverlay.offset.x * 100}%`,
-                              top: `${contactOverlay.offset.y * 100}%`,
-                              transform: `translate(-50%, -50%)`,
-                            }}
-                          >
-                            {content}
-                          </div>
-                        )
-                      }
-                      // Preset position: wrapper handles layout, inner panel is draggable.
-                      return (
-                        <div
-                          className={`pointer-events-none absolute z-20 flex px-4 py-3 ${
-                            contactOverlay.position === 'top'
-                              ? `inset-x-0 top-0 items-start justify-start ${presetBackdrop}`
-                              : contactOverlay.position === 'center'
-                                ? 'inset-0 items-center justify-center'
-                                : `inset-x-0 bottom-0 items-end justify-start ${presetBackdrop}`
-                          }`}
-                        >
-                          <div
-                            onPointerDown={handleContactPointerDown}
-                            className={`pointer-events-auto ${panelClass}`}
-                            style={panelStyle}
-                          >
-                            {content}
-                          </div>
-                        </div>
-                      )
-                    })() : null}
+                    {!isMergedFinalPreview ? renderContactPreviewOverlay() : null}
 
 
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
