@@ -214,6 +214,10 @@ import {
   type SceneBatchResult,
 } from '@/modules/generator-ui/lib/sceneBatch'
 import {
+  evaluateShotActionQualityBatch,
+  type ShotActionQualityCandidate,
+} from '@/modules/generator-ui/lib/shotActionQuality'
+import {
   type ModelMeta,
   getAvailableModels,
   toImageToVideoModel,
@@ -8046,14 +8050,66 @@ export default function DashboardPage() {
         )
         return
       }
-      const statusParts = [`${batch.completed.length} clip${batch.completed.length === 1 ? '' : 's'} ready`]
-      if (failedCount > 0) statusParts.push(`${failedCount} failed`)
+      // A playable file proves only technical render completion. Inspect the
+      // actual behavior in every completed shot before calling it quality-ready.
+      // Each result is isolated by job id: a failed evaluator verdict blocks
+      // only that card and never discards or regenerates passing neighbors.
+      setVideoColumnMessage('Checking each rendered shot for action quality…')
+      const qualityCandidates: ShotActionQualityCandidate[] = []
+      for (const jobId of batch.completed) {
+        const job = settled.get(jobId)
+        const storagePath = job?.video?.storage_path
+        const signedVideoUrl = storagePath ? await signStorageUrl(storagePath) : null
+        qualityCandidates.push({
+          jobId,
+          shotIndex: createdJobIds.indexOf(jobId),
+          videoUrl: signedVideoUrl ?? '',
+        })
+      }
+      const qualityBatch = await evaluateShotActionQualityBatch(
+        scenes,
+        qualityCandidates,
+        async (request) => {
+          if (!request.videoUrl) throw new Error('Rendered shot has no analyzable video URL.')
+          const { data, error } = await supabase.functions.invoke<{ evaluation?: unknown }>('film-shot-quality', {
+            body: request,
+          })
+          if (error) {
+            throw new Error(await extractFunctionError(error, 'Shot quality evaluation failed.'))
+          }
+          return data?.evaluation
+        },
+        options?.identity?.productName,
+      )
+
+      const statusParts = [`${batch.completed.length} clip${batch.completed.length === 1 ? '' : 's'} rendered`]
+      if (failedCount > 0) statusParts.push(`${failedCount} failed to render`)
       if (batch.pending.length > 0) statusParts.push(`${batch.pending.length} still pending`)
+      if (qualityBatch.blocked.length > 0) {
+        const blockedShots = qualityBatch.blocked.map((result) => `Shot ${result.shotIndex + 1}`).join(', ')
+        const evaluatorErrors = qualityBatch.blocked.filter((result) => result.status === 'error').length
+        const qualityFailures = qualityBatch.blocked.length - evaluatorErrors
+        const reasons = [
+          qualityFailures > 0 ? `${qualityFailures} failed action quality` : '',
+          evaluatorErrors > 0 ? `${evaluatorErrors} could not be verified` : '',
+        ].filter(Boolean).join('; ')
+        setComposerError(`Action quality blocked ${blockedShots}. Regenerate only those cards; passing shots remain ready.`)
+        setVideoColumnMessage(
+          `${statusParts.join('; ')}. ${reasons}: ${blockedShots}. ${qualityBatch.passedJobIds.length} passing shot${qualityBatch.passedJobIds.length === 1 ? '' : 's'} remain ready; regenerate only the blocked cards.`,
+        )
+        return
+      }
+
+      statusParts.push(`${qualityBatch.passedJobIds.length} passed action quality`)
       setVideoColumnMessage(`${statusParts.join('; ')}. Use Final Film when you are ready to assemble them.`)
-      // Auto-open the full sequence ONLY when every expected card completed.
-      // A failed/cancelled/pending card keeps the existing error/retry surface
-      // and never auto-plays an incomplete preview.
-      if (batch.failed.length === 0 && batch.pending.length === 0) {
+      // Auto-open the full sequence ONLY when every expected card completed and
+      // every actual shot passed behavioral quality. Technical completion alone
+      // can never open or imply a quality-approved film.
+      if (
+        batch.failed.length === 0 &&
+        batch.pending.length === 0 &&
+        qualityBatch.allPassed
+      ) {
         const summary = summarizeAutoFilmBatch(createdJobIds, settled, new Set(batch.pending))
         setLastMergedPreview(null)
         setPreviewVideoId(null)

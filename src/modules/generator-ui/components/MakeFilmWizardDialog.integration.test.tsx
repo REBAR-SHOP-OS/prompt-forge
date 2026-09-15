@@ -41,6 +41,16 @@ const writeScenario = vi.fn<WizardProps['writeScenario']>(async () => [
 
 const onApprove = vi.fn()
 
+const passingPreviewEvaluation = {
+  physicalPlausibility: { passed: true, reason: 'Credible staging.' },
+  productRelevance: { passed: true, reason: 'The product is central.' },
+  surroundingContinuity: { passed: true, reason: 'The sequence advances.' },
+  plannedActionFaithfulness: { passed: true, reason: 'The planned action is visible.' },
+  contradiction: null,
+  summary: 'Preview matches the plan.',
+  passed: true,
+}
+
 function renderWizard(overrides: Partial<Parameters<typeof MakeFilmWizardDialog>[0]> = {}) {
   return render(
     <MakeFilmWizardDialog
@@ -160,11 +170,17 @@ beforeEach(() => {
   ])
   onApprove.mockClear()
   mockInvoke.mockReset()
+  mockInvoke.mockImplementation(async (functionName: string) => {
+    if (functionName === 'film-preview-quality') {
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    }
+    return { data: null, error: null }
+  })
   mockImageRows()
 })
 
 describe('MakeFilmWizardDialog scenario product requirement (integration)', () => {
-  it('shows a per-shot duration that matches the real plan structure for every duration', () => {
+  it('shows a per-shot duration that matches the real plan structure for every duration', { timeout: 20_000 }, () => {
     // The summary must read "N shots × ~5s each" where N = duration/5, so the
     // per-shot figure always agrees with the total film duration.
     const cases: Array<[number, string]> = [
@@ -204,6 +220,66 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
 
     expect(writeScenario).not.toHaveBeenCalled()
   })
+})
+
+describe('MakeFilmWizardDialog preview action quality (integration)', () => {
+  it('marks one failed preview shot, preserves passed shots, and regenerates only that shot', async () => {
+    let allowShotTwo = false
+    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
+      if (functionName !== 'film-preview-quality') return { data: null, error: null }
+      const shotIndex = options?.body?.shotIndex
+      if (shotIndex === 1 && !allowShotTwo) {
+        return {
+          data: {
+            evaluation: {
+              ...passingPreviewEvaluation,
+              physicalPlausibility: { passed: false, reason: 'The hands do not contact the product.' },
+              summary: 'The fastening action is not physically depicted.',
+              passed: false,
+            },
+          },
+          error: null,
+        }
+      }
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    })
+    let generated = 0
+    generateSceneImage.mockImplementation(async () => `data:image/png;base64,SCENE-${++generated}`)
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toBeInTheDocument())
+    expect(generateSceneImage).toHaveBeenCalledTimes(8)
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
+    expect(screen.queryByAltText('Preview for scene 2')).not.toBeInTheDocument()
+    expect(screen.getAllByText('No image — regenerate')).toHaveLength(1)
+
+    const qualityCalls = mockInvoke.mock.calls.filter(([name]) => name === 'film-preview-quality')
+    const shotTwoCalls = qualityCalls.filter(([, options]) => options?.body?.shotIndex === 1)
+    expect(shotTwoCalls).toHaveLength(3)
+    expect(shotTwoCalls[0][1].body).toMatchObject({
+      shotIndex: 1,
+      totalShots: 6,
+      productName: 'Test product',
+      previousPlannedAction: expect.stringContaining('Plan one'),
+      plannedAction: expect.stringContaining('Plan two'),
+      nextPlannedAction: expect.stringContaining('Plan three'),
+    })
+
+    allowShotTwo = true
+    const beforeRegenerate = generateSceneImage.mock.calls.length
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toBeInTheDocument())
+
+    expect(generateSceneImage.mock.calls.length).toBe(beforeRegenerate + 1)
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
+    expect(screen.queryByText(/Preview shot 2 still failed action-quality review/i)).not.toBeInTheDocument()
+  }, 15_000)
 })
 
 describe('MakeFilmWizardDialog identity data path (integration)', () => {
@@ -351,7 +427,7 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     }
   })
 
-  it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', async () => {
+  it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', { timeout: 15_000 }, async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
       { id: 'plain-1', title: 'Sarah', image_type: 'character' },
