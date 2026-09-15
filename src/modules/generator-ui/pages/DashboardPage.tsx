@@ -176,6 +176,10 @@ import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
 import {
+  requireThirtySecondHandoff,
+  requireThirtySecondScenePlan,
+} from '@/modules/generator-ui/lib/thirtySecondContinuity'
+import {
   groupProductPhotos,
   mergeEmptyProductFolders,
   normalizeProductFolderName,
@@ -334,8 +338,8 @@ type UserAudioItem = {
 }
 
 
-// Error name marking a continuity seed-frame capture failure — the scenario
-// chain treats it as degradable (scene continues unseeded) rather than fatal.
+// Error name marking a continuity seed-frame capture failure. The strict 30s+
+// chain treats it as fatal; shorter multi-scene callers may continue unseeded.
 const SEED_FRAME_ERROR = 'SeedFrameCaptureError'
 const MERGED_BUCKET = 'merged-videos'
 // Locked parent origin for the "Schedule to Social Media" hand-off. The Final
@@ -7083,9 +7087,8 @@ export default function DashboardPage() {
 
 
 
-      // 45s auto-split: ask scenario-write to break the user's single prompt into
-      // three sequential 15s scenes, then chain them via submitScenesAsJobs so each
-      // becomes its own card with narrative continuity (frame-to-frame seeding).
+      // Long-duration auto-split: ask scenario-write for distinct 15s scenes,
+      // then chain them via submitScenesAsJobs with frame-to-frame seeding.
       if (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) {
         const expectedScenes = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 2
         setVideoColumnMessage(`Splitting your prompt into ${expectedScenes} scenes…`)
@@ -7119,8 +7122,12 @@ export default function DashboardPage() {
               }
             }
           } catch {
-            /* fall through to legacy Nx-same-prompt behavior */
+            /* validated below; 30s fails closed instead of repeating the prompt */
           }
+        }
+
+        if (durationSeconds === 30) {
+          autoScenes = requireThirtySecondScenePlan(durationSeconds, autoScenes)
         }
 
         if (autoScenes.length >= 2) {
@@ -7130,12 +7137,17 @@ export default function DashboardPage() {
           await submitScenesAsJobs(autoScenes, readyStartFrame?.url ?? undefined)
           return
         }
-        // else: fall through to legacy behavior below (N identical 15s clips).
+        // 45s/135s retain their existing legacy fallback. The 30s plan above
+        // either queues two distinct scenes or throws before any fallback clips.
       }
 
-      const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
+      if (durationSeconds === 30) {
+        throw new Error('30-second sequential generation requires two connected scenes. No fallback clips were queued.')
+      }
+
+      const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 1
       const perClipDuration: 5 | 10 | 15 =
-        (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
+        (durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
 
 
 
@@ -7582,6 +7594,15 @@ export default function DashboardPage() {
             startFrameUrl = await productStartFrame(sceneProduct, effectiveRatio)
             startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
+        } else if (totalDuration === 30) {
+          // The 30s sequential flow is strict: clip 2 starts from clip 1's actual
+          // completed end state, or the chain stops before clip 2 is queued.
+          startFrameUrl = await requireThirtySecondHandoff({
+            durationSeconds: totalDuration,
+            sceneIndex: i,
+            previousJobId,
+            waitForLastFrameUrl,
+          })
         } else if (previousJobId) {
           try {
             startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
