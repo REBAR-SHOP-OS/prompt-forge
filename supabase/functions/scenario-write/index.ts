@@ -1,7 +1,7 @@
 // scenario-write edge function: turns an idea + target duration into a single
 // cohesive English video scenario/treatment via Lovable AI Gateway.
 // For 45s, returns three sequential 15s scene prompts.
-import { corsHeaders } from "../_shared/core/http.ts";
+import { corsHeaders as baseCorsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
@@ -24,6 +24,13 @@ import {
 } from "./scenario-fingerprint.ts";
 import { releaseScenarioLease } from "./scenario-lease.ts";
 import { readScenarioAssistantText, requestScenarioGateway } from "./scenario-gateway.ts";
+
+export const SCENARIO_WRITE_RUNTIME_REVISION = "2026-09-15-safe-postgrest-release";
+const corsHeaders = {
+  ...baseCorsHeaders,
+  "Access-Control-Expose-Headers": "X-Scenario-Write-Revision",
+  "X-Scenario-Write-Revision": SCENARIO_WRITE_RUNTIME_REVISION,
+};
 
 async function callGateway(
   apiKey: string,
@@ -565,7 +572,10 @@ Deno.serve(async (req) => {
       }
     }
   } catch (e) {
-    console.error("scenario-write unhandled error", e);
+    console.error("scenario-write unhandled error", {
+      revision: SCENARIO_WRITE_RUNTIME_REVISION,
+      error: e,
+    });
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

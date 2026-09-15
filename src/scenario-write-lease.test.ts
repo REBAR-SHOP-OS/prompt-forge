@@ -40,4 +40,28 @@ describe("scenario-write lease release", () => {
     expect(source).toMatch(/await releaseScenarioLease\(\(\) =>\s*serviceClient\.rpc/);
     expect(source).not.toMatch(/serviceClient\.rpc\([\s\S]*?\)\.catch\(/);
   });
+
+  it("exposes the safe-release runtime revision on every response", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "supabase/functions/scenario-write/index.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      'export const SCENARIO_WRITE_RUNTIME_REVISION = "2026-09-15-safe-postgrest-release"',
+    );
+    expect(source).toMatch(
+      /const corsHeaders = \{[\s\S]*?\.\.\.baseCorsHeaders,[\s\S]*?"Access-Control-Expose-Headers": "X-Scenario-Write-Revision",[\s\S]*?"X-Scenario-Write-Revision": SCENARIO_WRITE_RUNTIME_REVISION/,
+    );
+    expect(source).toMatch(
+      /console\.error\("scenario-write unhandled error", \{[\s\S]*?revision: SCENARIO_WRITE_RUNTIME_REVISION,[\s\S]*?error: e/,
+    );
+
+    const responseCount = source.match(/new Response\(/g)?.length ?? 0;
+    const revisionHeaderCount = source.match(
+      /headers:\s*(?:corsHeaders|\{\s*\.\.\.corsHeaders)/g,
+    )?.length ?? 0;
+    expect(responseCount).toBeGreaterThan(0);
+    expect(revisionHeaderCount).toBe(responseCount);
+  });
 });
