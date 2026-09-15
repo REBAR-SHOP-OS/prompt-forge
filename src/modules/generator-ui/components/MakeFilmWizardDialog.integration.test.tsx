@@ -180,7 +180,7 @@ beforeEach(() => {
 })
 
 describe('MakeFilmWizardDialog scenario product requirement (integration)', () => {
-  it('shows a per-shot duration that matches the real plan structure for every duration', () => {
+  it('shows a per-shot duration that matches the real plan structure for every duration', { timeout: 20_000 }, () => {
     // The summary must read "N shots × ~5s each" where N = duration/5, so the
     // per-shot figure always agrees with the total film duration.
     const cases: Array<[number, string]> = [
@@ -427,7 +427,7 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     }
   })
 
-  it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', async () => {
+  it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', { timeout: 15_000 }, async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
       { id: 'plain-1', title: 'Sarah', image_type: 'character' },

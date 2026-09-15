@@ -26,6 +26,16 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 const generateSceneImage = vi.fn(async () => 'data:image/png;base64,SCENE')
 
+const passingPreviewEvaluation = {
+  physicalPlausibility: { passed: true, reason: 'Credible staging.' },
+  productRelevance: { passed: true, reason: 'The product is central.' },
+  surroundingContinuity: { passed: true, reason: 'The sequence advances.' },
+  plannedActionFaithfulness: { passed: true, reason: 'The planned action is visible.' },
+  contradiction: null,
+  summary: 'Preview matches the plan.',
+  passed: true,
+}
+
 // For a 30s film, expectedPlanCount returns 6 plans.
 const SIX_PLANS = [
   'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
@@ -111,6 +121,12 @@ beforeEach(() => {
   writeScenario.mockResolvedValue(SIX_PLANS)
   onApprove.mockClear()
   mockInvoke.mockReset()
+  mockInvoke.mockImplementation(async (functionName: string) => {
+    if (functionName === 'film-preview-quality') {
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    }
+    return { data: null, error: null }
+  })
   mockImageRows()
 })
 
