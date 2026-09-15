@@ -5,7 +5,7 @@ import MakeFilmWizardDialog, { inFlightSigns } from './MakeFilmWizardDialog'
 const { mockFrom, mockStorage } = vi.hoisted(() => {
   const mockFrom = vi.fn()
   const mockStorage = {
-    from: vi.fn(() => ({
+    from: vi.fn((_bucket: string) => ({
       createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
     })),
   }

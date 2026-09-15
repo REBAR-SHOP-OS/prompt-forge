@@ -27,13 +27,22 @@ describe('DashboardPage hook declaration order', () => {
 })
 
 describe('DashboardPage Make Full Film identity handoff', () => {
-  it('sends aligned product/character roles and character-sheet flags to ai-image-edit', () => {
-    expect(source).toContain("referenceRoles: ['product', 'character']")
-    expect(source).toContain('referenceCharacterSheets: [false, !!characterSheet]')
+  // Every grouped product angle now reaches ai-image-edit (not a single
+  // product + single character pair), so the literal ['product', 'character']
+  // array is gone from this call site — buildSceneEditRequestBody (tested in
+  // sceneComposition.test.ts) builds one 'product' role entry per angle
+  // instead, character always last. This pins that DashboardPage actually
+  // routes through that shared builder with the full grouped set and the
+  // character-sheet flag, rather than reintroducing an inline single-pair array.
+  it('routes the ai-image-edit call through buildSceneEditRequestBody with every grouped angle', () => {
+    expect(source).toContain('buildSceneEditRequestBody({')
+    expect(source).toContain('productUrls: productUrlList,')
+    expect(source).toContain('characterSheet,')
+    expect(source).not.toContain("referenceRoles: ['product', 'character']")
   })
 
   it('does not replace missing wizard snapshot values with current dashboard selections', () => {
-    expect(source).toContain('generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)')
-    expect(source).not.toContain('productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url')
+    expect(source).toContain('generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet)')
+    expect(source).not.toContain('productUrls ?? selectedProduct?.urls, characterUrl ?? selectedCharacter?.url')
   })
 })

@@ -32,9 +32,9 @@ export function useProfileEdit() {
   const { user, profile, refreshProfile } = useAuth()
 
   // Seed form fields from DB profile or auth metadata fallback
-  const dbFirstName = (profile as Record<string, unknown> | null)?.first_name as string | undefined
-  const dbLastName = (profile as Record<string, unknown> | null)?.last_name as string | undefined
-  const dbAvatarUrl = (profile as Record<string, unknown> | null)?.avatar_url as string | undefined
+  const dbFirstName = profile?.first_name
+  const dbLastName = profile?.last_name
+  const dbAvatarUrl = profile?.avatar_url
 
   const meta = (user?.user_metadata ?? {}) as Record<string, unknown>
   const metaFullName = (meta.full_name as string) ?? (meta.name as string) ?? ''

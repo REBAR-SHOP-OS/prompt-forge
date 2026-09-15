@@ -37,6 +37,11 @@ interface OccasionDetail {
   history: string
 }
 
+interface DayInfoResponse {
+  occasion?: OccasionDetail
+  occasions?: Array<OccasionDetail & { title?: string }>
+}
+
 const fmt = (d: Date) => toDateKey(d)
 const fmtMonth = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
@@ -116,11 +121,19 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setDetailLoadingKey(key)
     setDetailError(null)
     try {
-      const data = await request<{ occasion?: OccasionDetail }>('/day-info', {
+      const data = await request<DayInfoResponse>('/day-info', {
         method: 'POST',
-        body: JSON.stringify({ occasion: { title: occ.title, date: occ.date, category: occ.category }, lang }),
+        body: JSON.stringify({
+          date: occ.date,
+          occasion: { title: occ.title, date: occ.date, category: occ.category },
+          lang,
+        }),
       })
+      // `date` keeps this request valid against the legacy deployed handler,
+      // while `occasion` selects the prose-only path in the current handler.
       const detail = data.occasion
+        ?? data.occasions?.find((candidate) => candidate.title === occ.title)
+        ?? data.occasions?.[0]
       setDetailCache((c) => ({
         ...c,
         [key]: {

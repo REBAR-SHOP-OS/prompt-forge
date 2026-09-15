@@ -75,7 +75,15 @@ describe("buildSystemPrompt - narration control", () => {
 
   it("5s duration has appropriate word cap and beat guidance", () => {
     const prompt = buildSystemPrompt(5, productAdWithCharacter, false, undefined, undefined, "en", true);
-    expect(prompt).toContain("5s = 1 beat");
-    expect(prompt).toContain("one decisive shot");
+    expect(prompt).toContain("Use exactly 1 continuous timed visual beat: 0-5s");
+    expect(prompt).toContain("Write 25-40 words total");
+  });
+
+  it("30s plan mode requests exactly six 5-second plans", () => {
+    const prompt = buildSystemPrompt(30, productAdWithCharacter, false, undefined, undefined, "en", true, "plan");
+
+    expect(prompt).toContain("structured as SIX sequential 5-second plans");
+    expect(prompt).toContain("Output EXACTLY 6 plan blocks");
+    expect(prompt).toContain("wide → medium → close → wide → medium → close");
   });
 });
