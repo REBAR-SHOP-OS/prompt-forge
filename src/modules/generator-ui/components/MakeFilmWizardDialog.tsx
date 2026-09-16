@@ -38,6 +38,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
+import {
+  generateQualityCheckedPreviewShot,
+  type PreviewShotContext,
+  type PreviewShotQualityEvaluation,
+} from '@/modules/generator-ui/lib/previewShotQuality'
 
 import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
@@ -792,6 +797,60 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     }
   }
 
+  function previewShotContext(index: number, snapshot: IdentitySnapshot): PreviewShotContext {
+    return {
+      shotIndex: index,
+      totalShots: plans.length,
+      plannedAction: plans[index].scenarioText,
+      previousPlannedAction: index > 0 ? plans[index - 1].scenarioText : undefined,
+      nextPlannedAction: index + 1 < plans.length ? plans[index + 1].scenarioText : undefined,
+      productName: snapshot.product?.name ?? undefined,
+    }
+  }
+
+  async function evaluatePreviewShot(
+    imageUrl: string,
+    context: PreviewShotContext,
+  ): Promise<PreviewShotQualityEvaluation> {
+    const { data, error: qualityError } = await supabase.functions.invoke('film-preview-quality', {
+      body: { imageUrl, ...context },
+    })
+    if (qualityError) throw qualityError
+    const evaluation = (data as { evaluation?: PreviewShotQualityEvaluation } | null)?.evaluation
+    if (!evaluation || typeof evaluation.passed !== 'boolean') {
+      throw new Error('Preview quality evaluator returned an invalid response.')
+    }
+    return evaluation
+  }
+
+  async function generateCheckedPreviewShot(
+    index: number,
+    snapshot: IdentitySnapshot,
+    creative: FilmCreative,
+  ): Promise<string> {
+    const characterSheet = snapshot.character?.characterSheet ?? false
+    const productUrls = snapshot.product?.urls?.length
+      ? snapshot.product.urls
+      : snapshot.product?.url
+        ? [snapshot.product.url]
+        : []
+    const context = previewShotContext(index, snapshot)
+    const result = await generateQualityCheckedPreviewShot(
+      context,
+      (correction) => generateSceneImage(
+        correction ? `${plans[index].scenarioText}\n\n${correction}` : plans[index].scenarioText,
+        aspect,
+        productUrls,
+        snapshot.character?.url,
+        noTextOnImages,
+        creative,
+        characterSheet,
+      ),
+      evaluatePreviewShot,
+    )
+    return result.imageUrl
+  }
+
   async function handleGenerateImages() {
     if (plans.length === 0) return
     setBusy('images')
@@ -801,22 +860,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       character: toIdentityRef(selectedCharacter, 'character'),
     }
     setIdentitySnapshot(snapshot)
-    const characterSheet = snapshot.character?.characterSheet ?? false
     const next: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const nextErrors: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const creative = currentCreative()
     for (let i = 0; i < plans.length; i++) {
-      setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
+      setProgress(`Designing and checking preview image ${i + 1} of ${plans.length}…`)
       try {
-        // The FULL grouped set of product angles reaches generation, not one
-        // rotated by scene index — a single generated shot only shows one
-        // angle, but every angle still grounds the model at once.
-        const productUrls = snapshot.product?.urls?.length
-          ? snapshot.product.urls
-          : snapshot.product?.url
-            ? [snapshot.product.url]
-            : []
-        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, productUrls, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        next[i] = await generateCheckedPreviewShot(i, snapshot, creative)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -838,13 +888,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     try {
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
-      const characterSheet = snapshot.character?.characterSheet ?? false
-      const productUrls = snapshot.product?.urls?.length
-        ? snapshot.product.urls
-        : snapshot.product?.url
-          ? [snapshot.product.url]
-          : []
-      const url = await generateSceneImage(plans[index].scenarioText, aspect, productUrls, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const url = await generateCheckedPreviewShot(index, snapshot, currentCreative())
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
