@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ConfirmedVeoExtensionDispatchError,
+  ConfirmedVeoProviderDispatchError,
   dispatchPersistedVeoExtension,
   type VeoExtensionClaimStore,
 } from "./veo-extension-claim.ts";
@@ -76,6 +77,37 @@ describe("dispatchPersistedVeoExtension", () => {
       providerJobId: "extension-retry-1",
     });
     expect(state.current()).toBe("extension-retry-1");
+  });
+
+  it("allows one actual transient generation retry and persists its new operation", async () => {
+    const state = memoryStore("terminal-transient-operation");
+    const dispatch = vi.fn(async () => ({
+      value: "retry-op-2",
+      providerJobId: "retry-state-2",
+    }));
+
+    const [first, second] = await Promise.all([
+      dispatchPersistedVeoExtension({
+        ...baseInput,
+        expectedProviderJobId: "terminal-transient-operation",
+        claimedProviderJobId: "generation-retry-claimed",
+        store: state.store,
+        dispatch,
+        isConfirmedFailure: (error) => error instanceof ConfirmedVeoProviderDispatchError,
+      }),
+      dispatchPersistedVeoExtension({
+        ...baseInput,
+        expectedProviderJobId: "terminal-transient-operation",
+        claimedProviderJobId: "generation-retry-claimed",
+        store: state.store,
+        dispatch,
+        isConfirmedFailure: (error) => error instanceof ConfirmedVeoProviderDispatchError,
+      }),
+    ]);
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect([first.status, second.status].sort()).toEqual(["dispatched", "lost"]);
+    expect(state.current()).toBe("retry-state-2");
   });
 
   it("retains the durable claim after an ambiguous transport failure", async () => {

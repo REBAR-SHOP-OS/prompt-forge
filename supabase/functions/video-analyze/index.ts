@@ -4,7 +4,12 @@ import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import { geminiGenerateContentUrl } from "../_shared/core/gemini-policy.ts";
+import { sanitizeUpstreamErrorBody } from "../_shared/core/upstream-error.ts";
 import { parseVideoAnalysis } from "./analysis.ts";
+import {
+  readResponseBytesWithLimit,
+  ResponseBodyTooLargeError,
+} from "./body-limit.ts";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB cap (inline base64)
 
@@ -80,11 +85,19 @@ Deno.serve(async (req) => {
       });
     }
     const mimeType = videoResp.headers.get("content-type") || "video/mp4";
-    const buf = new Uint8Array(await videoResp.arrayBuffer());
-    if (buf.byteLength > MAX_BYTES) {
-      return new Response(JSON.stringify({ error: "Video too large to analyze (>25MB)" }), {
-        status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let buf: Uint8Array;
+    try {
+      // Enforce the cap from Content-Length when present and while streaming
+      // when it is absent or untrusted. Never call arrayBuffer() on an
+      // unbounded upstream response.
+      buf = await readResponseBytesWithLimit(videoResp, MAX_BYTES);
+    } catch (error) {
+      if (error instanceof ResponseBodyTooLargeError) {
+        return new Response(JSON.stringify({ error: "Video too large to analyze (>25MB)" }), {
+          status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      throw error;
     }
     const b64 = toBase64(buf);
 
@@ -109,7 +122,11 @@ Deno.serve(async (req) => {
 
     if (!geminiResp.ok) {
       const t = await geminiResp.text().catch(() => "");
-      console.error("video-analyze gemini error", geminiResp.status, t);
+      console.error(
+        "video-analyze gemini error",
+        geminiResp.status,
+        sanitizeUpstreamErrorBody(t),
+      );
       return new Response(JSON.stringify({ error: `Gemini error (${geminiResp.status})` }), {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

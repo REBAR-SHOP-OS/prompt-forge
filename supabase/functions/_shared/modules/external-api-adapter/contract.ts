@@ -84,6 +84,8 @@ export interface GenerationPollContext {
   client: SupabaseClient;
   userId: string;
   jobId: string;
+  /** Original persisted input used only for a bounded transient Veo re-dispatch. */
+  veoRetryInput?: GenerationStartInput;
   veoExtensionClaim?: {
     claim(
       expectedProviderJobId: string,

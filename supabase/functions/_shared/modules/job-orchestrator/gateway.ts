@@ -604,6 +604,20 @@ export const jobOrchestratorGateway = {
                   client: svc,
                   userId: auth.userId,
                   jobId: detail.id,
+                  veoRetryInput: {
+                    prompt: detail.input_prompt,
+                    firstFrameUrl: detail.first_frame_url ?? null,
+                    lastFrameUrl: detail.last_frame_url ?? null,
+                    referenceImageUrls: detail.reference_image_urls ?? [],
+                    durationSeconds: requestedDuration === 5 || requestedDuration === 10 || requestedDuration === 15
+                      ? requestedDuration
+                      : null,
+                    aspectRatio: detail.requested_aspect_ratio === "9:16" ||
+                        detail.requested_aspect_ratio === "1:1" ||
+                        detail.requested_aspect_ratio === "16:9"
+                      ? detail.requested_aspect_ratio
+                      : "16:9",
+                  },
                   veoExtensionClaim: createVeoExtensionClaimStore(svc, auth.userId, detail.id),
                 },
               );

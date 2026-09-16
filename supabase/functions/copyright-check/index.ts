@@ -6,6 +6,7 @@ import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
 import { geminiGenerateContentUrl } from "../_shared/core/gemini-policy.ts";
+import { sanitizeUpstreamErrorBody } from "../_shared/core/upstream-error.ts";
 import { ownsGenerationJob } from "./ownership.ts";
 
 const INLINE_VIDEO_BYTES = 18 * 1024 * 1024; // inline only small videos (Gemini ~20MB request cap)
@@ -263,7 +264,11 @@ Deno.serve(async (req) => {
 
     if (!geminiResp.ok) {
       const t = await geminiResp.text().catch(() => "");
-      console.error("copyright-check gemini error", geminiResp.status, t);
+      console.error(
+        "copyright-check gemini error",
+        geminiResp.status,
+        sanitizeUpstreamErrorBody(t),
+      );
       return new Response(JSON.stringify({ error: `Analysis service error (${geminiResp.status})` }), {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -322,11 +327,19 @@ Deno.serve(async (req) => {
             },
           );
           if (!upsertResp.ok) {
-            console.warn("copyright-check persist failed", upsertResp.status, await upsertResp.text().catch(() => ""));
+            const upstreamBody = await upsertResp.text().catch(() => "");
+            console.warn(
+              "copyright-check persist failed",
+              upsertResp.status,
+              sanitizeUpstreamErrorBody(upstreamBody),
+            );
           }
         }
       } catch (persistErr) {
-        console.warn("copyright-check persist error", persistErr);
+        console.warn(
+          "copyright-check persist error",
+          sanitizeUpstreamErrorBody(persistErr instanceof Error ? persistErr.message : persistErr),
+        );
       }
     }
 
