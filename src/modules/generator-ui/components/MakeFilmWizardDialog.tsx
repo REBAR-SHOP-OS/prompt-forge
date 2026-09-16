@@ -34,6 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ChooseProductDialog } from '@/modules/generator-ui/components/ChooseProductDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -1183,11 +1184,17 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         <span className="text-xs text-foreground/80">{currentProductName() || 'Product'}</span>
                         <button
                           type="button"
-                          onClick={() => { setSelectedProduct(null); setProductName('') }}
-                          aria-label="Remove product"
-                          className="ml-1 rounded p-0.5 text-muted-foreground hover:text-foreground/80"
+                          onClick={() => { setProductPickerOpen(true); void loadProductPhotos() }}
+                          className="rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-foreground/80 transition hover:bg-accent/60"
                         >
-                          <X className="h-3 w-3" />
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedProduct(null); setProductName('') }}
+                          className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition hover:text-foreground/80"
+                        >
+                          Clear
                         </button>
                       </div>
                     ) : (
@@ -1776,24 +1783,23 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       />
 
       {/* Product Picker Dialog */}
-      <Dialog open={productPickerOpen} onOpenChange={(open) => {
-        setProductPickerOpen(open)
-        if (open) {
-          productPickerControllerRef.current = new AbortController()
-          void loadProductPhotos()
-        } else {
-          productPickerControllerRef.current?.abort()
-          productPickerControllerRef.current = new AbortController()
-        }
-      }}>
-        <DialogContent className="max-w-lg border-border bg-card text-foreground">
-          <DialogHeader>
-            <DialogTitle className="text-base">Choose a product</DialogTitle>
-            <DialogDescription>
-              Select a product folder. Its saved angles will rotate across the film scenes.
-            </DialogDescription>
-          </DialogHeader>
-          {loadingProducts ? (
+      <ChooseProductDialog
+        open={productPickerOpen}
+        onOpenChange={(open) => {
+          setProductPickerOpen(open)
+          if (open) {
+            productPickerControllerRef.current = new AbortController()
+            void loadProductPhotos()
+          } else {
+            productPickerControllerRef.current?.abort()
+            productPickerControllerRef.current = new AbortController()
+          }
+        }}
+        categories={availableProductCategories}
+        activeCategory={productCategory}
+        onCategoryChange={setProductCategory}
+        status={
+          loadingProducts ? (
             <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading products…
             </div>
@@ -1806,43 +1812,20 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             </div>
           ) : productPhotos.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">No saved product photos yet.</div>
-          ) : (
-            <div className="space-y-3">
-              {availableProductCategories.length > 1 ? (
-                <div className="flex flex-wrap gap-1.5" aria-label="Product categories">
-                  {availableProductCategories.map((category) => (
-                    <button
-                      key={category.id}
-                      type="button"
-                      aria-pressed={productCategory === category.id}
-                      onClick={() => setProductCategory(category.id)}
-                      className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
-                        productCategory === category.id
-                          ? 'border-fuchsia-300/50 bg-fuchsia-500/15 text-fuchsia-100'
-                          : 'border-border bg-surface-2 text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {category.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
-                {visibleProductGroups.map((group) => (
-                  <ProductPickerCard
-                    key={group.id}
-                    group={group}
-                    bucket={PRODUCTS_BUCKET}
-                    userId={userId}
-                    controllerRef={productPickerControllerRef}
-                    onSelect={pickProduct}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          ) : null
+        }
+      >
+        {visibleProductGroups.map((group) => (
+          <ProductPickerCard
+            key={group.id}
+            group={group}
+            bucket={PRODUCTS_BUCKET}
+            userId={userId}
+            controllerRef={productPickerControllerRef}
+            onSelect={pickProduct}
+          />
+        ))}
+      </ChooseProductDialog>
 
       {/* Character Picker Dialog */}
       <Dialog open={characterPickerOpen} onOpenChange={setCharacterPickerOpen}>

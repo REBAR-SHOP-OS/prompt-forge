@@ -113,6 +113,7 @@ import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
 import { UserImageView } from '@/modules/generator-ui/components/UserImageView'
+import { ChooseProductDialog } from '@/modules/generator-ui/components/ChooseProductDialog'
 import {
   FRAMES_BUCKET,
   USER_IMAGES_BUCKET,
@@ -13816,166 +13817,122 @@ export default function DashboardPage() {
               </PopoverContent>
             </Popover>
 
-            <Popover
+            {selectedProduct ? (
+              <div className="inline-flex h-11 items-center gap-2 rounded-full border border-accent-warm/60 bg-accent-warm/10 px-3 text-sm font-semibold text-accent-warm">
+                <UserImageView
+                  src={selectedProduct.url}
+                  alt="Product"
+                  className="h-6 w-6 rounded-md object-cover"
+                  loading="eager"
+                />
+                <span className="max-w-[9rem] truncate" title={selectedProduct.title ?? 'Product'}>
+                  {selectedProduct.title || 'Product'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setProductMenuOpen(true); void loadProductImages() }}
+                  className="rounded-full border border-accent-warm/50 px-2 py-0.5 text-[11px] font-semibold transition hover:bg-accent-warm/20"
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={() => clearProductFromCurrentProject()}
+                  className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition hover:text-action-rose"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                aria-label="Pin a product for this project"
+                title="Pin the product so it stays identical in every card"
+                onClick={() => { setProductMenuOpen(true); void loadProductImages() }}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-accent/40 px-4 text-sm font-semibold text-foreground/90 transition hover:border-border"
+              >
+                <Package className="h-5 w-5" aria-hidden="true" />
+                <span>Add product</span>
+              </button>
+            )}
+
+            <ChooseProductDialog
               open={productMenuOpen}
               onOpenChange={(open) => {
                 setProductMenuOpen(open)
                 if (open) void loadProductImages()
               }}
-            >
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Pin a product for this project"
-                  title="Pin the product so it stays identical in every card"
-                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
-                    selectedProduct
-                      ? 'border-accent-warm/60 bg-accent-warm/10 text-accent-warm'
-                      : 'border-border bg-accent/40 text-foreground/90 hover:border-border'
-                  }`}
-                >
-                  {selectedProduct ? (
-                    <>
-                      <UserImageView
-                        src={selectedProduct.url}
-                        alt="Product"
-                        className="h-6 w-6 rounded-md object-cover"
-                        loading="eager"
-                      />
-                      <span>Product</span>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        aria-label="Remove product"
-                        title="Remove product"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          clearProductFromCurrentProject()
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            clearProductFromCurrentProject()
-                          }
-                        }}
-                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-accent-warm/80 transition hover:bg-accent-warm/20 hover:text-accent-warm"
-                      >
-                        <X className="h-3.5 w-3.5" aria-hidden="true" />
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Package className="h-5 w-5" aria-hidden="true" />
-                      <span>Add product</span>
-                    </>
-                  )}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-72 p-2">
-                <div className="mb-1.5 flex items-center justify-between px-1">
-                  <span className="text-xs font-semibold text-foreground/80">Project product</span>
-                  {selectedProduct ? (
-                    <button
-                      type="button"
-                      onClick={() => { clearProductFromCurrentProject(); setProductMenuOpen(false) }}
-                      className="text-[11px] text-muted-foreground hover:text-action-rose"
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-                {archiveLoading && archiveProductGroups.length === 0 ? (
-                  <div className="flex items-center justify-center py-6 text-muted-foreground">
+              categories={availableProductPickerCategories}
+              activeCategory={productPickerCategory}
+              onCategoryChange={setProductPickerCategory}
+              status={
+                archiveLoading && archiveProductGroups.length === 0 ? (
+                  <div className="flex items-center justify-center py-10 text-muted-foreground">
                     <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
                   </div>
                 ) : archiveProductGroups.length === 0 ? (
-                  <div className="px-1 py-4 text-center text-xs text-muted-foreground">
+                  <div className="py-10 text-center text-sm text-muted-foreground">
                     No products yet. Add one in Product AD.
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    {availableProductPickerCategories.length > 1 ? (
-                      <div className="flex flex-wrap gap-1.5 px-1" aria-label="Product categories">
-                        {availableProductPickerCategories.map((category) => (
-                          <button
-                            key={category.id}
-                            type="button"
-                            aria-pressed={productPickerCategory === category.id}
-                            onClick={() => setProductPickerCategory(category.id)}
-                            className={`rounded-full border px-2 py-1 text-[10px] transition ${
-                              productPickerCategory === category.id
-                                ? 'border-amber-400/60 bg-accent-warm/10 text-accent-warm'
-                                : 'border-border bg-accent/30 text-muted-foreground hover:text-foreground'
-                            }`}
-                          >
-                            {category.label}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto p-1">
-                      {visibleArchiveProductGroups.map((group) => {
-                        const primary = group.photos[0]
-                        const urls = approvedProductViewUrls(
-                          primary?.storage_path,
-                          group.photos.map((photo) => photo.storage_path),
-                        )
-                        const product: ProjectProduct | null = primary && urls.length > 0
-                          ? {
-                              id: group.id,
-                              url: urls[0],
-                              urls,
-                              category: productIdentityCategory(group),
-                              title: group.name,
-                              description: primary.description ?? null,
-                            }
-                          : null
-                        return (
-                          <button
-                            key={group.id}
-                            type="button"
-                            disabled={!product}
-                            onClick={() => {
-                              if (!product) return
-                              assignProductToCurrentProject(product)
-                              setProductMenuOpen(false)
-                              if (canRestageProductStartFrame()) {
-                                setUploadTarget('Start')
-                                void handleUseImageAsStart(product.url, aspectRatio)
-                              }
-                            }}
-                            className={`group overflow-hidden rounded-lg border text-left transition ${
-                              selectedProduct?.id === group.id
-                                ? 'border-amber-400'
-                                : 'border-border hover:border-border'
-                            } disabled:cursor-not-allowed disabled:opacity-50`}
-                            title={group.name}
-                          >
-                            <div className={`grid aspect-[4/3] gap-0.5 bg-accent/30 ${urls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                              {urls.slice(0, 4).map((url, index) => (
-                                <UserImageView
-                                  key={`${group.id}:${url}`}
-                                  src={url}
-                                  alt={index === 0 ? group.name : `${group.name} angle ${index + 1}`}
-                                  className="h-full min-h-0 w-full object-cover"
-                                  loading="lazy"
-                                />
-                              ))}
-                            </div>
-                            <div className="px-2 py-1.5">
-                              <div className="truncate text-[11px] font-medium text-foreground/90">{group.name}</div>
-                              <div className="text-[10px] text-muted-foreground">{urls.length} view{urls.length === 1 ? '' : 's'}</div>
-                            </div>
-                          </button>
-                        )
-                      })}
+                ) : null
+              }
+            >
+              {visibleArchiveProductGroups.map((group) => {
+                const primary = group.photos[0]
+                const urls = approvedProductViewUrls(
+                  primary?.storage_path,
+                  group.photos.map((photo) => photo.storage_path),
+                )
+                const product: ProjectProduct | null = primary && urls.length > 0
+                  ? {
+                      id: group.id,
+                      url: urls[0],
+                      urls,
+                      category: productIdentityCategory(group),
+                      title: group.name,
+                      description: primary.description ?? null,
+                    }
+                  : null
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    disabled={!product}
+                    onClick={() => {
+                      if (!product) return
+                      assignProductToCurrentProject(product)
+                      setProductMenuOpen(false)
+                      if (canRestageProductStartFrame()) {
+                        setUploadTarget('Start')
+                        void handleUseImageAsStart(product.url, aspectRatio)
+                      }
+                    }}
+                    className={`group overflow-hidden rounded-lg border text-left transition ${
+                      selectedProduct?.id === group.id
+                        ? 'border-amber-400'
+                        : 'border-border hover:border-border'
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                    title={group.name}
+                  >
+                    <div className={`grid aspect-[4/3] gap-0.5 bg-accent/30 ${urls.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      {urls.slice(0, 4).map((url, index) => (
+                        <UserImageView
+                          key={`${group.id}:${url}`}
+                          src={url}
+                          alt={index === 0 ? group.name : `${group.name} angle ${index + 1}`}
+                          className="h-full min-h-0 w-full object-cover"
+                          loading="lazy"
+                        />
+                      ))}
                     </div>
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
+                    <div className="px-2 py-1.5">
+                      <div className="truncate text-[11px] font-medium text-foreground/90">{group.name}</div>
+                      <div className="text-[10px] text-muted-foreground">{urls.length} view{urls.length === 1 ? '' : 's'}</div>
+                    </div>
+                  </button>
+                )
+              })}
+            </ChooseProductDialog>
 
 
 
