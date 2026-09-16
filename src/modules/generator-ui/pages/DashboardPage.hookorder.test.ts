@@ -42,7 +42,7 @@ describe('DashboardPage Make Full Film identity handoff', () => {
   })
 
   it('does not replace missing wizard snapshot values with current dashboard selections', () => {
-    expect(source).toContain('generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet)')
+    expect(source).toContain('generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction)')
     expect(source).not.toContain('productUrls ?? selectedProduct?.urls, characterUrl ?? selectedCharacter?.url')
   })
 })

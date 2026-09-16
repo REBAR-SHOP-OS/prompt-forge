@@ -207,6 +207,7 @@ import {
   type ProductIdentityCategoryId,
 } from '@/modules/generator-ui/lib/productIdentity'
 import { buildSceneEditRequestBody, buildSceneGenerateRequestBody, buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
+import { appendPreviewQualityCorrection } from '@/modules/generator-ui/lib/previewPromptCorrection'
 import {
   GlobalSceneBatchError,
   queueSceneBatch,
@@ -7871,6 +7872,7 @@ export default function DashboardPage() {
     noText?: boolean,
     creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string },
     characterSheet?: boolean,
+    correction?: string,
   ): Promise<string> {
     // Every grouped angle of the selected product folder, not just one picked
     // by round-robin — the full group is what should ground each generation.
@@ -7903,6 +7905,7 @@ export default function DashboardPage() {
     if (creative?.cameraStyle) {
       imagePrompt = `${imagePrompt}\n\nCAMERA: ${creative.cameraStyle}`
     }
+    imagePrompt = appendPreviewQualityCorrection(imagePrompt, correction)
     // When BOTH a product and a character are present, compose them into a
     // single frame the same way Product Ad does — via ai-image-edit with
     // every grouped product angle plus the character as visual references.
@@ -11163,8 +11166,8 @@ export default function DashboardPage() {
         defaultAspect={aspectRatio}
         userId={userId}
         writeScenario={writeFilmScenario}
-        generateSceneImage={(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet) =>
-          generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet)
+        generateSceneImage={(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction) =>
+          generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
