@@ -303,6 +303,11 @@ export function MakeFilmWizardDialog({
 
   const working = busy !== 'idle' || regenIndex !== null
   const canWriteScenario = prompt.trim().length > 0 && selectedProduct !== null && !working
+  // Step 1 requires a product (same gate as canWriteScenario / handleWriteScenario).
+  // Everything else — character, film type, camera angle, visual theme, narration and
+  // text mode — stays optional; the prompt text itself must NOT be required because
+  // this control is what produces it.
+  const canGeneratePrompt = selectedProduct !== null && !generatingPrompt && !optimizing
   const visibleProductGroups = useMemo(
     () => filterProductIdentityGroups(productPhotos, productCategory),
     [productPhotos, productCategory],
@@ -709,6 +714,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
    */
   async function handleGeneratePrompt() {
     if (generatingPrompt || optimizing) return
+    // Hard gate: a race or programmatic click must not reach enhance-prompt
+    // without the required product selection.
+    if (!selectedProduct) return
     setGeneratingPrompt(true)
     setGenerateError(null)
     const previous = prompt
@@ -1413,8 +1421,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           <button
                             type="button"
                             aria-label="Generate prompt"
-                            aria-disabled={generatingPrompt || optimizing}
-                            disabled={generatingPrompt || optimizing}
+                            aria-disabled={!canGeneratePrompt}
+                            disabled={!canGeneratePrompt}
                             onClick={handleGeneratePrompt}
                             className="absolute bottom-2 right-11 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                           >
@@ -1426,7 +1434,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="text-xs">
-                          {generatingPrompt ? 'Writing a prompt…' : 'Generate a prompt from your selections'}
+                          {generatingPrompt
+                            ? 'Writing a prompt…'
+                            : !selectedProduct
+                              ? 'Choose a product first to generate a prompt'
+                              : 'Generate a prompt from your selections'}
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
