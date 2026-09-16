@@ -3,6 +3,8 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+import { geminiGenerateContentUrl } from "../_shared/core/gemini-policy.ts";
+import { parseVideoAnalysis } from "./analysis.ts";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB cap (inline base64)
 
@@ -88,7 +90,7 @@ Deno.serve(async (req) => {
 
     // Call Gemini directly (multimodal video understanding).
     const geminiResp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      geminiGenerateContentUrl(apiKey),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -120,10 +122,7 @@ Deno.serve(async (req) => {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    try { analysis = JSON.parse(text); } catch {
-      // Fallback: wrap raw text as summary.
-      analysis = { summary: text.slice(0, 2000) };
-    }
+    const analysis = parseVideoAnalysis(text);
 
     return new Response(JSON.stringify({ analysis }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
