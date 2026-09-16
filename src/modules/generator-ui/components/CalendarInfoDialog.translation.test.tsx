@@ -37,7 +37,9 @@ const originalAbout = 'A global observance dedicated to strengthening peace.'
 const originalHistory = 'The United Nations established it in 1981.'
 const translations: Record<string, string> = {
   'International Day of Peace': 'روز جهانی صلح',
+  About: 'درباره',
   [originalAbout]: 'مناسبتی جهانی برای تقویت صلح.',
+  History: 'تاریخچه',
   [originalHistory]: 'سازمان ملل آن را در سال ۱۹۸۱ بنیان گذاشت.',
 }
 
@@ -76,20 +78,24 @@ describe('CalendarInfoDialog translation', () => {
     )
   })
 
-  it('translates the selected title, About, and History and renders RTL', async () => {
+  it('translates the selected title, section labels, and bodies and renders RTL', async () => {
     renderDialog()
     await openOccasion()
 
     fireEvent.change(screen.getByLabelText('Translate occasion details'), { target: { value: 'fa' } })
 
     expect(await screen.findByText('روز جهانی صلح')).toBeInTheDocument()
+    expect(screen.getByText('درباره')).toBeInTheDocument()
     expect(screen.getByText('مناسبتی جهانی برای تقویت صلح.')).toBeInTheDocument()
+    expect(screen.getByText('تاریخچه')).toBeInTheDocument()
     expect(screen.getByText('سازمان ملل آن را در سال ۱۹۸۱ بنیان گذاشت.')).toBeInTheDocument()
+    expect(screen.queryByText('About')).not.toBeInTheDocument()
+    expect(screen.queryByText('History')).not.toBeInTheDocument()
     expect(screen.getByTestId('occasion-detail-body')).toHaveAttribute('dir', 'rtl')
 
     const translationCalls = mockInvoke.mock.calls.filter(([name]) => name === 'translate-text')
-    expect(translationCalls).toHaveLength(3)
-    for (const text of ['International Day of Peace', originalAbout, originalHistory]) {
+    expect(translationCalls).toHaveLength(5)
+    for (const text of ['International Day of Peace', 'About', originalAbout, 'History', originalHistory]) {
       expect(mockInvoke).toHaveBeenCalledWith('translate-text', {
         body: { text, targetLang: 'fa' },
       })
@@ -108,8 +114,12 @@ describe('CalendarInfoDialog translation', () => {
     fireEvent.change(control, { target: { value: 'en' } })
 
     expect(screen.getAllByText('International Day of Peace').length).toBeGreaterThan(0)
+    expect(screen.getByText('About')).toBeInTheDocument()
     expect(screen.getByText(originalAbout)).toBeInTheDocument()
+    expect(screen.getByText('History')).toBeInTheDocument()
     expect(screen.getByText(originalHistory)).toBeInTheDocument()
+    expect(screen.queryByText('درباره')).not.toBeInTheDocument()
+    expect(screen.queryByText('تاریخچه')).not.toBeInTheDocument()
     expect(mockInvoke.mock.calls.filter(([name]) => name === 'translate-text')).toHaveLength(callsBeforeEnglish)
   })
 
@@ -127,7 +137,9 @@ describe('CalendarInfoDialog translation', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Translation service unavailable.*original English/i)
     expect(screen.getAllByText('International Day of Peace').length).toBeGreaterThan(0)
+    expect(screen.getByText('About')).toBeInTheDocument()
     expect(screen.getByText(originalAbout)).toBeInTheDocument()
+    expect(screen.getByText('History')).toBeInTheDocument()
     expect(screen.getByText(originalHistory)).toBeInTheDocument()
   })
 })

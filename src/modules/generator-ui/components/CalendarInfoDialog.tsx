@@ -40,6 +40,8 @@ interface OccasionDetail {
 
 interface OccasionTranslation extends OccasionDetail {
   title: string
+  whatItIsLabel: string
+  historyLabel: string
 }
 
 interface DayInfoResponse {
@@ -175,12 +177,17 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setTranslationLoadingKey(key)
     setTranslationError(null)
     try {
-      const [title, whatItIs, history] = await Promise.all([
+      const [title, whatItIsLabel, whatItIs, historyLabel, history] = await Promise.all([
         translateText(occ.title, targetLang),
+        translateText(t.whatItIs, targetLang),
         translateText(detail.whatItIs, targetLang),
+        translateText(t.history, targetLang),
         translateText(detail.history, targetLang),
       ])
-      setTranslationCache((cache) => ({ ...cache, [key]: { title, whatItIs, history } }))
+      setTranslationCache((cache) => ({
+        ...cache,
+        [key]: { title, whatItIsLabel, whatItIs, historyLabel, history },
+      }))
     } catch (err) {
       if (langRef.current === targetLang) {
         setTranslationError(err instanceof Error ? err.message : 'Could not translate occasion details.')
@@ -396,11 +403,15 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                               {detail && (
                                 <>
                                   <div>
-                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.whatItIs}</div>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                      {translatedDetail?.whatItIsLabel ?? t.whatItIs}
+                                    </div>
                                     <p className="leading-relaxed">{translatedDetail?.whatItIs ?? detail.whatItIs}</p>
                                   </div>
                                   <div>
-                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.history}</div>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                      {translatedDetail?.historyLabel ?? t.history}
+                                    </div>
                                     <p className="leading-relaxed">{translatedDetail?.history ?? detail.history}</p>
                                   </div>
                                 </>
