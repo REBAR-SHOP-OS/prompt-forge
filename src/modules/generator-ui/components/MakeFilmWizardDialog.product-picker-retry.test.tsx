@@ -6,7 +6,7 @@ const { mockFrom, mockStorage } = vi.hoisted(() => {
   const mockFrom = vi.fn()
   const mockStorage = {
     from: vi.fn((_bucket: string) => ({
-      createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
+      createSignedUrl: vi.fn(async (_path: string) => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
     })),
   }
   return { mockFrom, mockStorage }

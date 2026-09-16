@@ -90,7 +90,8 @@ describe('PromptOptimizerPopover', () => {
       prompt: 'A rough product video',
       withNarration: false,
     }))
-    expect(onOptimize.mock.calls.at(-1)?.[0]).not.toHaveProperty('narratorScript')
+    const lastCall = onOptimize.mock.calls[onOptimize.mock.calls.length - 1]
+    expect(lastCall?.[0]).not.toHaveProperty('narratorScript')
   })
 
   it('keeps styles collapsed until requested and submits selected style hints', () => {
