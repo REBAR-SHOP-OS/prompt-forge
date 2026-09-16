@@ -18,6 +18,7 @@ import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, logInfo, writeApiRequestLog } from "../../core/observability.ts";
 import { writeAuditLog } from "../../core/audit.ts";
 import { rateLimit } from "../../core/ratelimit.ts";
+import { parseOwnedStorageRef } from "../../core/owned-storage.ts";
 import { jobService } from "./service.ts";
 import { aiGateway } from "../external-api-adapter/service.ts";
 import type { ProviderKey } from "../external-api-adapter/contract.ts";
@@ -678,13 +679,28 @@ export const jobOrchestratorGateway = {
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = null;
               } else {
+                // Re-resolve persisted provider/model state before a self-heal
+                // dispatch. This applies the same cloud model allowlist and
+                // explicit pricing as createJob, so an old or tampered row can
+                // never become an unpriced provider call.
+                const redispatchRoute = await aiGateway.resolveRoute(
+                  svc,
+                  detail.provider_key as ProviderKey,
+                  detail.model_key,
+                  detail.input_prompt,
+                  {
+                    durationSeconds: requestedDuration,
+                    hasLastFrame: Boolean(detail.last_frame_url),
+                    hasReferenceImages: (detail.reference_image_urls?.length ?? 0) > 0,
+                  },
+                );
                 providerStartRedispatched = await dispatchProviderStartIfClaimed(svc, {
                   userId: auth.userId,
                   jobId: detail.id,
                   requestId: ctx.requestId,
-                  providerKey: detail.provider_key as ProviderKey,
-                  resolvedModel: detail.model_key,
-                  estimatedCost: 0,
+                  providerKey: redispatchRoute.providerKey,
+                  resolvedModel: redispatchRoute.resolvedModel,
+                  estimatedCost: redispatchRoute.estimatedCost,
                   prompt: detail.input_prompt,
                   firstFrameUrl: detail.first_frame_url ?? null,
                   lastFrameUrl: detail.last_frame_url ?? null,
@@ -1044,22 +1060,17 @@ export const jobOrchestratorGateway = {
             return errorResponse("DELETE_FAILED", "Could not delete job. Please try again.", 500, ctx.requestId);
           }
 
-          // Best-effort: purge files from Storage. Group by bucket.
-          // storage_path may be a full URL (external provider) or a
-          // "<bucket>/<path>" string. We only delete from our own buckets.
-          const KNOWN_BUCKETS = ["merged-videos", "wan-frames", "user-videos"];
+          // Best-effort physical deletion. Service-role removes bypass Storage
+          // RLS, so prove each value belongs to this caller before deleting it.
+          const KNOWN_BUCKETS = ["merged-videos", "wan-frames", "user-videos"] as const;
           const byBucket: Record<string, string[]> = {};
           for (const raw of storagePaths) {
-            if (!raw || /^https?:\/\//i.test(raw)) {
-              // Try to extract bucket+path from a Supabase storage URL.
-              const m = raw.match(/\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)$/);
-              if (m && KNOWN_BUCKETS.includes(m[1])) {
-                (byBucket[m[1]] ??= []).push(decodeURIComponent(m[2]));
-              }
+            const owned = parseOwnedStorageRef(raw, SUPABASE_STORAGE_ORIGIN, auth.userId, KNOWN_BUCKETS);
+            if (!owned) {
+              if (raw) logError("skipped unowned storage purge path", { jobId: parsed.data.jobId });
               continue;
             }
-            const bucket = KNOWN_BUCKETS.find((b) => raw.startsWith(`${b}/`));
-            if (bucket) (byBucket[bucket] ??= []).push(raw.slice(bucket.length + 1));
+            (byBucket[owned.bucket] ??= []).push(owned.path);
           }
           for (const [bucket, paths] of Object.entries(byBucket)) {
             try {
