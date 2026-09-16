@@ -14,43 +14,7 @@ import type {
 } from "./contract.ts";
 import { getEnv } from "../../core/env.ts";
 import { logError, logInfo } from "../../core/observability.ts";
-
-// ---- Cost model -------------------------------------------------------------
-// Costs are real provider USD rates so audit logs reflect true spend.
-// Veo is per-second; Wan is flat per clip. The gateway converts USD to credits
-// by ×100 (1 credit = $0.01) before charging.
-interface ModelCost {
-  perSecondUsd?: number;
-  flatUsd?: number;
-}
-
-const COST_MAP_USD: Record<string, ModelCost> = {
-  // Google Veo — pricing per second of generated video.
-  // NOTE: the Veo 3.0 GA model ids were retired from the Gemini API
-  // (predictLongRunning now 404s for them). Only the Veo 3.1 preview family is
-  // available, so all flow routes resolve to these.
-  "veo-3.1-fast-generate-preview": { perSecondUsd: 0.10 },
-  "veo-3.1-generate-preview":      { perSecondUsd: 0.40 },
-  "veo-3.1-lite-generate-preview": { perSecondUsd: 0.10 },
-  // Alibaba Wan — flat per clip (5–10s)
-  "wan-video-1":              { flatUsd: 0.15 },
-  "wan2.7-i2v-2026-04-25":    { flatUsd: 0.15 },
-  "wan2.7-t2v-2026-04-25":    { flatUsd: 0.15 },
-};
-
-/** Compute USD cost for one generation, including Veo extension chain. */
-function computeUsd(resolvedModel: string, durationSeconds: number): number {
-  const cfg = COST_MAP_USD[resolvedModel];
-  if (!cfg) return 0;
-  if (cfg.flatUsd !== undefined) return cfg.flatUsd;
-  if (cfg.perSecondUsd !== undefined) {
-    // Veo single call is 8s; longer requests chain a 2nd call → bill both.
-    const calls = durationSeconds > 8 ? 2 : 1;
-    const billed = calls === 2 ? 16 : Math.min(8, durationSeconds);
-    return +(cfg.perSecondUsd * billed).toFixed(4);
-  }
-  return 0;
-}
+import { assertSupportedCloudModel, computeUsd } from "./model-policy.ts";
 
 /** Map the public model alias to a concrete provider model. The cheaper
  *  Veo 3.1 Fast tier is preferred by default; we fall back to Veo 3.1
@@ -672,6 +636,11 @@ async function resolveRoute(
   const resolvedModel = providerKey === "flow"
     ? resolveVeoModel(aliasOrModel, opts)
     : aliasOrModel;
+
+  // Never dispatch an arbitrary or unpriced cloud model. This validation is
+  // intentionally applied after alias resolution so both caller overrides and
+  // provider-registry defaults fail closed against the concrete model id.
+  assertSupportedCloudModel(providerKey, resolvedModel);
 
   const duration = opts.durationSeconds && opts.durationSeconds > 0
     ? opts.durationSeconds
