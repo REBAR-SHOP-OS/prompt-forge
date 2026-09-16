@@ -26,6 +26,10 @@ const wizardSource = readFileSync(
   path.resolve(process.cwd(), 'src/modules/generator-ui/components/MakeFilmWizardDialog.tsx'),
   'utf8',
 )
+const chooseProductDialogSource = readFileSync(
+  path.resolve(process.cwd(), 'src/modules/generator-ui/components/ChooseProductDialog.tsx'),
+  'utf8',
+)
 
 const groups: ProductPhotoGroup<Photo>[] = [
   {
@@ -51,7 +55,7 @@ describe('product identity categories and views', () => {
       'front.png',
       'side.png',
     ])
-    expect(wizardSource).toContain('aria-label="Product categories"')
+    expect(chooseProductDialogSource).toContain('aria-label="Product categories"')
     expect(wizardSource).toContain('visibleProductGroups.map((group)')
     expect(wizardSource).toContain('urls: signedAngles.map((angle) => angle.url)')
     expect(dashboardSource).toContain('visibleArchiveProductGroups.map((group)')
