@@ -12,9 +12,11 @@ export interface VeoExtensionClaimStore {
   ): Promise<boolean>;
 }
 
-export class ConfirmedVeoExtensionDispatchError extends Error {
+export class ConfirmedVeoProviderDispatchError extends Error {
   readonly confirmed = true;
 }
+
+export class ConfirmedVeoExtensionDispatchError extends ConfirmedVeoProviderDispatchError {}
 
 export type VeoExtensionDispatchResult<T> =
   | { status: "lost" }

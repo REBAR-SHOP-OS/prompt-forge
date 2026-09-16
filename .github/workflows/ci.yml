@@ -34,20 +34,27 @@ jobs:
 
       - name: Edge Function Deno check
         run: >-
-          deno check
+          deno check --no-lock
+          supabase/functions/ai-image-generate/index.ts
           supabase/functions/copyright-check/index.ts
           supabase/functions/image-reframe/index.ts
           supabase/functions/video-analyze/index.ts
+          supabase/functions/video-proxy/index.ts
           supabase/functions/video-transcript/index.ts
+          supabase/functions/_shared/modules/external-api-adapter/service.ts
 
       - name: Edge Function focused tests
         run: >-
-          deno test
+          deno test --no-lock
           supabase/functions/_shared/core/gemini-policy.deno.ts
           supabase/functions/_shared/core/safe-media-fetch.deno.ts
+          supabase/functions/_shared/core/upstream-error.deno.ts
+          supabase/functions/ai-image-generate/usage.deno.ts
           supabase/functions/copyright-check/ownership.deno.ts
           supabase/functions/image-reframe/owned-input.deno.ts
           supabase/functions/video-analyze/analysis.deno.ts
+          supabase/functions/video-analyze/body-limit.deno.ts
+          supabase/functions/video-proxy/proxy-token.deno.ts
           supabase/functions/video-transcript/security.deno.ts
 
       - name: Lint
