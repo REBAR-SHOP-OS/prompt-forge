@@ -1,27 +1,28 @@
+import { lazy, Suspense } from 'react'
 import { HashRouter } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/core/auth/AuthProvider'
 import { ThemeProvider } from '@/core/ui/ThemeProvider'
-import DashboardPage from './modules/generator-ui/pages/DashboardPage'
 import LoginPage from './pages/auth/LoginPage'
 import OAuthConsent from './pages/auth/OAuthConsent'
 import LoadingScreen from '@/core/ui/LoadingScreen'
 import RootErrorBoundary from '@/core/ui/RootErrorBoundary'
-import LibrarySyncGate from '@/modules/generator-ui/components/LibrarySyncGate'
+
+const AuthenticatedStudio = lazy(() => import('./modules/generator-ui/AuthenticatedStudio'))
 
 const isOAuthConsentPath = () =>
   typeof window !== 'undefined' &&
   window.location.pathname.replace(/\/+$/, '') === '/.lovable/oauth/consent'
 
-function Gate() {
+export function Gate() {
   const { session, loading } = useAuth()
 
   if (isOAuthConsentPath()) return <OAuthConsent />
 
   if (loading) return <LoadingScreen />
   return session ? (
-    <LibrarySyncGate>
-      <DashboardPage />
-    </LibrarySyncGate>
+    <Suspense fallback={<LoadingScreen />}>
+      <AuthenticatedStudio />
+    </Suspense>
   ) : (
     <LoginPage />
   )

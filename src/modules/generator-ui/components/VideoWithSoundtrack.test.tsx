@@ -105,7 +105,8 @@ describe("VideoWithSoundtrack", () => {
         musicFadeOutSec={2.5}
       />,
     );
-    const props = vi.mocked(PreviewSoundtrackWaveforms).mock.calls.at(-1)?.[0];
+    const waveformCalls = vi.mocked(PreviewSoundtrackWaveforms).mock.calls;
+    const props = waveformCalls[waveformCalls.length - 1]?.[0];
     expect(props).toEqual(expect.objectContaining({
       musicFadeInSec: 1.5,
       musicFadeOutSec: 2.5,
