@@ -156,3 +156,37 @@ describe("jobOrchestratorGateway.createJob", () => {
     }
   });
 });
+
+describe("jobOrchestratorGateway.deleteJob", () => {
+  beforeEach(() => {
+    requestMock.mockReset();
+  });
+
+  it("exposes truthful cancellation and purge outcomes", async () => {
+    requestMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "deleted_with_warnings",
+      jobId: "job-1",
+      localDeleted: true,
+      cancellation: {
+        status: "unsupported",
+        providerKey: "local",
+        providerJobId: "local:job-1",
+        message: "Local router has no configured per-job cancellation route",
+      },
+      purge: { status: "partial", attempted: 2, failed: 1 },
+      requestId: "req-1",
+    });
+
+    const { jobOrchestratorGateway } = await import("./gateway");
+    const result = await jobOrchestratorGateway.deleteJob("job-1");
+
+    expect(result.outcome).toBe("deleted_with_warnings");
+    expect(result.cancellation.status).toBe("unsupported");
+    expect(result.purge).toEqual({ status: "partial", attempted: 2, failed: 1 });
+    expect(requestMock).toHaveBeenCalledWith("/jobs-delete", {
+      method: "POST",
+      body: JSON.stringify({ jobId: "job-1" }),
+    });
+  });
+});

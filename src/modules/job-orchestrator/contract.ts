@@ -75,8 +75,32 @@ export interface CreateJobResult {
   requestId: string;
 }
 
+export interface JobDeleteCancellation {
+  status: "not_needed" | "requested" | "unsupported" | "failed";
+  providerKey: string | null;
+  providerJobId: string | null;
+  message: string | null;
+}
+
+export interface JobDeletePurge {
+  status: "not_needed" | "purged" | "partial";
+  attempted: number;
+  failed: number;
+}
+
+export interface JobDeleteResult {
+  ok: true;
+  outcome: "deleted" | "deleted_with_warnings" | "already_absent";
+  jobId: string;
+  localDeleted: boolean;
+  cancellation: JobDeleteCancellation;
+  purge: JobDeletePurge;
+  requestId?: string;
+}
+
 export interface JobApi {
   listMyJobs(): Promise<JobSummary[]>;
   createJob(input: CreateJobInput): Promise<CreateJobResult>;
   getJob(jobId: string): Promise<JobDetail>;
+  deleteJob(jobId: string): Promise<JobDeleteResult>;
 }

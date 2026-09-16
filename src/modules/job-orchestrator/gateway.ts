@@ -5,7 +5,7 @@
 //   - createJob(input) -> CreateJobResult
 //   - getJob(jobId)    -> JobDetail
 import { ApiError, request } from "@/core/api/client";
-import type { CreateJobInput, CreateJobResult, JobDetail, JobSummary } from "./contract";
+import type { CreateJobInput, CreateJobResult, JobDeleteResult, JobDetail, JobSummary } from "./contract";
 
 export const JOB_ORCHESTRATOR_CONTRACT_VERSION = "v1" as const;
 
@@ -119,7 +119,7 @@ export const jobOrchestratorGateway = {
   },
 
   deleteJob: (jobId: string) =>
-    request<{ ok: true; jobId: string }>("/jobs-delete", {
+    request<JobDeleteResult>("/jobs-delete", {
       method: "POST",
       body: JSON.stringify({ jobId }),
     }),
