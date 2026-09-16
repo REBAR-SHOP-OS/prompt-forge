@@ -4,6 +4,9 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+import { getServiceClient } from "../_shared/core/supabase.ts";
+import { geminiGenerateContentUrl } from "../_shared/core/gemini-policy.ts";
+import { ownsGenerationJob } from "./ownership.ts";
 
 const INLINE_VIDEO_BYTES = 18 * 1024 * 1024; // inline only small videos (Gemini ~20MB request cap)
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // larger videos go through the Files API (up to 2GB supported)
@@ -124,6 +127,8 @@ async function uploadToGemini(apiKey: string, bytes: Uint8Array, mimeType: strin
   const uploadUrl = startResp.headers.get("x-goog-upload-url");
   if (!uploadUrl) throw new Error("no upload url");
 
+  const uploadBody = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(uploadBody).set(bytes);
   const uploadResp = await fetch(uploadUrl, {
     method: "POST",
     headers: {
@@ -131,7 +136,7 @@ async function uploadToGemini(apiKey: string, bytes: Uint8Array, mimeType: strin
       "X-Goog-Upload-Offset": "0",
       "Content-Length": String(bytes.byteLength),
     },
-    body: bytes,
+    body: uploadBody,
   });
   if (!uploadResp.ok) throw new Error(`files upload ${uploadResp.status}`);
   const uploaded = await uploadResp.json();
@@ -180,6 +185,12 @@ Deno.serve(async (req) => {
     const musicUrl: string = typeof body?.musicUrl === "string" ? body.musicUrl.trim() : "";
     const voiceoverUrl: string = typeof body?.voiceoverUrl === "string" ? body.voiceoverUrl.trim() : "";
     const jobId: string = typeof body?.jobId === "string" ? body.jobId.trim() : "";
+
+    if (jobId && !(await ownsGenerationJob(getServiceClient(), auth.userId, jobId))) {
+      return new Response(JSON.stringify({ error: "Job not found" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!videoUrl || !isAllowedUrl(videoUrl)) {
       return new Response(JSON.stringify({ error: "videoUrl is required and must be a Supabase storage URL" }), {
@@ -239,7 +250,7 @@ Deno.serve(async (req) => {
     parts.push({ text: ANALYSIS_PROMPT });
 
     const geminiResp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
+      geminiGenerateContentUrl(apiKey),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

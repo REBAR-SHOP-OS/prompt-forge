@@ -1,17 +1,33 @@
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors'
-import { z } from 'npm:zod@3'
+import { z } from 'npm:zod@4'
+import { authenticate } from '../_shared/core/auth.ts'
+import { getServiceClient } from '../_shared/core/supabase.ts'
+import { rateLimit } from '../_shared/core/ratelimit.ts'
+import { fetchBoundedStorageObject, MediaFetchError } from '../_shared/core/safe-media-fetch.ts'
+import {
+  decodedBase64Size,
+  MAX_MEDIA_BYTES,
+  MAX_TRANSCRIPT_CHARS,
+  parseOwnedTranscriptMedia,
+  readBoundedRequestText,
+  RequestBodyTooLargeError,
+  TRANSCRIPT_DAILY_QUOTA,
+  TRANSCRIPT_FETCH_TIMEOUT_MS,
+  TRANSCRIPT_RATE_LIMIT,
+  TRANSCRIPT_WINDOW_MS,
+} from './security.ts'
 
 const GATEWAY = 'https://ai.gateway.lovable.dev/v1'
 
 const BodySchema = z.object({
-  videoUrl: z.string().url().optional(),
-  storagePath: z.string().min(1).optional(),
+  videoUrl: z.string().max(4096).optional(),
+  storagePath: z.string().min(1).max(4096).optional(),
   // Raw audio bytes (base64) to transcribe directly — used when the caller only
   // has a browser blob: URL that the server cannot fetch.
-  audioBase64: z.string().min(1).optional(),
+  audioBase64: z.string().min(1).max(Math.ceil(MAX_MEDIA_BYTES * 4 / 3) + 128).optional(),
   mimeType: z.string().min(1).max(128).optional(),
   // When provided, the function only translates the supplied transcript.
-  transcript: z.string().min(1).optional(),
+  transcript: z.string().min(1).max(MAX_TRANSCRIPT_CHARS).optional(),
   targetLanguage: z.string().min(1).max(64).optional(),
 }).refine(
   (v) => Boolean(v.videoUrl || v.storagePath || v.audioBase64 || v.transcript),
@@ -198,14 +214,38 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    const auth = await authenticate(req)
+    if (!auth) return json({ error: 'Unauthorized' }, 401)
+    if (!rateLimit(`video-transcript:${auth.userId}`, TRANSCRIPT_RATE_LIMIT, TRANSCRIPT_WINDOW_MS)) {
+      return json({ error: 'Too many requests. Please try again shortly.' }, 429)
+    }
+
     const apiKey = Deno.env.get('LOVABLE_API_KEY')
     if (!apiKey) return json({ error: 'LOVABLE_API_KEY is not configured' }, 500)
 
-    const parsed = BodySchema.safeParse(await req.json().catch(() => ({})))
+    let rawBody: string
+    try {
+      rawBody = await readBoundedRequestText(req)
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) return json({ error: error.message }, 413)
+      throw error
+    }
+    if (!rawBody) return json({ error: 'JSON body required' }, 400)
+    let body: unknown
+    try { body = JSON.parse(rawBody) } catch { return json({ error: 'Invalid JSON body' }, 400) }
+    const parsed = BodySchema.safeParse(body)
     if (!parsed.success) {
       return json({ error: parsed.error.flatten().formErrors.join(', ') || 'Invalid request' }, 400)
     }
     const { videoUrl, storagePath, audioBase64, mimeType, transcript: providedTranscript, targetLanguage } = parsed.data
+
+    const service = getServiceClient()
+    const { data: quotaGranted, error: quotaError } = await service.rpc('claim_video_transcript_quota', {
+      _user_id: auth.userId,
+      _daily_limit: TRANSCRIPT_DAILY_QUOTA,
+    })
+    if (quotaError) return json({ error: 'Transcript quota is temporarily unavailable' }, 503)
+    if (quotaGranted !== true) return json({ error: 'Daily transcript quota reached' }, 429)
 
     // Translate-only path: caller already has the transcript cached.
     if (providedTranscript) {
@@ -220,6 +260,9 @@ Deno.serve(async (req) => {
 
     if (audioBase64) {
       // Direct raw-audio path (e.g. a browser blob: URL the server can't fetch).
+      if (decodedBase64Size(audioBase64) > MAX_MEDIA_BYTES) {
+        return json({ error: 'Audio is too large to transcribe.' }, 413)
+      }
       let bytes: Uint8Array
       try {
         const clean = audioBase64.includes(',') ? audioBase64.split(',').pop()! : audioBase64
@@ -230,20 +273,35 @@ Deno.serve(async (req) => {
         return json({ error: 'Invalid audioBase64 payload.' }, 400)
       }
       contentType = mimeType ?? 'audio/wav'
-      videoBytes = new Blob([bytes], { type: contentType })
+      const audioBuffer = new ArrayBuffer(bytes.byteLength)
+      new Uint8Array(audioBuffer).set(bytes)
+      videoBytes = new Blob([audioBuffer], { type: contentType })
       // Give the STT format-inference a filename hint via the mime type.
       sourceUrl = `audio.${contentType.includes('mpeg') || contentType.includes('mp3') ? 'mp3' : contentType.includes('webm') ? 'webm' : contentType.includes('mp4') || contentType.includes('m4a') ? 'm4a' : contentType.includes('ogg') ? 'ogg' : 'wav'}`
       if (videoBytes.size < 1024) {
         return json({ error: 'The audio is empty or too small to transcribe.' }, 400)
       }
     } else {
-      sourceUrl = videoUrl ?? storagePath!
-      const videoRes = await fetch(sourceUrl)
-      if (!videoRes.ok) {
-        return json({ error: `Could not load video (${videoRes.status})` }, 502)
+      const storageOrigin = new URL(Deno.env.get('SUPABASE_URL') ?? '').origin
+      const owned = parseOwnedTranscriptMedia(videoUrl ?? storagePath!, storageOrigin, auth.userId)
+      if (!owned) return json({ error: 'Media must be an authenticated-user-owned storage object' }, 403)
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      if (!serviceKey) return json({ error: 'Storage service is not configured' }, 500)
+      const fetched = await fetchBoundedStorageObject({
+        origin: storageOrigin,
+        serviceKey,
+        ref: owned,
+        maxBytes: MAX_MEDIA_BYTES,
+        timeoutMs: TRANSCRIPT_FETCH_TIMEOUT_MS,
+      })
+      contentType = fetched.contentType
+      if (contentType && !/^(audio|video)\//i.test(contentType)) {
+        return json({ error: 'Storage object is not supported audio or video' }, 415)
       }
-      videoBytes = await videoRes.blob()
-      contentType = videoRes.headers.get('content-type')
+      const mediaBuffer = new ArrayBuffer(fetched.bytes.byteLength)
+      new Uint8Array(mediaBuffer).set(fetched.bytes)
+      videoBytes = new Blob([mediaBuffer], { type: contentType ?? 'video/mp4' })
+      sourceUrl = owned.path
       if (videoBytes.size < 1024) {
         return json({ error: 'The video file is empty or too small to transcribe.' }, 400)
       }
@@ -266,6 +324,7 @@ Deno.serve(async (req) => {
 
     return json({ transcript, words, translatedText, targetLanguage })
   } catch (e) {
+    if (e instanceof MediaFetchError) return json({ error: e.message }, e.status)
     const status = (e as Error & { status?: number }).status
     const message = e instanceof Error ? e.message : 'Unexpected error'
     if (status === 402) return json({ error: 'AI credits exhausted. Please add credits.' }, 402)
