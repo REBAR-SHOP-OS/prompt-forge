@@ -208,7 +208,7 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
     await chooseProduct()
     expect(writeButton).toBeEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove product' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(writeButton).toBeDisabled()
   }, 10_000)
 

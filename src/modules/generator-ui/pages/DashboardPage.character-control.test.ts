@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import source from './DashboardPage.tsx?raw'
 
 const characterMenuStart = source.indexOf('<Popover\n              open={characterMenuOpen}')
-const productMenuStart = source.indexOf('<Popover\n              open={productMenuOpen}', characterMenuStart)
+const productMenuStart = source.indexOf('<ChooseProductDialog', characterMenuStart)
 
 expect(characterMenuStart, 'character popover marker not found').toBeGreaterThan(-1)
-expect(productMenuStart, 'product popover marker not found').toBeGreaterThan(characterMenuStart)
+expect(productMenuStart, 'product picker marker not found').toBeGreaterThan(characterMenuStart)
 
 const characterMenu = source.slice(characterMenuStart, productMenuStart)
 
