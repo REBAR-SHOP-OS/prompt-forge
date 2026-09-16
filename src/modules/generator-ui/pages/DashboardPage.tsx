@@ -135,8 +135,9 @@ import {
   type LibraryCardPreviewAsset,
 } from '@/modules/generator-ui/lib/libraryCardPreview'
 import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
-import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
+import type { CreateJobResult, JobDeleteResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
+import { createSubmitAttemptCoordinator, type SubmitAttemptLease } from '@/modules/generator-ui/lib/submitAttempt'
 import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
@@ -778,6 +779,20 @@ function isExpectedLocalRouterError(error: unknown): boolean {
     error.code === 'LOCAL_UNREACHABLE' ||
     error.code === 'LOCAL_NOT_CONFIGURED'
   )
+}
+
+function jobDeleteWarning(result: JobDeleteResult): string | null {
+  const warnings: string[] = []
+  if (result.cancellation.status === 'unsupported') {
+    warnings.push(result.cancellation.message ?? 'The provider does not support safe per-job cancellation.')
+  } else if (result.cancellation.status === 'failed') {
+    warnings.push(result.cancellation.message ?? 'Provider cancellation could not be confirmed.')
+  }
+  if (result.purge.status === 'partial') {
+    warnings.push(`${result.purge.failed} of ${result.purge.attempted} stored files could not be removed.`)
+  }
+  if (warnings.length === 0) return null
+  return `Deleted locally with warnings: ${warnings.join(' ')}`
 }
 
 export function generationStartErrorMessage(error: unknown, fallback: string): string {
@@ -1762,9 +1777,11 @@ export default function DashboardPage() {
   const handleDeleteArchiveJob = async (jobId: string) => {
     setDeletingArchiveId(jobId)
     try {
-      await jobOrchestratorGateway.deleteJob(jobId)
+      const deletion = await jobOrchestratorGateway.deleteJob(jobId)
       setArchiveJobs((prev) => prev.filter((j) => j.id !== jobId))
       setArchiveVideos((prev) => prev.filter((v) => v.job_id !== jobId))
+      const warning = jobDeleteWarning(deletion)
+      if (warning) setVideoColumnMessage(warning)
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
@@ -3669,6 +3686,11 @@ export default function DashboardPage() {
         const msg = reason instanceof ApiError ? reason.message : (reason as Error)?.message ?? 'Unknown error'
         if (typeof window !== 'undefined') window.alert(`Some files could not be deleted: ${msg}`)
       }
+      const deletionWarnings = results
+        .slice(0, clipIds.length)
+        .flatMap((result) => result.status === 'fulfilled' ? [jobDeleteWarning(result.value as JobDeleteResult)] : [])
+        .filter((warning): warning is string => Boolean(warning))
+      if (deletionWarnings.length > 0) setVideoColumnMessage(deletionWarnings.join(' '))
       return
     }
 
@@ -3822,8 +3844,11 @@ export default function DashboardPage() {
         }
       } else {
         // Real job: permanently delete it on the server, which also removes
-        // the video file(s) from Storage.
-        await jobOrchestratorGateway.deleteJob(jobId)
+        // the video file(s) from Storage. A provider/storage warning does not
+        // resurrect the locally deleted card, but it must remain visible.
+        const deletion = await jobOrchestratorGateway.deleteJob(jobId)
+        const warning = jobDeleteWarning(deletion)
+        if (warning) setVideoColumnMessage(warning)
       }
     } catch (err) {
       // Roll back the optimistic removal on failure.
@@ -3838,6 +3863,7 @@ export default function DashboardPage() {
 
   const pollTimerRef = useRef<number | null>(null)
   const pollFailureCountRef = useRef(0)
+  const submitAttemptCoordinatorRef = useRef(createSubmitAttemptCoordinator())
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -7025,6 +7051,10 @@ export default function DashboardPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // React state updates are asynchronous; acquire this lease synchronously so
+    // two submit events in the same tick cannot both reach paid job creation.
+    const submitAttempt = submitAttemptCoordinatorRef.current.begin()
+    if (!submitAttempt) return
 
     // Scenario-writer multi-scene flow: when prompt is tagged with "=== Scene N ===",
     // split into per-scene cards and chain them with continuity instead of a single job.
@@ -7038,15 +7068,18 @@ export default function DashboardPage() {
       setUploadedFiles([])
       setComposerError(null)
       try {
-        await submitScenesAsJobs(parsedScenes, firstSceneImageUrl)
+        await submitScenesAsJobs(parsedScenes, firstSceneImageUrl, { submitAttempt })
       } catch {
         /* error already surfaced via composer/videoColumnMessage */
+      } finally {
+        submitAttempt.release()
       }
       return
     }
 
     if (!canSubmit) {
       setComposerError(blockedReason ?? 'Add a prompt and Start/End frames before rendering.')
+      submitAttempt.release()
       return
     }
 
@@ -7138,7 +7171,7 @@ export default function DashboardPage() {
           setPromptText('')
           setUploadedFiles([])
           setIsSubmitting(false)
-          await submitScenesAsJobs(autoScenes, readyStartFrame?.url ?? undefined)
+          await submitScenesAsJobs(autoScenes, readyStartFrame?.url ?? undefined, { submitAttempt })
           return
         }
         // 45s/135s retain their existing legacy fallback. The 30s plan above
@@ -7217,6 +7250,7 @@ export default function DashboardPage() {
       const treatTextToVideo = isTextToVideo && !seededAnyFrame
       for (let i = 0; i < iterations; i++) {
         let createdJob
+        const clientRequestId = submitAttempt.keyForSlot(`clip:${i}`)
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
         const pendingEndAppendUrl: string | null = null
         const pendingStartPrependUrl: string | null = null
@@ -7225,6 +7259,7 @@ export default function DashboardPage() {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: effectiveModel.providerKey,
             requestedModel: effectiveModel.model,
+            clientRequestId,
             prompt: plannedPrompt,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
@@ -7236,6 +7271,7 @@ export default function DashboardPage() {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: effectiveModel.providerKey,
             requestedModel: effectiveModel.model,
+            clientRequestId,
             prompt: plannedPrompt,
             firstFrameUrl: bakedStartFrameUrl,
             lastFrameUrl: readyEndFrame.url,
@@ -7251,6 +7287,7 @@ export default function DashboardPage() {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: effectiveModel.providerKey,
             requestedModel: effectiveModel.model,
+            clientRequestId,
             prompt: plannedPrompt,
             firstFrameUrl: startUrl,
             durationSeconds: perClipDuration,
@@ -7264,6 +7301,7 @@ export default function DashboardPage() {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: effectiveModel.providerKey,
             requestedModel: effectiveModel.model,
+            clientRequestId,
             prompt: plannedPrompt,
             lastFrameUrl: readyEndFrame.url,
             durationSeconds: perClipDuration,
@@ -7334,6 +7372,7 @@ export default function DashboardPage() {
       setVideoColumnMessage((current) => current ?? message)
     } finally {
       setIsSubmitting(false)
+      submitAttempt.release()
     }
   }
 
@@ -7431,6 +7470,8 @@ export default function DashboardPage() {
       suppressPreviewUntilBatchSettles?: boolean
       /** Explicit flag: true when the wizard produced plan-based 5s shots. */
       isPlanBased?: boolean
+      /** Stable per-scene idempotency keys for one guarded composer submit. */
+      submitAttempt?: SubmitAttemptLease
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7644,6 +7685,7 @@ export default function DashboardPage() {
         const createdJob = await jobOrchestratorGateway.createJob({
           providerKey: scenarioModel.providerKey,
           requestedModel: scenarioModel.model,
+          clientRequestId: opts?.submitAttempt?.keyForSlot(`scene:${i}`),
           prompt,
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
