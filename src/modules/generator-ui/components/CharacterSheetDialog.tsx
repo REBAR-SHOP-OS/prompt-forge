@@ -233,11 +233,12 @@ export default function CharacterSheetDialog({
             .from(USER_IMAGES_BUCKET)
             .upload(path, file, { contentType: file.type, upsert: false })
           if (up.error) throw up.error
+          const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
           const { data: row, error: insErr } = await supabase
             .from('generator_user_images')
             .insert({
               user_id: userId,
-              storage_path: path,
+              storage_path: pub.publicUrl,
               size_bytes: file.size,
               mime_type: file.type,
               category: CHARACTER_CATEGORY,
@@ -311,7 +312,10 @@ export default function CharacterSheetDialog({
         .from(USER_IMAGES_BUCKET)
         .upload(path, file, { contentType: file.type, upsert: false })
       if (up.error) throw up.error
-      const signedLogo = (await signUrl(path)) ?? path
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      // Prefer a signed URL; fall back to the public URL (bucket is public) so
+      // the logo still renders if signing is unavailable.
+      const signedLogo = (await signUrl(pub.publicUrl)) ?? pub.publicUrl
       setLogoSendUrl(signedLogo)
       setLogoUrl(signedLogo)
       setApplyLogo(true)

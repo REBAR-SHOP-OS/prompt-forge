@@ -108,23 +108,6 @@ export async function queueSequentialSceneBatch(
   return jobIds
 }
 
-const DEADLINE_REACHED = Symbol('scene-batch-deadline')
-
-async function settleBeforeDeadline<T>(promise: Promise<T>, remainingMs: number): Promise<T | typeof DEADLINE_REACHED> {
-  if (remainingMs <= 0) return DEADLINE_REACHED
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<typeof DEADLINE_REACHED>((resolve) => {
-        timer = setTimeout(() => resolve(DEADLINE_REACHED), remainingMs)
-      }),
-    ])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
 export async function waitForSceneBatch(
   jobIds: string[],
   getJob: (jobId: string) => Promise<BatchJob>,
@@ -147,14 +130,9 @@ export async function waitForSceneBatch(
 
   while (pending.size > 0 && now() < deadline) {
     for (const id of Array.from(pending)) {
-      const remainingMs = deadline - now()
-      if (remainingMs <= 0) break
-
       let job: BatchJob
       try {
-        const result = await settleBeforeDeadline(getJob(id), remainingMs)
-        if (result === DEADLINE_REACHED) break
-        job = result
+        job = await getJob(id)
       } catch {
         continue
       }

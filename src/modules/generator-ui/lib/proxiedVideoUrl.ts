@@ -216,21 +216,6 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     throw new Error("Not authenticated: cannot proxy video URL");
   }
 
-  const response = await fetch(`${FUNCTIONS_BASE}/video-proxy`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ url }),
-  });
-  if (!response.ok) {
-    throw new Error(`Could not authorize video proxy (${response.status})`);
-  }
-  const payload = await response.json().catch(() => ({}));
-  const playbackUrl = typeof payload?.url === "string" ? payload.url : "";
-  if (!playbackUrl.startsWith(`${FUNCTIONS_BASE}/video-proxy?proxy_token=`)) {
-    throw new Error("Video proxy returned an invalid playback URL");
-  }
-  return playbackUrl;
+  const qs = new URLSearchParams({ url, token });
+  return `${FUNCTIONS_BASE}/video-proxy?${qs.toString()}`;
 }

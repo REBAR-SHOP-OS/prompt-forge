@@ -931,19 +931,20 @@ export default function AiImageDialog({
         .from(USER_IMAGES_BUCKET)
         .upload(path, blob, { contentType: blob.type || 'image/png', upsert: false })
       if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      const publicUrl = pub.publicUrl
       const { data: row, error: insErr } = await supabase
         .from('generator_user_images')
         .insert({
           user_id: userId,
-          storage_path: path,
+          storage_path: publicUrl,
           size_bytes: blob.size,
           mime_type: blob.type || 'image/png',
         })
         .select('id, storage_path, created_at, still_duration_seconds, width, height')
         .single()
       if (insErr) throw insErr
-      const { data: signed } = await supabase.storage.from(USER_IMAGES_BUCKET).createSignedUrl(path, 60 * 60 * 24)
-      onSaved({ ...(row as AiImageSavedRow), storage_path: signed?.signedUrl ?? path })
+      onSaved(row as AiImageSavedRow)
       onOpenChange(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save image.')

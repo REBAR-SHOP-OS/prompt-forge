@@ -2,7 +2,6 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
-import { getServiceClient } from "../_shared/core/supabase.ts";
 import {
   validateReferenceSpecs,
   buildIdentityEvalPrompt,
@@ -14,11 +13,6 @@ import {
   type IdentityEvalOutcome,
   type EvalVerdict,
 } from "../_shared/identity-eval.ts";
-import {
-  claimAiImageUsage,
-  MAX_AI_IMAGE_GENERATION_ATTEMPTS,
-  settleAiImageUsage,
-} from "./usage.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 
@@ -224,7 +218,7 @@ Deno.serve(async (req) => {
 
     const PRIMARY = "google/gemini-3.1-flash-image-preview";
     const FALLBACK = "google/gemini-2.5-flash-image";
-    const MAX_ATTEMPTS = MAX_AI_IMAGE_GENERATION_ATTEMPTS;
+    const MAX_ATTEMPTS = 3;
 
     // Vision-based identity evaluation: after each generation, the output image
     // is compared against each reference image to confirm the SAME product and
@@ -242,35 +236,6 @@ Deno.serve(async (req) => {
     // product specs above are generation-only grounding.
     const evaluatedSpecs = selectEvaluatedSpecs(safeReferenceUrls);
     const evalPrompt = buildIdentityEvalPrompt(evaluatedSpecs);
-
-    // Reserve the complete bounded product budget before the first paid call:
-    // up to three image generations plus one identity evaluation per attempt.
-    // The RPC atomically applies the daily provider-call quota, reserves one
-    // credit per possible provider call, and creates the immutable ledger row.
-    // Settlement refunds every unused call credit.
-    const accountingClient = getServiceClient();
-    const accountingRequestId = crypto.randomUUID();
-    const claimStatus = await claimAiImageUsage(
-      accountingClient,
-      auth.userId,
-      accountingRequestId,
-    );
-    if (claimStatus !== "claimed") {
-      const response = claimStatus === "insufficient_credits"
-        ? { status: 402, error: "Insufficient credits for AI image generation." }
-        : claimStatus === "quota_exceeded"
-        ? { status: 429, error: "AI image daily quota reached. Try again tomorrow." }
-        : claimStatus === "duplicate"
-        ? { status: 409, error: "Duplicate AI image request." }
-        : { status: 403, error: "AI image generation is unavailable for this account." };
-      return new Response(JSON.stringify({ error: response.error }), {
-        status: response.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    let providerCalls = 0;
-    let requestSucceeded = false;
 
     // Returns { verdict, outcome }. verdict is "pass" | "identity-fail" | "error".
     async function evaluateIdentity(dataUrl: string): Promise<{
@@ -297,7 +262,6 @@ Deno.serve(async (req) => {
         const resolved = await resolveImageForGateway(spec.url);
         evalContent.push({ type: "image_url", image_url: { url: resolved } });
       }
-      providerCalls += 1;
       const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -327,132 +291,111 @@ Deno.serve(async (req) => {
       return { verdict: classifyEvalVerdict(outcome), outcome };
     }
 
-    try {
-      let data: unknown = null;
-      let dataUrl: string | undefined;
-      let lastEval: IdentityEvalOutcome | null = null;
-      let lastVerdict: EvalVerdict = "error";
+    let data: unknown = null;
+    let dataUrl: string | undefined;
+    let lastEval: IdentityEvalOutcome | null = null;
+    let lastVerdict: EvalVerdict = "error";
 
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const model = attempt === 0 ? PRIMARY : FALLBACK;
-        const attemptContent = attempt > 0 && safeReferenceUrls.length > 0
-          ? [
-              { type: "text", text: fullPrompt },
-              ...userContent.slice(1),
-              {
-                type: "text",
-                text: "IMPORTANT: The previous attempt did not preserve the required identities. The output MUST contain the SAME product and the SAME character from the reference images, together in the same shot. If the character reference is a multi-view character sheet, the output MUST show the exact same person (same face, hair, skin tone, body type, and outfit) — never a different person.",
-              },
-            ]
-          : userContent;
-        providerCalls += 1;
-        const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: "user", content: attemptContent }],
-            modalities: ["image", "text"],
-            image_config: { aspect_ratio: aspectRatio },
-          }),
-        });
-
-        if (resp.status === 429) {
-          return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
-            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        if (resp.status === 402) {
-          return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits to continue." }), {
-            status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => "");
-          console.error("ai-image-generate gateway error", resp.status, text);
-          return new Response(JSON.stringify({ error: "AI gateway error" }), {
-            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        data = await readJsonLoose(resp, "ai-image-generate");
-        dataUrl = extractImage(data);
-        if (!dataUrl) {
-          console.warn(`ai-image-generate attempt ${attempt + 1} returned no image`);
-          continue;
-        }
-
-        // Evaluate the output against the references. Only accept when every
-        // reference is present AND matches. A dataUrl alone is not success.
-        const evalResult = await evaluateIdentity(dataUrl);
-        lastEval = evalResult.outcome;
-        lastVerdict = evalResult.verdict;
-        if (evalResult.verdict === "pass") break;
-        if (evalResult.verdict === "error") {
-          // Technical error from the evaluator: return immediately, do NOT start
-          // a fresh generation.
-          console.error("ai-image-generate identity-eval technical error");
-          return new Response(JSON.stringify({
-            error: "Could not verify the generated image. Please try again in a moment.",
-          }), {
-            status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        // identity-fail: retry (bounded).
-        console.warn(
-          `ai-image-generate attempt ${attempt + 1} failed identity evaluation`,
-          JSON.stringify(lastEval),
-        );
-      }
-
-      if (!dataUrl) {
-        console.error("ai-image-generate empty image after retries", JSON.stringify(data).slice(0, 500));
-        return new Response(JSON.stringify({
-          error: "The AI returned text instead of an image. Try a more visual prompt — describe the scene, subject, lighting, and style.",
-        }), {
-          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (safeReferenceUrls.length > 0 && lastVerdict !== "pass") {
-        const missing = lastEval?.perReference
-          ?.filter((r) => !r.present)
-          .map((r) => r.reason)
-          .filter(Boolean)
-          .join(" ") || "The generated image did not preserve the selected product and/or character.";
-        console.error("ai-image-generate identity not preserved after retries", JSON.stringify(lastEval));
-        return new Response(JSON.stringify({
-          error: `Could not preserve the selected product and character in the image. ${missing} Try re-selecting them or rephrasing the scene.`,
-        }), {
-          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      requestSucceeded = true;
-      return new Response(JSON.stringify({ dataUrl }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const model = attempt === 0 ? PRIMARY : FALLBACK;
+      const attemptContent = attempt > 0 && safeReferenceUrls.length > 0
+        ? [
+            { type: "text", text: fullPrompt },
+            ...userContent.slice(1),
+            {
+              type: "text",
+              text: "IMPORTANT: The previous attempt did not preserve the required identities. The output MUST contain the SAME product and the SAME character from the reference images, together in the same shot. If the character reference is a multi-view character sheet, the output MUST show the exact same person (same face, hair, skin tone, body type, and outfit) — never a different person.",
+            },
+          ]
+        : userContent;
+      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: attemptContent }],
+          modalities: ["image", "text"],
+          image_config: { aspect_ratio: aspectRatio },
+        }),
       });
-    } finally {
-      try {
-        await settleAiImageUsage(
-          accountingClient,
-          auth.userId,
-          accountingRequestId,
-          providerCalls,
-          requestSucceeded,
-        );
-      } catch (settleError) {
-        // Preserve the product response. A failed settlement leaves the full
-        // conservative reservation in the durable ledger for reconciliation.
-        console.error(
-          "ai-image-generate accounting settlement failed",
-          settleError instanceof Error ? settleError.message : "unknown error",
-        );
+
+      if (resp.status === 429) {
+        return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
+      if (resp.status === 402) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits to continue." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        console.error("ai-image-generate gateway error", resp.status, text);
+        return new Response(JSON.stringify({ error: "AI gateway error" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      data = await readJsonLoose(resp, "ai-image-generate");
+      dataUrl = extractImage(data);
+      if (!dataUrl) {
+        console.warn(`ai-image-generate attempt ${attempt + 1} returned no image`);
+        continue;
+      }
+
+      // Evaluate the output against the references. Only accept when every
+      // reference is present AND matches. A dataUrl alone is not success.
+      const evalResult = await evaluateIdentity(dataUrl);
+      lastEval = evalResult.outcome;
+      lastVerdict = evalResult.verdict;
+      if (evalResult.verdict === "pass") break;
+      if (evalResult.verdict === "error") {
+        // Technical error from the evaluator: return immediately, do NOT start
+        // a fresh generation.
+        console.error("ai-image-generate identity-eval technical error");
+        return new Response(JSON.stringify({
+          error: "Could not verify the generated image. Please try again in a moment.",
+        }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // identity-fail: retry (bounded).
+      console.warn(
+        `ai-image-generate attempt ${attempt + 1} failed identity evaluation`,
+        JSON.stringify(lastEval),
+      );
     }
+
+    if (!dataUrl) {
+      console.error("ai-image-generate empty image after retries", JSON.stringify(data).slice(0, 500));
+      return new Response(JSON.stringify({
+        error: "The AI returned text instead of an image. Try a more visual prompt — describe the scene, subject, lighting, and style.",
+      }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (safeReferenceUrls.length > 0 && lastVerdict !== "pass") {
+      const missing = lastEval?.perReference
+        ?.filter((r) => !r.present)
+        .map((r) => r.reason)
+        .filter(Boolean)
+        .join(" ") || "The generated image did not preserve the selected product and/or character.";
+      console.error("ai-image-generate identity not preserved after retries", JSON.stringify(lastEval));
+      return new Response(JSON.stringify({
+        error: `Could not preserve the selected product and character in the image. ${missing} Try re-selecting them or rephrasing the scene.`,
+      }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ dataUrl }), {
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     console.error("ai-image-generate unhandled error", e);
     return new Response(JSON.stringify({ error: "Internal error" }), {

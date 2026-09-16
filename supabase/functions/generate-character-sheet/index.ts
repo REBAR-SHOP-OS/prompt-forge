@@ -220,6 +220,8 @@ Deno.serve(async (req) => {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const { data: pub } = svc.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path);
+
     // 3) Insert a character row. The image_type is set explicitly to
     //    'character_sheet' so the wizard and evaluator know this is a multi-view
     //    character sheet (a single identity) without guessing from the title or
@@ -228,7 +230,7 @@ Deno.serve(async (req) => {
       .from("generator_user_images")
       .insert({
         user_id: auth.userId,
-        storage_path: path,
+        storage_path: pub.publicUrl,
         size_bytes: outBytes.byteLength,
         mime_type: outMime,
         category: "character",
@@ -245,13 +247,13 @@ Deno.serve(async (req) => {
     }
 
     // 4) Signed URL for immediate display (bucket is private).
-    let signedUrl = path;
+    let signedUrl = pub.publicUrl;
     try {
       const { data: signed } = await svc.storage
         .from(USER_IMAGES_BUCKET)
         .createSignedUrl(path, 60 * 60 * 24 * 365);
       if (signed?.signedUrl) signedUrl = signed.signedUrl;
-    } catch { /* fall back to the private canonical path */ }
+    } catch { /* fall back to public url */ }
 
     return new Response(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

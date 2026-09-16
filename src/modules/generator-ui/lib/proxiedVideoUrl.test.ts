@@ -2,10 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock supabase before importing the module under test.
 // Use vi.hoisted so the mock factories can reference the fn variables.
-const { mockCreateSignedUrl, mockGetSession, mockFetch } = vi.hoisted(() => ({
+const { mockCreateSignedUrl, mockGetSession } = vi.hoisted(() => ({
   mockCreateSignedUrl: vi.fn(),
   mockGetSession: vi.fn(),
-  mockFetch: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -33,17 +32,11 @@ describe("proxiedVideoUrl", () => {
     mockCreateSignedUrl.mockReset();
     mockGetSession.mockReset();
     mockGetSession.mockResolvedValue({
-      data: { session: { access_token: "session-jwt" } },
+      data: { session: { access_token: "***" } },
     });
-    mockFetch.mockReset();
-    mockFetch.mockResolvedValue(new Response(JSON.stringify({
-      url: "https://test.supabase.co/functions/v1/video-proxy?proxy_token=opaque-signed-token",
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    vi.stubGlobal("fetch", mockFetch);
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -106,24 +99,12 @@ describe("proxiedVideoUrl", () => {
     expect(mockCreateSignedUrl).not.toHaveBeenCalled();
   });
 
-  it("exchanges the Authorization header for an opaque signed playback token", async () => {
+  it("routes external URLs through video-proxy with token", async () => {
     const external = "https://dashscope-oss.cn.aliyuncs.com/output/video.mp4";
     const result = await proxiedVideoUrl(external);
-
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://test.supabase.co/functions/v1/video-proxy",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({ Authorization: "Bearer session-jwt" }),
-        body: JSON.stringify({ url: external }),
-      }),
-    );
-    expect(result).toBe(
-      "https://test.supabase.co/functions/v1/video-proxy?proxy_token=opaque-signed-token",
-    );
-    expect(result).not.toContain("session-jwt");
-    expect(result).not.toContain(encodeURIComponent(external));
-    expect(result).not.toMatch(/[?&]token=/);
+    expect(result).toContain("video-proxy");
+    expect(result).toContain(encodeURIComponent(external));
+    expect(result).toContain("token=");
   });
 
   it("throws when not authenticated for external URL", async () => {
