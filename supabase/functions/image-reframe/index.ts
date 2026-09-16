@@ -7,6 +7,7 @@ import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+import { parseOwnedStorageRef } from "../_shared/core/owned-storage.ts";
 // deno-lint-ignore-file no-explicit-any
 
 const TARGETS: Record<string, { label: string; w: number; h: number }> = {
@@ -14,19 +15,6 @@ const TARGETS: Record<string, { label: string; w: number; h: number }> = {
   "1:1":  { label: "1:1 square",    w: 1080, h: 1080 },
   "16:9": { label: "16:9 horizontal", w: 1920, h: 1080 },
 };
-
-function isAllowedImageUrl(u: string): boolean {
-  try {
-    const supabaseHost = (() => {
-      try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
-    })();
-    const allowed = [supabaseHost, ".supabase.co", ".supabase.in"].filter(Boolean);
-    const p = new URL(u);
-    if (p.protocol !== "https:") return false;
-    const h = p.hostname.toLowerCase();
-    return allowed.some((s) => (s.startsWith(".") ? h.endsWith(s) : h === s));
-  } catch { return false; }
-}
 
 function decodeBase64(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -258,7 +246,7 @@ Deno.serve(async (req) => {
     const imageBase64 = typeof body?.imageBase64 === "string" ? body.imageBase64.trim() : "";
     const aspectRatio = typeof body?.aspectRatio === "string" ? body.aspectRatio.trim() : "";
 
-    if (!imageBase64 && (!imageUrl || !isAllowedImageUrl(imageUrl))) {
+    if (!imageBase64 && !imageUrl) {
       return new Response(JSON.stringify({ error: "valid imageUrl or imageBase64 is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -308,29 +296,25 @@ Deno.serve(async (req) => {
       }
       srcMime = m[1];
     } else {
-      // 1b) Source by URL (backward compatible). Public fetch first; if that
-      //     fails (e.g. private bucket), fall back to an authenticated
-      //     service-client download by parsing the storage URL.
+      // 1b) Source by URL. Prove caller ownership before the service-role read;
+      // never fetch an arbitrary or merely same-domain URL first.
       const svcEarly = getServiceClient();
-      try {
-        const srcResp = await fetch(imageUrl);
-        if (srcResp.ok) {
-          srcBytes = new Uint8Array(await srcResp.arrayBuffer());
-          srcMime = srcResp.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+      const storageOrigin = new URL(Deno.env.get("SUPABASE_URL") ?? "").origin;
+      const owned = parseOwnedStorageRef(imageUrl, storageOrigin, auth.userId, ["user-images", "wan-frames"]);
+      if (!owned) {
+        return new Response(JSON.stringify({ error: "Source image is not owned by the authenticated user" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: dl, error: dlErr } = await svcEarly.storage.from(owned.bucket).download(owned.path);
+      if (!dlErr && dl) {
+        if (dl.size > MAX_BYTES) {
+          return new Response(JSON.stringify({ error: "Image is larger than 10MB." }), {
+            status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
-      } catch (_e) { /* fall through to storage download */ }
-
-      if (!srcBytes) {
-        const m = imageUrl.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+?)(?:\?|$)/);
-        if (m) {
-          const bucket = decodeURIComponent(m[1]);
-          const objectPath = decodeURIComponent(m[2]);
-          const { data: dl, error: dlErr } = await svcEarly.storage.from(bucket).download(objectPath);
-          if (!dlErr && dl) {
-            srcBytes = new Uint8Array(await dl.arrayBuffer());
-            srcMime = dl.type?.split(";")[0]?.trim() || "image/png";
-          }
-        }
+        srcBytes = new Uint8Array(await dl.arrayBuffer());
+        srcMime = dl.type?.split(";")[0]?.trim() || "image/png";
       }
 
       if (!srcBytes) {
