@@ -71,34 +71,6 @@ export interface ResolveRouteOptions {
   hasReferenceImages?: boolean;
 }
 
-export type GenerationCancelStatus = "requested" | "unsupported" | "failed";
-
-export interface GenerationCancelResult {
-  status: GenerationCancelStatus;
-  providerKey: ProviderKey;
-  providerJobId: string;
-  message: string | null;
-}
-
-export interface GenerationPollContext {
-  client: SupabaseClient;
-  userId: string;
-  jobId: string;
-  /** Original persisted input used only for a bounded transient Veo re-dispatch. */
-  veoRetryInput?: GenerationStartInput;
-  veoExtensionClaim?: {
-    claim(
-      expectedProviderJobId: string,
-      claimedProviderJobId: string,
-    ): Promise<boolean>;
-    settle(
-      claimedProviderJobId: string,
-      nextProviderJobId: string,
-      lastError: string | null,
-    ): Promise<boolean>;
-  };
-}
-
 export interface AiGateway {
   resolveRoute(
     client: SupabaseClient,
@@ -140,11 +112,6 @@ export interface AiGateway {
   pollGeneration(
     providerKey: ProviderKey,
     providerJobId: string,
-    ctx?: GenerationPollContext,
+    ctx?: { client: SupabaseClient; userId: string },
   ): Promise<GenerationPollResult>;
-  /** Cancel only this provider job; never uses a provider-wide/global interrupt. */
-  cancelGeneration(
-    providerKey: ProviderKey,
-    providerJobId: string,
-  ): Promise<GenerationCancelResult>;
 }

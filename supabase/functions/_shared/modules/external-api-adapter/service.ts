@@ -5,7 +5,6 @@ import type { SupabaseClient } from "../../core/supabase.ts";
 import { getServiceClient } from "../../core/supabase.ts";
 import type {
   AiGateway,
-  GenerationPollContext,
   GenerationPollResult,
   GenerationStartInput,
   GenerationStartResult,
@@ -16,12 +15,6 @@ import type {
 import { getEnv } from "../../core/env.ts";
 import { logError, logInfo } from "../../core/observability.ts";
 import { assertSupportedCloudModel, computeUsd } from "./model-policy.ts";
-import { cancelProviderGeneration } from "./provider-cancel.ts";
-import {
-  ConfirmedVeoExtensionDispatchError,
-  ConfirmedVeoProviderDispatchError,
-  dispatchPersistedVeoExtension,
-} from "../job-orchestrator/veo-extension-claim.ts";
 
 /** Map the public model alias to a concrete provider model. The cheaper
  *  Veo 3.1 Fast tier is preferred by default; we fall back to Veo 3.1
@@ -989,17 +982,6 @@ interface VeoState {
   prompt: string;
   // Whether phase 2 (extension) has already been dispatched.
   extensionStarted: boolean;
-  // Present only after a persisted CAS claim and before the exact provider
-  // operation is known. A claimed state is intentionally non-replayable.
-  extensionClaimToken?: string;
-  extensionClaimedAt?: number;
-  // Base-generation retries use the same persisted CAS store. A claim token
-  // is non-replayable after an ambiguous provider outcome, preventing a paid
-  // duplicate when concurrent polls or worker failures occur.
-  generationRetryClaimToken?: string;
-  generationRetryClaimedAt?: number;
-  generationRetryAttempts?: number;
-  nextGenerationRetryAt?: number;
   // ms since epoch when the *current* phase started; used for progress.
   phaseStartedAt: number;
   // Phase-1 video URI we still need to extend (set when extend was attempted
@@ -1014,9 +996,6 @@ interface VeoState {
 }
 
 const MAX_EXTENSION_ATTEMPTS = 20;
-const MAX_CONFIRMED_EXTENSION_DISPATCH_ATTEMPTS = 3;
-const MAX_GENERATION_RETRY_ATTEMPTS = 2;
-const GENERATION_RETRY_BASE_MS = 15_000;
 // Backoff between extension retries when Google says the phase-1 clip isn't
 // processed yet. Linear: 15s, 30s, 45s, ... capped at 90s.
 const EXTENSION_RETRY_BASE_MS = 15_000;
@@ -1303,9 +1282,7 @@ async function startVeo(
   if (!res.ok) {
     logError("veo create failed", { status: res.status, body: json, model: veoModel });
     const err = (json as { error?: { message?: string } }).error;
-    throw new ConfirmedVeoProviderDispatchError(
-      `Veo ${res.status} ${err?.message ?? "unknown error"}`,
-    );
+    throw new Error(`Veo ${res.status} ${err?.message ?? "unknown error"}`);
   }
   const opName = (json as { name?: string }).name;
   if (!opName) throw new Error("Veo returned no operation name");
@@ -1381,9 +1358,7 @@ async function startVeoExtension(
   if (!res.ok) {
     logError("veo extend failed", { status: res.status, body: json, initialOp: state.initialOp });
     const err = (json as { error?: { message?: string } }).error;
-    throw new ConfirmedVeoExtensionDispatchError(
-      `Veo extend ${res.status} ${err?.message ?? "unknown error"}`,
-    );
+    throw new Error(`Veo extend ${res.status} ${err?.message ?? "unknown error"}`);
   }
   const newOp = (json as { name?: string }).name;
   if (!newOp) throw new Error("Veo extension returned no operation name");
@@ -1393,7 +1368,7 @@ async function startVeoExtension(
 async function pollVeo(
   providerJobId: string,
   apiKey: string,
-  ctx?: GenerationPollContext,
+  ctx?: { client: SupabaseClient; userId: string },
 ): Promise<GenerationPollResult> {
   // Decode durable state. Fall back to legacy "raw opName" providerJobIds so
   // jobs created before this rollout keep working.
@@ -1407,21 +1382,6 @@ async function pollVeo(
     extensionStarted: false,
     phaseStartedAt: veoStartedAt.get(providerJobId) ?? Date.now(),
   };
-
-  // A persisted claim without a known phase-two operation means the request
-  // outcome was ambiguous (worker crash, timeout, or failed settle). Never
-  // poll phase one and never re-dispatch: doing so could purchase a duplicate.
-  if (state.extensionClaimToken || state.generationRetryClaimToken) {
-    return {
-      status: "processing",
-      videoUrl: null,
-      thumbnailUrl: null,
-      aspectRatio: null,
-      duration: null,
-      progressPercent: 50,
-      providerJobId,
-    };
-  }
 
   const res = await fetch(
     `${GEMINI_BASE}/${state.currentOp}?key=${encodeURIComponent(apiKey)}`,
@@ -1472,150 +1432,32 @@ async function pollVeo(
     // retry from scratch with a fresh operation. This keeps the user job
     // alive instead of immediately failing on a transient capacity spike.
     if (isTransientVeoError(json.error.message)) {
-      const attempts = (state.generationRetryAttempts ?? 0) + 1;
-      if (attempts > MAX_GENERATION_RETRY_ATTEMPTS) {
+      logError("veo transient terminal error — retrying create", {
+        op: state.currentOp,
+        message: json.error.message,
+      });
+      try {
+        // Re-issue the same Veo predictLongRunning call (text-only resume).
+        // We can't re-attach images here without ctx, so this only fully
+        // recovers text-to-video and image-to-video where the orchestrator
+        // is fine with retrying the same prompt. For now we just surface
+        // a friendlier failure if we can't safely retry.
+        // Safer: report processing and let the user manually retry by
+        // submitting again. Keeping it as a soft processing state could
+        // loop forever on persistent capacity issues, so we mark failed
+        // with a clear retryable reason.
         return {
           status: "failed",
           videoUrl: null,
           thumbnailUrl: null,
           aspectRatio: null,
           duration: null,
-          reason: "Video provider stayed unavailable after bounded retries. Please try again later.",
+          reason: "Video provider is at capacity. Please try again in a moment.",
           progressPercent: null,
         };
+      } catch (e) {
+        logError("veo retry path errored", { error: (e as Error).message });
       }
-
-      if (state.nextGenerationRetryAt && Date.now() < state.nextGenerationRetryAt) {
-        return {
-          status: "processing",
-          videoUrl: null,
-          thumbnailUrl: null,
-          aspectRatio: null,
-          duration: null,
-          progressPercent: estimateVeoProgressFromState(state),
-          providerJobId,
-        };
-      }
-
-      if (!ctx?.veoExtensionClaim || !ctx.veoRetryInput) {
-        logError("veo transient retry context missing", { op: state.currentOp });
-        return {
-          status: "failed",
-          videoUrl: null,
-          thumbnailUrl: null,
-          aspectRatio: null,
-          duration: null,
-          reason: "Video provider retry could not be started safely. Please try again.",
-          progressPercent: null,
-        };
-      }
-
-      logInfo("veo transient terminal error — durable retry dispatch", {
-        op: state.currentOp,
-        attempt: attempts,
-      });
-      const claimState: VeoState = {
-        ...state,
-        generationRetryClaimToken: crypto.randomUUID(),
-        generationRetryClaimedAt: Date.now(),
-      };
-      const claimedProviderJobId = encodeVeoState(claimState);
-      const retryInput = ctx.veoRetryInput;
-      const dispatchResult = await dispatchPersistedVeoExtension({
-        store: ctx.veoExtensionClaim,
-        expectedProviderJobId: providerJobId,
-        claimedProviderJobId,
-        dispatch: async () => {
-          const retry = await startVeo(state.model, retryInput, apiKey);
-          const restarted = decodeVeoState(retry.providerJobId);
-          if (!restarted) throw new Error("Veo retry returned invalid durable state");
-          const nextState: VeoState = {
-            ...restarted,
-            generationRetryAttempts: attempts,
-            generationRetryClaimToken: undefined,
-            generationRetryClaimedAt: undefined,
-            nextGenerationRetryAt: undefined,
-          };
-          return {
-            value: nextState.currentOp,
-            providerJobId: encodeVeoState(nextState),
-          };
-        },
-        retryProviderJobId: (error) => encodeVeoState({
-          ...state,
-          generationRetryAttempts: attempts,
-          generationRetryClaimToken: undefined,
-          generationRetryClaimedAt: undefined,
-          nextGenerationRetryAt: isTransientVeoError(error.message)
-            ? Date.now() + GENERATION_RETRY_BASE_MS * attempts
-            : undefined,
-        }),
-        isConfirmedFailure: (error) => error instanceof ConfirmedVeoProviderDispatchError,
-      });
-
-      if (dispatchResult.status === "lost") {
-        return {
-          status: "processing",
-          videoUrl: null,
-          thumbnailUrl: null,
-          aspectRatio: null,
-          duration: null,
-          progressPercent: estimateVeoProgressFromState(state),
-        };
-      }
-      if (dispatchResult.status === "dispatched") {
-        veoStartedAt.set(dispatchResult.value, Date.now());
-        return {
-          status: "processing",
-          videoUrl: null,
-          thumbnailUrl: null,
-          aspectRatio: null,
-          duration: null,
-          progressPercent: 18,
-          providerJobId: dispatchResult.providerJobId,
-        };
-      }
-      if (dispatchResult.status === "retryable") {
-        const retryAllowed = isTransientVeoError(dispatchResult.error) &&
-          attempts < MAX_GENERATION_RETRY_ATTEMPTS;
-        return retryAllowed
-          ? {
-              status: "processing",
-              videoUrl: null,
-              thumbnailUrl: null,
-              aspectRatio: null,
-              duration: null,
-              progressPercent: estimateVeoProgressFromState(state),
-              providerJobId: dispatchResult.providerJobId,
-            }
-          : {
-              status: "failed",
-              videoUrl: null,
-              thumbnailUrl: null,
-              aspectRatio: null,
-              duration: null,
-              reason: "Video provider rejected the bounded retry. Please try again later.",
-              progressPercent: null,
-              providerJobId: dispatchResult.providerJobId,
-            };
-      }
-
-      // Ambiguous transport and failed persistence retain the claim token.
-      // Subsequent polls cannot replay the paid request.
-      logError("veo retry dispatch outcome is non-replayable", {
-        status: dispatchResult.status,
-        error: dispatchResult.error,
-        op: state.currentOp,
-      });
-      return {
-        status: "processing",
-        videoUrl: null,
-        thumbnailUrl: null,
-        aspectRatio: null,
-        duration: null,
-        progressPercent: estimateVeoProgressFromState(state),
-        providerJobId: dispatchResult.providerJobId,
-      };
     }
     return {
       status: "failed",
@@ -1675,8 +1517,18 @@ async function pollVeo(
 
     // Prefer the URI we already captured from a prior phase-1 success.
     const extendUri = state.pendingExtensionUri ?? uri;
-    if (!ctx.veoExtensionClaim) {
-      logError("veo extension claim store missing", { jobId: ctx.jobId, initialOp: state.initialOp });
+
+    try {
+      const newOp = await startVeoExtension(state, extendUri, apiKey);
+      const nextState: VeoState = {
+        ...state,
+        currentOp: newOp,
+        extensionStarted: true,
+        phaseStartedAt: Date.now(),
+        pendingExtensionUri: undefined,
+        nextExtensionAttemptAt: undefined,
+      };
+      veoStartedAt.set(newOp, Date.now());
       return {
         status: "processing",
         videoUrl: null,
@@ -1684,88 +1536,32 @@ async function pollVeo(
         aspectRatio: null,
         duration: null,
         progressPercent: 50,
+        providerJobId: encodeVeoState(nextState),
       };
-    }
+    } catch (e) {
+      const errMsg = (e as Error).message;
+      const attempts = (state.extensionAttempts ?? 0) + 1;
 
-    const attempts = (state.extensionAttempts ?? 0) + 1;
-    const claimState: VeoState = {
-      ...state,
-      pendingExtensionUri: extendUri,
-      extensionClaimToken: crypto.randomUUID(),
-      extensionClaimedAt: Date.now(),
-    };
-    const claimedProviderJobId = encodeVeoState(claimState);
-
-    const dispatchResult = await dispatchPersistedVeoExtension({
-      store: ctx.veoExtensionClaim,
-      expectedProviderJobId: providerJobId,
-      claimedProviderJobId,
-      dispatch: async () => {
-        const newOp = await startVeoExtension(state, extendUri, apiKey);
-        const nextState: VeoState = {
-          ...state,
-          currentOp: newOp,
-          extensionStarted: true,
-          extensionClaimToken: undefined,
-          extensionClaimedAt: undefined,
-          phaseStartedAt: Date.now(),
-          pendingExtensionUri: undefined,
-          nextExtensionAttemptAt: undefined,
-        };
-        return { value: newOp, providerJobId: encodeVeoState(nextState) };
-      },
-      retryProviderJobId: (error) => {
+      // Google sometimes rejects the extend call for a short window after
+      // phase 1 finishes ("Input video must be a video that was generated by
+      // VEO that has been processed."). Re-queue the same state so the next
+      // poll re-issues the extend, up to MAX_EXTENSION_ATTEMPTS, with a
+      // growing time gap between attempts so we actually let Google ingest.
+      if (isVeoNotProcessedYet(errMsg) && attempts < MAX_EXTENSION_ATTEMPTS) {
         const waitMs = Math.min(EXTENSION_RETRY_BASE_MS * attempts, EXTENSION_RETRY_CAP_MS);
-        const retryAllowed = isVeoNotProcessedYet(error.message)
-          ? attempts < MAX_EXTENSION_ATTEMPTS
-          : attempts < MAX_CONFIRMED_EXTENSION_DISPATCH_ATTEMPTS;
-        return encodeVeoState({
+        logInfo("veo extension not ready yet — will retry", {
+          attempt: attempts,
+          retryInMs: waitMs,
+          initialOp: state.initialOp,
+        });
+        const retryState: VeoState = {
           ...state,
           extensionStarted: false,
-          extensionClaimToken: undefined,
-          extensionClaimedAt: undefined,
           pendingExtensionUri: extendUri,
           extensionAttempts: attempts,
           phaseStartedAt: state.phaseStartedAt,
-          nextExtensionAttemptAt: retryAllowed ? Date.now() + waitMs : undefined,
-        });
-      },
-      isConfirmedFailure: (error) => error instanceof ConfirmedVeoExtensionDispatchError,
-    });
-
-    if (dispatchResult.status === "lost") {
-      return {
-        status: "processing",
-        videoUrl: null,
-        thumbnailUrl: null,
-        aspectRatio: null,
-        duration: null,
-        progressPercent: 50,
-      };
-    }
-
-    if (dispatchResult.status === "dispatched") {
-      veoStartedAt.set(dispatchResult.value, Date.now());
-      return {
-        status: "processing",
-        videoUrl: null,
-        thumbnailUrl: null,
-        aspectRatio: null,
-        duration: null,
-        progressPercent: 50,
-        providerJobId: dispatchResult.providerJobId,
-      };
-    }
-
-    if (dispatchResult.status === "retryable") {
-      const retryAllowed = isVeoNotProcessedYet(dispatchResult.error)
-        ? attempts < MAX_EXTENSION_ATTEMPTS
-        : attempts < MAX_CONFIRMED_EXTENSION_DISPATCH_ATTEMPTS;
-      if (retryAllowed) {
-        logInfo("veo extension not ready yet — durable retry scheduled", {
-          attempt: attempts,
-          initialOp: state.initialOp,
-        });
+          nextExtensionAttemptAt: Date.now() + waitMs,
+        };
         return {
           status: "processing",
           videoUrl: null,
@@ -1773,12 +1569,14 @@ async function pollVeo(
           aspectRatio: null,
           duration: null,
           progressPercent: 50,
-          providerJobId: dispatchResult.providerJobId,
+          providerJobId: encodeVeoState(retryState),
         };
       }
-      const friendly = isVeoNotProcessedYet(dispatchResult.error)
+
+      logError("veo extension start failed", { error: errMsg, initialOp: state.initialOp, attempts });
+      const friendly = isVeoNotProcessedYet(errMsg)
         ? "Video provider could not finalize the 15s extension after multiple attempts. Please try again."
-        : `Video provider could not extend clip: ${dispatchResult.error}`;
+        : `Video provider could not extend clip: ${errMsg}`;
       return {
         status: "failed",
         videoUrl: null,
@@ -1787,24 +1585,8 @@ async function pollVeo(
         duration: null,
         reason: friendly,
         progressPercent: null,
-        providerJobId: dispatchResult.providerJobId,
       };
     }
-
-    logError("veo extension dispatch outcome is non-replayable", {
-      status: dispatchResult.status,
-      error: dispatchResult.error,
-      initialOp: state.initialOp,
-    });
-    return {
-      status: "processing",
-      videoUrl: null,
-      thumbnailUrl: null,
-      aspectRatio: null,
-      duration: null,
-      progressPercent: 50,
-      providerJobId: dispatchResult.providerJobId,
-    };
   }
 
   // Final download + re-upload to our own merged-videos bucket, which is
@@ -2355,7 +2137,7 @@ async function startGeneration(
 async function pollGeneration(
   providerKey: ProviderKey,
   providerJobId: string,
-  ctx?: GenerationPollContext,
+  ctx?: { client: SupabaseClient; userId: string },
 ): Promise<GenerationPollResult> {
   const apiKey = getProviderApiKey(providerKey);
 
@@ -2393,6 +2175,5 @@ export const aiGateway: AiGateway = {
   getProviderApiKey,
   startGeneration,
   pollGeneration,
-  cancelGeneration: cancelProviderGeneration,
   localVideoStatus,
 };

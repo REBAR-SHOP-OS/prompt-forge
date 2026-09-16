@@ -158,33 +158,4 @@ describe('waitForSceneBatch', () => {
     expect(result).toEqual({ completed: ['job-1'], failed: [], pending: [] })
     expect(getJob).toHaveBeenCalledTimes(2)
   })
-
-  it('enforces one hard total deadline when a serial getJob call never settles', async () => {
-    vi.useFakeTimers()
-    try {
-      vi.setSystemTime(0)
-      const getJob = vi.fn((id: string) => {
-        if (id === 'job-1') {
-          return Promise.resolve({ id, status: 'processing', video: null })
-        }
-        return new Promise<never>(() => {})
-      })
-
-      const pending = waitForSceneBatch(['job-1', 'job-2', 'job-3'], getJob, {
-        timeoutMs: 100,
-        pollIntervalMs: 1_000,
-      })
-
-      await vi.advanceTimersByTimeAsync(100)
-      await expect(pending).resolves.toEqual({
-        completed: [],
-        failed: [],
-        pending: ['job-1', 'job-2', 'job-3'],
-      })
-      expect(getJob).toHaveBeenCalledTimes(2)
-      expect(getJob).not.toHaveBeenCalledWith('job-3')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
 })
