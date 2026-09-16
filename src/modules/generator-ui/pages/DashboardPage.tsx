@@ -5420,14 +5420,12 @@ export default function DashboardPage() {
         .upload(path, file, { contentType: file.type, upsert: false })
       if (up.error) throw up.error
       if (!up.data?.path) throw new Error('upload did not persist')
-      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
-      const publicUrl = pub.publicUrl
       const imageGroupId = ensureActiveDraftGroupId() ?? null
       const { data: row, error: insErr } = await supabase
         .from('generator_user_images')
         .insert({
           user_id: userId,
-          storage_path: publicUrl,
+          storage_path: path,
           size_bytes: file.size,
           mime_type: file.type,
           draft_group_id: imageGroupId,
