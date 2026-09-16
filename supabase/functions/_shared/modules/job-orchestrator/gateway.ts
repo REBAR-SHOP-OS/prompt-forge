@@ -20,6 +20,8 @@ import { writeAuditLog } from "../../core/audit.ts";
 import { rateLimit } from "../../core/ratelimit.ts";
 import { parseOwnedStorageRef } from "../../core/owned-storage.ts";
 import { jobService } from "./service.ts";
+import { executeJobDeleteFlow } from "./delete-flow.ts";
+import { createVeoExtensionClaimStore } from "./veo-extension-claim.ts";
 import { aiGateway } from "../external-api-adapter/service.ts";
 import type { ProviderKey } from "../external-api-adapter/contract.ts";
 import type { DomainContractMeta } from "../_gateway/types.ts";
@@ -598,7 +600,26 @@ export const jobOrchestratorGateway = {
               const poll = await aiGateway.pollGeneration(
                 detail.provider_key as ProviderKey,
                 detail.provider_job_id,
-                { client: svc, userId: auth.userId },
+                {
+                  client: svc,
+                  userId: auth.userId,
+                  jobId: detail.id,
+                  veoRetryInput: {
+                    prompt: detail.input_prompt,
+                    firstFrameUrl: detail.first_frame_url ?? null,
+                    lastFrameUrl: detail.last_frame_url ?? null,
+                    referenceImageUrls: detail.reference_image_urls ?? [],
+                    durationSeconds: requestedDuration === 5 || requestedDuration === 10 || requestedDuration === 15
+                      ? requestedDuration
+                      : null,
+                    aspectRatio: detail.requested_aspect_ratio === "9:16" ||
+                        detail.requested_aspect_ratio === "1:1" ||
+                        detail.requested_aspect_ratio === "16:9"
+                      ? detail.requested_aspect_ratio
+                      : "16:9",
+                  },
+                  veoExtensionClaim: createVeoExtensionClaimStore(svc, auth.userId, detail.id),
+                },
               );
               logInfo("inline poll result", {
                 jobId: detail.id,
@@ -1044,41 +1065,89 @@ export const jobOrchestratorGateway = {
             return errorResponse("VALIDATION_ERROR", "jobId required", 400, ctx.requestId);
           }
 
-          let storagePaths: string[] = [];
+          // Establish ownership before any provider-side action so a copied
+          // provider id can never be cancelled on behalf of another user.
+          const ownedJob = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient);
+          if (!ownedJob) {
+            const alreadyAbsent = {
+              ok: true as const,
+              outcome: "already_absent" as const,
+              jobId: parsed.data.jobId,
+              localDeleted: false,
+              cancellation: {
+                status: "not_needed" as const,
+                providerKey: null,
+                providerJobId: null,
+                message: null,
+              },
+              purge: { status: "not_needed" as const, attempted: 0, failed: 0 },
+              requestId: ctx.requestId,
+            };
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
+            return jsonResponse(alreadyAbsent);
+          }
+
+          let deletion;
           try {
-            storagePaths = await jobService.deleteJob(svc, auth.userId, parsed.data.jobId);
+            deletion = await executeJobDeleteFlow(ownedJob, {
+              cancel: (providerKey, providerJobId) => aiGateway.cancelGeneration(providerKey, providerJobId),
+              deleteLocal: async () => {
+                try {
+                  return await jobService.deleteJob(svc, auth.userId, parsed.data.jobId);
+                } catch (error) {
+                  // A concurrent idempotent delete may win after our owned-job
+                  // inspection and cancellation. Preserve the real cancellation
+                  // outcome instead of replacing it with a fabricated one.
+                  if ((error as Error).message.toLowerCase().includes("not found")) return [];
+                  throw error;
+                }
+              },
+              purge: async (storagePaths) => {
+                // Service-role removes bypass Storage RLS, so prove every path
+                // belongs to the authenticated owner before deleting it.
+                const KNOWN_BUCKETS = ["merged-videos", "wan-frames", "user-videos"] as const;
+                const byBucket: Record<string, string[]> = {};
+                let failed = 0;
+                for (const raw of storagePaths) {
+                  const owned = parseOwnedStorageRef(raw, SUPABASE_STORAGE_ORIGIN, auth.userId, KNOWN_BUCKETS);
+                  if (!owned) {
+                    failed += 1;
+                    if (raw) logError("skipped unowned storage purge path", { jobId: parsed.data.jobId });
+                    continue;
+                  }
+                  (byBucket[owned.bucket] ??= []).push(owned.path);
+                }
+                for (const [bucket, paths] of Object.entries(byBucket)) {
+                  try {
+                    const { error: rmErr } = await svc.storage.from(bucket).remove(paths);
+                    if (rmErr) {
+                      failed += paths.length;
+                      logError("storage remove failed", { bucket, error: rmErr.message });
+                    }
+                  } catch (e) {
+                    failed += paths.length;
+                    logError("storage remove threw", { bucket, error: (e as Error).message });
+                  }
+                }
+                return { attempted: storagePaths.length, failed };
+              },
+            });
           } catch (e) {
             const msg = (e as Error).message;
-            const isNotFound = msg.toLowerCase().includes("not found");
-            if (isNotFound) {
-              // Idempotent: job already gone (e.g. double-click, stale UI).
-              // Return success so the client clears the card cleanly.
+            if (msg.toLowerCase().includes("not found")) {
               await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-              return jsonResponse({ ok: true, jobId: parsed.data.jobId, requestId: ctx.requestId });
+              return jsonResponse({
+                ok: true,
+                outcome: "already_absent",
+                jobId: parsed.data.jobId,
+                localDeleted: false,
+                cancellation: { status: "not_needed", providerKey: null, providerJobId: null, message: null },
+                purge: { status: "not_needed", attempted: 0, failed: 0 },
+                requestId: ctx.requestId,
+              });
             }
             logError("deleteJob failed", { error: msg, jobId: parsed.data.jobId });
             return errorResponse("DELETE_FAILED", "Could not delete job. Please try again.", 500, ctx.requestId);
-          }
-
-          // Best-effort physical deletion. Service-role removes bypass Storage
-          // RLS, so prove each value belongs to this caller before deleting it.
-          const KNOWN_BUCKETS = ["merged-videos", "wan-frames", "user-videos"] as const;
-          const byBucket: Record<string, string[]> = {};
-          for (const raw of storagePaths) {
-            const owned = parseOwnedStorageRef(raw, SUPABASE_STORAGE_ORIGIN, auth.userId, KNOWN_BUCKETS);
-            if (!owned) {
-              if (raw) logError("skipped unowned storage purge path", { jobId: parsed.data.jobId });
-              continue;
-            }
-            (byBucket[owned.bucket] ??= []).push(owned.path);
-          }
-          for (const [bucket, paths] of Object.entries(byBucket)) {
-            try {
-              const { error: rmErr } = await svc.storage.from(bucket).remove(paths);
-              if (rmErr) logError("storage remove failed", { bucket, error: rmErr.message });
-            } catch (e) {
-              logError("storage remove threw", { bucket, error: (e as Error).message });
-            }
           }
 
           await writeAuditLog(svc, {
@@ -1087,10 +1156,15 @@ export const jobOrchestratorGateway = {
             targetType: "generation_job",
             targetId: parsed.data.jobId,
             requestId: ctx.requestId,
-            metadata: { purgedFiles: storagePaths.length },
+            metadata: {
+              outcome: deletion.outcome,
+              cancellation: deletion.cancellation.status,
+              purge: deletion.purge.status,
+              purgedFiles: deletion.purge.attempted - deletion.purge.failed,
+            },
           });
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ok: true, jobId: parsed.data.jobId, requestId: ctx.requestId });
+          return jsonResponse({ ...deletion, requestId: ctx.requestId });
         }
 
         default:
