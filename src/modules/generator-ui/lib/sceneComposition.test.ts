@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildSceneCompositionPrompt, buildSceneEditRequestBody, buildSceneGenerateRequestBody } from './sceneComposition'
+import {
+  MAX_SCENE_REFERENCE_IMAGES,
+  buildSceneCompositionPrompt,
+  buildSceneEditRequestBody,
+  buildSceneGenerateRequestBody,
+  capProductReferenceUrls,
+} from './sceneComposition'
 
 describe('buildSceneCompositionPrompt', () => {
   it('returns null when there is no product+character pair to compose', () => {
@@ -167,5 +173,88 @@ describe('buildSceneGenerateRequestBody reaches the generation request as one id
     })
     expect(body.referenceImageUrls).toEqual(['https://x/character.png'])
     expect(body.referenceRoles).toEqual(['character'])
+  })
+})
+
+// Regression coverage for the live 400 "At most 6 reference images are allowed."
+// A grouped product folder with six or more saved angles plus a selected
+// character produced seven references, which the backend rejected outright and
+// every Step 3 preview card showed "No image — regenerate". The cap now lives
+// at the caller boundary as a pure, deterministic helper.
+describe('reference-image cap at the caller boundary', () => {
+  const angles = (n: number) => Array.from({ length: n }, (_, i) => `https://x/a${i}.png`)
+
+  it('matches the shared backend MAX_REFERENCE_IMAGES constant', async () => {
+    const shared = await import('../../../../supabase/functions/_shared/identity-eval')
+    expect(MAX_SCENE_REFERENCE_IMAGES).toBe(shared.MAX_REFERENCE_IMAGES)
+  })
+
+  it('keeps the character slot when the product folder is already at the cap', () => {
+    const body = buildSceneEditRequestBody({
+      prompt: 'compose it',
+      productUrls: angles(6),
+      characterUrl: 'https://x/character.png',
+      characterSheet: true,
+      aspectRatio: '16:9',
+    })
+    expect(body.imageUrls).toHaveLength(MAX_SCENE_REFERENCE_IMAGES)
+    expect(body.imageUrls[0]).toBe('https://x/a0.png')
+    expect(body.imageUrls.at(-1)).toBe('https://x/character.png')
+    expect(body.referenceRoles).toEqual(['product', 'product', 'product', 'product', 'product', 'character'])
+    expect(body.referenceCharacterSheets).toEqual([false, false, false, false, false, true])
+  })
+
+  it('never exceeds the cap even for a very large folder, and stays metadata-aligned', () => {
+    const body = buildSceneEditRequestBody({
+      prompt: 'compose it',
+      productUrls: angles(20),
+      characterUrl: 'https://x/character.png',
+      aspectRatio: '9:16',
+    })
+    expect(body.imageUrls).toHaveLength(MAX_SCENE_REFERENCE_IMAGES)
+    expect(body.referenceRoles).toHaveLength(body.imageUrls.length)
+    expect(body.referenceCharacterSheets).toHaveLength(body.imageUrls.length)
+  })
+
+  it('leaves a product-only request at or below the cap untouched', () => {
+    const under = buildSceneGenerateRequestBody({ prompt: 'p', productUrls: angles(3), aspectRatio: '1:1' })
+    expect(under.referenceImageUrls).toEqual(angles(3))
+    const atCap = buildSceneGenerateRequestBody({ prompt: 'p', productUrls: angles(6), aspectRatio: '1:1' })
+    expect(atCap.referenceImageUrls).toEqual(angles(6))
+    expect(atCap.referenceRoles).toHaveLength(6)
+    expect(atCap.referenceCharacterSheets).toHaveLength(6)
+  })
+
+  it('bounds the generate path too when a character is present', () => {
+    const body = buildSceneGenerateRequestBody({
+      prompt: 'p',
+      productUrls: angles(9),
+      characterUrl: 'https://x/character.png',
+      characterSheet: true,
+      aspectRatio: '1:1',
+    })
+    expect(body.referenceImageUrls).toHaveLength(MAX_SCENE_REFERENCE_IMAGES)
+    expect(body.referenceRoles.at(-1)).toBe('character')
+    expect(body.referenceCharacterSheets.at(-1)).toBe(true)
+  })
+
+  it('keeps at least the primary product angle', () => {
+    expect(capProductReferenceUrls(angles(3), true)).toContain('https://x/a0.png')
+    expect(capProductReferenceUrls([], true)).toEqual([])
+    expect(capProductReferenceUrls(['https://x/a0.png', null, undefined, 'https://x/a1.png'], false)).toEqual([
+      'https://x/a0.png',
+      'https://x/a1.png',
+    ])
+  })
+
+  it('labels only the product angles actually sent in the composition prompt', () => {
+    const out = buildSceneCompositionPrompt({
+      sceneText: 'A scene',
+      productUrls: angles(8),
+      characterUrl: 'https://x/character.png',
+    })
+    expect(out).toContain('Images 1-5 are different angles of the SAME PRODUCT. Image 6 is the on-screen CHARACTER / presenter.')
+    expect(out).toContain('identical to image 6')
+    expect(out).toContain('from images 1-5')
   })
 })

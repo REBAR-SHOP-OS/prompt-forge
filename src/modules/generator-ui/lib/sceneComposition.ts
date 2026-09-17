@@ -15,6 +15,30 @@
 //
 // Kept free of React / Supabase / DOM so it can be unit-tested directly.
 
+/**
+ * Total reference images one generation request may carry. This mirrors the
+ * shared backend constant MAX_REFERENCE_IMAGES in
+ * supabase/functions/_shared/identity-eval.ts; the backend module is Deno-side
+ * so this layer keeps its own source of truth, pinned by a contract test that
+ * imports the shared constant directly.
+ */
+export const MAX_SCENE_REFERENCE_IMAGES = 6
+
+/**
+ * Deterministically bound the product angles that travel with a scene request
+ * so products + (character ? 1 : 0) never exceeds MAX_SCENE_REFERENCE_IMAGES.
+ * Order is preserved, the primary angle (index 0) always survives, and the
+ * character reference is never dropped in favour of an extra product angle.
+ */
+export function capProductReferenceUrls(
+  productUrls: readonly (string | null | undefined)[] | null | undefined,
+  hasCharacter: boolean,
+): string[] {
+  const urls = (productUrls ?? []).filter((u): u is string => !!u)
+  const budget = Math.max(1, MAX_SCENE_REFERENCE_IMAGES - (hasCharacter ? 1 : 0))
+  return urls.slice(0, budget)
+}
+
 export interface SceneCompositionInput {
   /** The scene's scenario text (environment + events). */
   sceneText: string
@@ -49,7 +73,7 @@ export interface SceneCompositionInput {
  */
 export function buildSceneCompositionPrompt(input: SceneCompositionInput): string | null {
   const { sceneText, characterUrl } = input
-  const productUrls = (input.productUrls ?? []).filter((url): url is string => !!url)
+  const productUrls = capProductReferenceUrls(input.productUrls, !!characterUrl)
   if (productUrls.length === 0 || !characterUrl) return null
 
   const characterImageIndex = productUrls.length + 1
@@ -111,7 +135,9 @@ export interface SceneEditRequestBody {
  * UI call site and its tests share one definition of "reaches every angle".
  */
 export function buildSceneEditRequestBody(input: SceneEditRequestInput): SceneEditRequestBody {
-  const productUrls = input.productUrls.filter((url): url is string => !!url)
+  // Bounded so imageUrls never exceeds the backend's MAX_REFERENCE_IMAGES cap;
+  // the character reference always keeps its slot.
+  const productUrls = capProductReferenceUrls(input.productUrls, true)
   return {
     prompt: input.prompt,
     imageUrls: [...productUrls, input.characterUrl],
@@ -146,8 +172,8 @@ export interface SceneGenerateRequestBody {
  * present.
  */
 export function buildSceneGenerateRequestBody(input: SceneGenerateRequestInput): SceneGenerateRequestBody {
-  const productUrls = input.productUrls.filter((url): url is string => !!url)
   const characterUrl = input.characterUrl ?? undefined
+  const productUrls = capProductReferenceUrls(input.productUrls, !!characterUrl)
   return {
     prompt: input.prompt,
     aspectRatio: input.aspectRatio,
