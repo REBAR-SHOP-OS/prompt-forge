@@ -48,6 +48,8 @@ import {
 import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
+import { inFlightSigns } from '@/modules/generator-ui/lib/makeFilmSigning'
+import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
@@ -116,8 +118,6 @@ type ProductPhoto = {
 
 type ProductPhotoSource = { id: string; title: string | null; storagePath: string; imageType?: string | null }
 type ProductPhotoGroupSource = ProductPhotoGroup<ProductPhotoSource>
-
-export const inFlightSigns = new Map<string, Promise<string>>()
 
 async function signStorageUrlDeduped(storagePath: string, bucket: string, userId?: string | null): Promise<string> {
   const cacheKey = `${userId ?? 'anon'}:${bucket}:${storagePath}`
@@ -255,6 +255,7 @@ export function MakeFilmWizardDialog({
   const [reviewCharacterNameEn, setReviewCharacterNameEn] = useState<string | null>(null)
   const reviewCache = useRef<Map<string, string>>(new Map())
   const hasInitialized = useRef(false)
+  useDocumentLanguage(reviewLang, scenarioReviewOpen)
 
   // Style picker dialogs
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false)
@@ -1130,11 +1131,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     <Clock className="h-3.5 w-3.5" />
                     Film duration
                   </label>
-                  <div className="flex flex-wrap gap-2">
+                  <div role="radiogroup" aria-label="Film duration" className="flex flex-wrap gap-2">
                     {DURATIONS.map((d) => (
                       <Button
                         key={d}
                         type="button"
+                        role="radio"
+                        aria-checked={duration === d}
                         variant={duration === d ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setDuration(d)}
@@ -1159,11 +1162,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     <MonitorPlay className="h-3.5 w-3.5" />
                     Aspect ratio
                   </label>
-                  <div className="flex flex-wrap gap-2">
+                  <div role="radiogroup" aria-label="Aspect ratio" className="flex flex-wrap gap-2">
                     {ASPECTS.map((a) => (
                       <Button
                         key={a.value}
                         type="button"
+                        role="radio"
+                        aria-checked={aspect === a.value}
                         variant={aspect === a.value ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setAspect(a.value)}
@@ -1244,9 +1249,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         <button
                           type="button"
                           onClick={() => setSelectedCharacter(null)}
+                          aria-label="Remove selected character"
                           className="ml-1 rounded p-0.5 text-muted-foreground hover:text-foreground/80"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="h-3 w-3" aria-hidden="true" />
                         </button>
                       </div>
                     ) : (

@@ -317,6 +317,7 @@ export default function AiImageDialog({
   const referenceInputRef = useRef<HTMLInputElement | null>(null)
   const refineReferenceInputRef = useRef<HTMLInputElement | null>(null)
   const isDrawingRef = useRef(false)
+  const productSignature = products.map((product) => `${product.id}:${product.url}`).join('|')
 
   useEffect(() => {
     if (open) {
@@ -349,7 +350,7 @@ export default function AiImageDialog({
 
   useEffect(() => {
     setBrokenProductIds(new Set())
-  }, [products.map((p) => `${p.id}:${p.url}`).join('|')])
+  }, [productSignature])
 
   useEffect(() => {
     setHasMask(false)

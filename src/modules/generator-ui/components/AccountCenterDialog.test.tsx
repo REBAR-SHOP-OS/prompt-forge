@@ -40,7 +40,7 @@ const mocks = vi.hoisted(() => ({
   resetStatus: vi.fn(),
 }))
 
-vi.mock('@/core/auth/AuthProvider', () => ({
+vi.mock('@/core/auth/auth-context', () => ({
   useAuth: () => ({ user: mocks.user, profile: mocks.profile, refreshProfile: vi.fn() }),
 }))
 

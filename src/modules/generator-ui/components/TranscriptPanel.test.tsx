@@ -53,6 +53,7 @@ describe('TranscriptPanel language selection', () => {
     expect(screen.getByText('Original transcript')).toBeInTheDocument()
     expect(screen.getByRole('combobox')).toHaveTextContent('Persian')
     expect(screen.getByText('Translating…')).toBeInTheDocument()
+    expect(document.documentElement.lang).toBe('fa')
     expect(onClose).not.toHaveBeenCalled()
 
     translation.resolve({ data: { translatedText: 'ترجمه فارسی' }, error: null })
@@ -66,6 +67,7 @@ describe('TranscriptPanel language selection', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Original' }))
     await waitFor(() => expect(screen.queryByText('ترجمه فارسی')).not.toBeInTheDocument())
     expect(screen.getByText('Original transcript')).toBeInTheDocument()
+    expect(document.documentElement.lang).toBe('en')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close transcript' }))
     expect(onClose).toHaveBeenCalledTimes(1)

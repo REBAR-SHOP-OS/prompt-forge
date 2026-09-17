@@ -8,6 +8,7 @@ import { request } from '@/core/api/client'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { REVIEW_LANGS, isRtlLang } from '@/modules/generator-ui/lib/scenarioReview'
+import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import {
   getOccasionsForDate,
   getOccasionsForMonth,
@@ -91,6 +92,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   const [scenarioLoading, setScenarioLoading] = useState(false)
   const [scenarioError, setScenarioError] = useState<string | null>(null)
   const { toast } = useToast()
+  useDocumentLanguage(lang, open)
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
   // Cache key bumped (day v2 -> v3) so anything persisted from the

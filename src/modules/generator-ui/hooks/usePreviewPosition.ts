@@ -180,7 +180,7 @@ export function usePreviewPosition(
       window.addEventListener('pointermove', onMove)
       window.addEventListener('pointerup', onUp)
     },
-    [disabled, offset, refs.frame, refs.workspace, refs.rightSidebar, refs.leftSidebar, refs.composer, refs.header],
+    [disabled, offset, refs.frame, refs.rightSidebar, refs.leftSidebar, refs.composer, refs.header],
   )
 
   const reset = useCallback(() => setOffset(DEFAULT_OFFSET), [])

@@ -37,7 +37,7 @@ const M = vi.hoisted(() => {
   return { state, uploadFn, removeFn, getPublicUrlFn, updateFn, eqFn, authUpdateUser, refreshProfile }
 })
 
-vi.mock('@/core/auth/AuthProvider', () => ({
+vi.mock('@/core/auth/auth-context', () => ({
   useAuth: () => ({
     user: M.state.user,
     profile: M.state.profile,

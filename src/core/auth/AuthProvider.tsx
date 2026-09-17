@@ -1,20 +1,10 @@
 // Shared core: auth context + provider. Domain modules consume `useAuth()`.
-import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { request } from "@/core/api/client";
 import type { Me } from "@/core/api/types";
-
-interface AuthState {
-  session: Session | null;
-  user: User | null;
-  profile: Me | null;
-  loading: boolean;
-  refreshProfile: () => Promise<void>;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthState | undefined>(undefined);
+import { AuthContext } from "@/core/auth/auth-context";
 
 const LOADING_TIMEOUT_MS = 8000;
 
@@ -23,28 +13,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
-  const refreshingRef = useRef(false);
+  const sessionRef = useRef<Session | null>(null);
+  const profileRequestRef = useRef<AbortController | null>(null);
+  const profileGenerationRef = useRef(0);
+  const authRevisionRef = useRef(0);
+  const mountedRef = useRef(false);
 
-  const refreshProfile = async () => {
-    if (refreshingRef.current) return;
-    refreshingRef.current = true;
-    try {
-      const me = await request<Me>("/me");
-      setProfile(me);
-    } catch {
-      setProfile(null);
-    } finally {
-      refreshingRef.current = false;
+  const applySession = useCallback((nextSession: Session | null) => {
+    const previousUserId = sessionRef.current?.user.id ?? null;
+    const nextUserId = nextSession?.user.id ?? null;
+    sessionRef.current = nextSession;
+    setSession(nextSession);
+    setUser(nextSession?.user ?? null);
+    if (previousUserId !== nextUserId) setProfile(null);
+  }, []);
+
+  const loadProfile = useCallback(async (expectedSession: Session | null) => {
+    const expectedUserId = expectedSession?.user.id ?? null;
+    profileRequestRef.current?.abort();
+    const generation = ++profileGenerationRef.current;
+    if (!expectedUserId) {
+      if (mountedRef.current) setProfile(null);
+      return;
     }
-  };
+
+    const controller = new AbortController();
+    profileRequestRef.current = controller;
+    try {
+      const me = await request<Me>("/me", { signal: controller.signal });
+      if (
+        mountedRef.current &&
+        !controller.signal.aborted &&
+        profileGenerationRef.current === generation &&
+        sessionRef.current?.user.id === expectedUserId &&
+        me.id === expectedUserId
+      ) {
+        setProfile(me);
+      }
+    } catch {
+      if (
+        mountedRef.current &&
+        !controller.signal.aborted &&
+        profileGenerationRef.current === generation &&
+        sessionRef.current?.user.id === expectedUserId
+      ) {
+        setProfile(null);
+      }
+    } finally {
+      if (profileRequestRef.current === controller) profileRequestRef.current = null;
+    }
+  }, []);
+
+  const refreshProfile = useCallback(
+    () => loadProfile(sessionRef.current),
+    [loadProfile],
+  );
 
   useEffect(() => {
+    mountedRef.current = true;
     // Safety: never let the loading screen hang forever (slow network / cold edge).
     const timeoutId = window.setTimeout(() => setLoading(false), LOADING_TIMEOUT_MS);
+    const finishLoading = () => {
+      if (!mountedRef.current) return;
+      window.clearTimeout(timeoutId);
+      setLoading(false);
+    };
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
-      setSession(sess);
-      setUser(sess?.user ?? null);
+      authRevisionRef.current += 1;
+      applySession(sess);
       if (sess?.user) {
         if (event === 'SIGNED_IN') {
           try {
@@ -52,50 +89,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             window.localStorage.setItem(`pending-occasions-popup:${sess.user.id}`, '1');
           } catch { /* ignore */ }
         }
-        setTimeout(() => { refreshProfile(); }, 0);
-      } else {
-        setProfile(null);
       }
+      void loadProfile(sess).finally(finishLoading);
     });
 
+    const revisionAtStart = authRevisionRef.current;
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) {
-        refreshProfile().finally(() => {
-          window.clearTimeout(timeoutId);
-          setLoading(false);
-        });
-      } else {
-        window.clearTimeout(timeoutId);
-        setLoading(false);
-      }
+      if (!mountedRef.current || authRevisionRef.current !== revisionAtStart) return;
+      applySession(data.session);
+      void loadProfile(data.session).finally(finishLoading);
     }).catch(() => {
-      window.clearTimeout(timeoutId);
-      setLoading(false);
+      finishLoading();
     });
 
     return () => {
+      mountedRef.current = false;
+      profileGenerationRef.current += 1;
+      profileRequestRef.current?.abort();
+      profileRequestRef.current = null;
       window.clearTimeout(timeoutId);
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [applySession, loadProfile]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
+    profileRequestRef.current?.abort();
     await supabase.auth.signOut();
-    setProfile(null);
-  };
+    if (mountedRef.current) setProfile(null);
+  }, []);
 
   const value = useMemo(
     () => ({ session, user, profile, loading, refreshProfile, signOut }),
-    [session, user, profile, loading],
+    [session, user, profile, loading, refreshProfile, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 }
