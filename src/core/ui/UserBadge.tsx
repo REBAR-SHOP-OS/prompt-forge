@@ -1,4 +1,4 @@
-import { useAuth } from "@/core/auth/AuthProvider";
+import { useAuth } from "@/core/auth/auth-context";
 import { Badge } from "@/components/ui/badge";
 
 export default function UserBadge() {

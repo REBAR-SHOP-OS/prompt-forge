@@ -20,7 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { useAuth } from '@/core/auth/AuthProvider'
+import { useAuth } from '@/core/auth/auth-context'
 import {
   useUsageStats, fmtUsd, monthLabel, PER_CLIP_USD,
 } from '@/modules/generator-ui/hooks/useUsageStats'

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { getJobProgressPercent, isTerminalStatus } from '@/modules/generator-ui/pages/DashboardPage'
+import { getJobProgressPercent, isTerminalStatus } from '@/modules/generator-ui/lib/jobProgress'
 
 type ProgressJob = {
   id?: string

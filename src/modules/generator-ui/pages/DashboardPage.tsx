@@ -110,7 +110,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
 
 import { ApiError } from '@/core/api/client'
-import { useAuth } from '@/core/auth/AuthProvider'
+import { useAuth } from '@/core/auth/auth-context'
 import { supabase } from '@/integrations/supabase/client'
 import { UserImageView } from '@/modules/generator-ui/components/UserImageView'
 import { ChooseProductDialog } from '@/modules/generator-ui/components/ChooseProductDialog'
@@ -128,6 +128,7 @@ import { TransitionPicker } from '@/modules/generator-ui/components/TransitionPi
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { DraggablePreview } from '@/modules/generator-ui/components/DraggablePreview'
 import { usePreviewPosition } from '@/modules/generator-ui/hooks/usePreviewPosition'
+import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import { LibraryCardPreview } from '@/modules/generator-ui/components/LibraryCardPreview'
@@ -136,6 +137,7 @@ import {
   type LibraryCardPreviewAsset,
 } from '@/modules/generator-ui/lib/libraryCardPreview'
 import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
+import { getJobProgressPercent, isTerminalStatus } from '@/modules/generator-ui/lib/jobProgress'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { videoLibraryGateway } from '@/modules/video-library/gateway'
@@ -616,10 +618,6 @@ function ImageDurationInput({
 }
 
 
-export function isTerminalStatus(status: string) {
-  return status === 'completed' || status === 'failed' || status === 'cancelled'
-}
-
 const COMPLETED_WITHOUT_VIDEO_TIMEOUT_MS = 60_000
 
 function completedWithoutVideoTimedOut(job: JobDetail) {
@@ -723,42 +721,6 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
   return [prompt || 'Generate from uploaded context', `Attached files:\n${fileContext}`].filter(Boolean).join('\n\n')
 }
 
-// Monotonic per-job cache: progress shown to the user must never go down.
-// Keyed by job id; cleared implicitly when the page unmounts.
-const progressMaxRef: Map<string, number> = new Map()
-
-export function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string; requested_duration?: number | null }): number | null {
-  const status = normalizeStatus(job.status)
-  if (status === 'completed') {
-    if (job.id) progressMaxRef.set(job.id, 100)
-    return 100
-  }
-  if (status === 'failed' || status === 'cancelled') {
-    if (job.id) progressMaxRef.delete(job.id)
-    return null
-  }
-  // Time-based estimate is a *fallback only* and is capped at 60 so the UI
-  // never falsely implies "almost done" while the provider is still working.
-  // Real backend/provider progress is honored as-is up to 99 — only true
-  // completion reaches 100.
-  const dur = job.requested_duration && job.requested_duration > 0 ? job.requested_duration : 5
-  const expectedMs = Math.max(120_000, dur * 30_000)
-  const startedAt = Date.parse(job.created_at)
-  const elapsed = Number.isFinite(startedAt) ? Date.now() - startedAt : 0
-  const ratio = expectedMs > 0 ? elapsed / expectedMs : 0
-  const timeBased = Math.max(status === 'pending' ? 8 : 15, Math.min(60, Math.round(15 + ratio * 45)))
-  const backend = typeof job.progress_percent === 'number'
-    ? Math.max(0, Math.min(99, Math.round(job.progress_percent)))
-    : null
-  // Prefer the higher of the two, but never let time-based push past 60.
-  const next = backend !== null ? Math.max(backend, timeBased) : timeBased
-  if (!job.id) return next
-  const prev = progressMaxRef.get(job.id) ?? 0
-  const monotonic = Math.max(prev, next)
-  progressMaxRef.set(job.id, monotonic)
-  return monotonic
-}
-
 function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
   const remainingJobs = currentJobs.filter((job) => job.id !== nextJob.id)
   return [nextJob, ...remainingJobs].sort(
@@ -782,7 +744,7 @@ function isExpectedLocalRouterError(error: unknown): boolean {
   )
 }
 
-export function generationStartErrorMessage(error: unknown, fallback: string): string {
+function generationStartErrorMessage(error: unknown, fallback: string): string {
   if (isExpectedBillingError(error)) {
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
@@ -1012,6 +974,7 @@ export default function DashboardPage() {
   // Cache of translated results keyed by language code.
   const [copyrightTranslations, setCopyrightTranslations] = useState<Record<string, CopyrightResult>>({})
   const [copyrightTranslating, setCopyrightTranslating] = useState(false)
+  useDocumentLanguage(copyrightLang || 'en', Boolean(copyrightJob))
 
   const COPYRIGHT_LANGS: Array<{ value: string; label: string; rtl?: boolean }> = [
     { value: '', label: 'Original' },
@@ -2576,12 +2539,12 @@ export default function DashboardPage() {
       setProjectAudio(obj && typeof obj === 'object' ? obj : {})
     } catch { setProjectAudio({}) }
   }, [projectAudioKey])
-  function persistProjectAudio(next: Record<string, ProjectAudio>) {
+  const persistProjectAudio = useCallback((next: Record<string, ProjectAudio>) => {
     if (!projectAudioKey) return
     try {
       window.localStorage.setItem(projectAudioKey, JSON.stringify(next))
     } catch { /* ignore */ }
-  }
+  }, [projectAudioKey])
 
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
@@ -2887,10 +2850,10 @@ export default function DashboardPage() {
       setActiveImageIds(new Set(Array.isArray(arr) ? arr : []))
     } catch { setActiveImageIds(new Set()) }
   }, [activeImageIdsKey])
-  function persistActiveJobIds(next: Set<string>) {
+  const persistActiveJobIds = useCallback((next: Set<string>) => {
     if (!activeJobIdsKey) return
     try { window.localStorage.setItem(activeJobIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-  }
+  }, [activeJobIdsKey])
   function persistActiveImageIds(next: Set<string>) {
     if (!activeImageIdsKey) return
     try { window.localStorage.setItem(activeImageIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
@@ -2901,14 +2864,14 @@ export default function DashboardPage() {
       const next = new Set(curr); next.add(id); persistActiveJobIds(next); return next
     })
   }
-  function unmarkActiveJobs(ids: Iterable<string>) {
+  const unmarkActiveJobs = useCallback((ids: Iterable<string>) => {
     setActiveJobIds((curr) => {
       const next = new Set(curr); let changed = false
       for (const id of ids) { if (next.delete(id)) changed = true }
       if (!changed) return curr
       persistActiveJobIds(next); return next
     })
-  }
+  }, [persistActiveJobIds])
   function markActiveImage(id: string) {
     setActiveImageIds((curr) => {
       if (curr.has(id)) return curr
@@ -3458,30 +3421,29 @@ export default function DashboardPage() {
       })
     }, 1200)
     return () => { cancelled = true; clearTimeout(timer) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, persistAudioToStorage])
+  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, persistAudioToStorage, persistProjectAudio])
 
   useEffect(() => {
     setPendingEndAppends({})
   }, [pendingEndAppendsKey])
 
-  function persistPendingEndAppends(next: Record<string, string>) {
+  const persistPendingEndAppends = useCallback((next: Record<string, string>) => {
     if (!pendingEndAppendsKey) return
     try {
       window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify(next))
     } catch { /* ignore */ }
-  }
+  }, [pendingEndAppendsKey])
 
   useEffect(() => {
     setPendingStartPrepends({})
   }, [pendingStartPrependsKey])
 
-  function persistPendingStartPrepends(next: Record<string, string>) {
+  const persistPendingStartPrepends = useCallback((next: Record<string, string>) => {
     if (!pendingStartPrependsKey) return
     try {
       window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify(next))
     } catch { /* ignore */ }
-  }
+  }, [pendingStartPrependsKey])
 
   // Legacy local "hide" set is no longer used — deletes are now real and
   // server-authoritative. Purge any leftover key from previous versions.
@@ -6033,7 +5995,7 @@ export default function DashboardPage() {
         pollTimerRef.current = null
       }
     }
-  }, [generatedVideos, isReadOnlyProject])
+  }, [generatedVideos, isReadOnlyProject, draftSourceJobs, unmarkActiveJobs])
 
   // When a job that has a pending end-frame append completes, merge a 2s
   // still clip of the End image to the end of the video and replace the
@@ -6102,7 +6064,7 @@ export default function DashboardPage() {
         }
       })()
     })
-  }, [generatedVideos, pendingEndAppends, userId])
+  }, [generatedVideos, pendingEndAppends, userId, persistPendingEndAppends])
 
   // Mirror of the end-append effect, but PREPENDS the Start frame as a 2s
   // still clip to the front of the generated text-to-video output.
@@ -6167,7 +6129,7 @@ export default function DashboardPage() {
         }
       })()
     })
-  }, [generatedVideos, pendingStartPrepends, userId])
+  }, [generatedVideos, pendingStartPrepends, userId, persistPendingStartPrepends])
 
   // NOTE: The per-second progress animation is intentionally NOT driven from a
   // page-wide re-render here. A previous `setInterval(() => setProgressTick(...))`
@@ -6640,7 +6602,7 @@ export default function DashboardPage() {
         }
       })()
     }
-  }, [projectAudio, mergedDurationSec])
+  }, [projectAudio, mergedDurationSec, persistProjectAudio])
 
 
 

@@ -4,7 +4,7 @@
 // Supabase auth user_metadata for display name. Does NOT touch credits,
 // billing, or any usage-related data.
 import { useCallback, useEffect, useState } from 'react'
-import { useAuth } from '@/core/auth/AuthProvider'
+import { useAuth } from '@/core/auth/auth-context'
 import { supabase } from '@/integrations/supabase/client'
 
 const AVATARS_BUCKET = 'avatars'

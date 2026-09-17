@@ -33,11 +33,18 @@ export function UserImageView({
   const [resolved, setResolved] = useState(src)
   const [broken, setBroken] = useState(false)
   const retriedRef = useRef(false)
+  const sourceRef = useRef(src)
+  const requestGenerationRef = useRef(0)
+  sourceRef.current = src
 
   useEffect(() => {
+    requestGenerationRef.current += 1
     setResolved(src)
     setBroken(false)
     retriedRef.current = false
+    return () => {
+      requestGenerationRef.current += 1
+    }
   }, [src])
 
   const handleError = useCallback(() => {
@@ -46,19 +53,24 @@ export function UserImageView({
       return
     }
     retriedRef.current = true
-    let active = true
-    signUserImageUrl(src)
+    const requestSource = src
+    const failedUrl = resolved
+    const generation = ++requestGenerationRef.current
+    void signUserImageUrl(requestSource)
       .then((signed) => {
-        if (!active) return
-        if (signed && signed !== resolved) setResolved(signed)
+        if (
+          requestGenerationRef.current !== generation ||
+          sourceRef.current !== requestSource
+        ) return
+        if (signed && signed !== failedUrl) setResolved(signed)
         else setBroken(true)
       })
       .catch(() => {
-        if (active) setBroken(true)
+        if (
+          requestGenerationRef.current === generation &&
+          sourceRef.current === requestSource
+        ) setBroken(true)
       })
-    return () => {
-      active = false
-    }
   }, [src, resolved])
 
   if (broken) {
