@@ -1494,9 +1494,10 @@ export default function ProductAdDialog({
                         <button
                           type="button"
                           onClick={() => { setContactLogo(''); setBusinessSaved(false) }}
+                          aria-label="Remove company logo"
                           className="text-[11px] text-muted-foreground transition hover:text-rose-300"
                         >
-                          ✕
+                          <span aria-hidden="true">✕</span>
                         </button>
                       ) : null}
                     </div>

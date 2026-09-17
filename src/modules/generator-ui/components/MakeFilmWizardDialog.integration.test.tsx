@@ -200,6 +200,29 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
     }
   })
 
+  it('exposes selected semantics for duration/aspect controls and labels icon-only removal', async () => {
+    mockCharacterRows([{ id: 'plain-1', title: 'Sarah', image_type: 'character' }])
+    renderWizard()
+
+    const durationGroup = screen.getByRole('radiogroup', { name: 'Film duration' })
+    expect(durationGroup).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '30s' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('radio', { name: '10s' }))
+    expect(screen.getByRole('radio', { name: '10s' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '30s' })).toHaveAttribute('aria-checked', 'false')
+
+    const aspectGroup = screen.getByRole('radiogroup', { name: 'Aspect ratio' })
+    expect(aspectGroup).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Landscape \(16:9\)/ })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('radio', { name: /Portrait\/Story \(9:16\)/ }))
+    expect(screen.getByRole('radio', { name: /Portrait\/Story \(9:16\)/ })).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Sarah'))
+    expect(screen.getByRole('button', { name: 'Remove selected character' })).toBeInTheDocument()
+  })
+
   it('requires a product, enables after selection, and disables immediately after removal', async () => {
     renderWizard()
     const writeButton = screen.getByRole('button', { name: 'Write scenario' })

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   startSync: vi.fn(),
 }));
 
-vi.mock("@/core/auth/AuthProvider", () => ({
+vi.mock("@/core/auth/auth-context", () => ({
   useAuth: () => ({ user: mocks.userId ? { id: mocks.userId } : null }),
 }));
 

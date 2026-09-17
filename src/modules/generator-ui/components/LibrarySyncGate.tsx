@@ -2,7 +2,7 @@
 // dashboard mounts, so its localStorage-reading effects see synced data. While
 // hydrating it shows the loading screen; afterwards it keeps pushing changes up.
 import { ReactNode, useEffect, useState } from "react";
-import { useAuth } from "@/core/auth/AuthProvider";
+import { useAuth } from "@/core/auth/auth-context";
 import LoadingScreen from "@/core/ui/LoadingScreen";
 import {
   hydrateLibraryFromServer,

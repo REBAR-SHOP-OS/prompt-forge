@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import MakeFilmWizardDialog, { inFlightSigns } from './MakeFilmWizardDialog'
+import MakeFilmWizardDialog from './MakeFilmWizardDialog'
+import { inFlightSigns } from '@/modules/generator-ui/lib/makeFilmSigning'
 
 const { mockFrom, mockStorage } = vi.hoisted(() => {
   const mockFrom = vi.fn()

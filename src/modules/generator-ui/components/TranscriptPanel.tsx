@@ -3,6 +3,7 @@ import { Loader2, RefreshCw, Volume2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
 import { extractAudioAsBase64 } from '../lib/extractAudio'
+import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import {
   Select,
   SelectContent,
@@ -63,6 +64,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   // Cache of generated pronunciation audio keyed by normalized word.
   const audioCache = useRef<Map<string, string>>(new Map())
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  useDocumentLanguage(language === ORIGINAL ? 'en' : language)
 
   const showWords = words.length > 0
   const hasLowConfidence = showWords && words.some((w) => w.lowConfidence)
@@ -122,10 +124,11 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
 
   // Clean up audio + object URLs on unmount.
   useEffect(() => {
+    const cachedAudioUrls = audioCache.current
     return () => {
       if (audioRef.current) audioRef.current.pause()
-      for (const url of audioCache.current.values()) URL.revokeObjectURL(url)
-      audioCache.current.clear()
+      for (const url of cachedAudioUrls.values()) URL.revokeObjectURL(url)
+      cachedAudioUrls.clear()
     }
   }, [])
 

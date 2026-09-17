@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Crop, LoaderCircle, UploadCloud, Wand2, Download, RefreshCw } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
-import { useAuth } from '@/core/auth/AuthProvider'
+import { useAuth } from '@/core/auth/auth-context'
 import { useToast } from '@/hooks/use-toast'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 

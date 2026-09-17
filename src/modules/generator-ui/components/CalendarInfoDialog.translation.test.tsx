@@ -92,6 +92,7 @@ describe('CalendarInfoDialog translation', () => {
     expect(screen.queryByText('About')).not.toBeInTheDocument()
     expect(screen.queryByText('History')).not.toBeInTheDocument()
     expect(screen.getByTestId('occasion-detail-body')).toHaveAttribute('dir', 'rtl')
+    expect(document.documentElement.lang).toBe('fa')
 
     const translationCalls = mockInvoke.mock.calls.filter(([name]) => name === 'translate-text')
     expect(translationCalls).toHaveLength(5)
@@ -120,6 +121,7 @@ describe('CalendarInfoDialog translation', () => {
     expect(screen.getByText(originalHistory)).toBeInTheDocument()
     expect(screen.queryByText('درباره')).not.toBeInTheDocument()
     expect(screen.queryByText('تاریخچه')).not.toBeInTheDocument()
+    expect(document.documentElement.lang).toBe('en')
     expect(mockInvoke.mock.calls.filter(([name]) => name === 'translate-text')).toHaveLength(callsBeforeEnglish)
   })
 

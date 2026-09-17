@@ -75,6 +75,14 @@ interface LibraryBaseline {
   version: number;
 }
 
+const MAX_KEEPALIVE_BYTES = 60 * 1024;
+
+export type LibraryKeepaliveRequest = {
+  method: "POST" | "PATCH";
+  query: string;
+  body: string;
+};
+
 function trackedKeysFor(userId: string): string[] {
   return TRACKED_PREFIXES.map((prefix) => `${prefix}:${userId}`);
 }
@@ -290,7 +298,33 @@ export function createLibraryStateSync(
     }
   };
 
-  return { hydrate, push };
+  const prepareKeepalive = (
+    userId: string,
+    maxBytes = MAX_KEEPALIVE_BYTES,
+  ): LibraryKeepaliveRequest | null => {
+    const baseline = baselines.get(userId);
+    if (!userId || !baseline) return null;
+
+    const localState = snapshotLocal(userId, storage);
+    if (JSON.stringify(localState) === JSON.stringify(baseline.state)) return null;
+
+    const nextVersion = baseline.version + 1;
+    const method = baseline.version === 0 ? "POST" : "PATCH";
+    const body = JSON.stringify(method === "POST"
+      ? { user_id: userId, state: localState, version: nextVersion }
+      : { state: localState, version: nextVersion });
+    if (new TextEncoder().encode(body).byteLength > maxBytes) return null;
+
+    return {
+      method,
+      query: method === "POST"
+        ? ""
+        : `?user_id=eq.${encodeURIComponent(userId)}&version=eq.${baseline.version}`,
+      body,
+    };
+  };
+
+  return { hydrate, push, prepareKeepalive };
 }
 
 const supabaseBackend: LibraryStateBackend = {
@@ -353,6 +387,38 @@ export async function pushLibraryToServer(userId: string): Promise<LibrarySyncRe
   return (await getBrowserSync()?.push(userId)) ?? { status: "error" };
 }
 
+type SupabasePublicConfig = { supabaseUrl: string; supabaseKey: string };
+
+export function sendLibraryKeepaliveRequest(
+  request: LibraryKeepaliveRequest,
+  accessToken: string | null,
+  config: SupabasePublicConfig,
+  fetchImpl: typeof fetch = fetch,
+): boolean {
+  if (!accessToken || !config.supabaseUrl || !config.supabaseKey) return false;
+  try {
+    void fetchImpl(
+      `${config.supabaseUrl.replace(/\/+$/, "")}/rest/v1/generator_library_state${request.query}`,
+      {
+        method: request.method,
+        keepalive: true,
+        headers: {
+          apikey: config.supabaseKey,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: request.body,
+      },
+    ).catch(() => {
+      // localStorage remains the fallback cache; the next normal sync retries.
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Start watching localStorage for library changes and push them up (debounced).
  * The first failed/conflicted push is reported to the gate, which owns stopping
@@ -368,6 +434,19 @@ export function startLibrarySync(
   let debounceTimer: number | undefined;
   let pushing = false;
   let stopped = false;
+  let accessToken: string | null = null;
+  let keepaliveSerialized: string | null = null;
+
+  void supabase.auth.getSession().then(({ data }) => {
+    if (!stopped && data.session?.user.id === userId) {
+      accessToken = data.session.access_token;
+    }
+  }).catch(() => {
+    accessToken = null;
+  });
+  const { data: authSubscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    accessToken = session?.user.id === userId ? session.access_token : null;
+  });
 
   const runPush = async () => {
     if (pushing || stopped) return;
@@ -393,29 +472,53 @@ export function startLibrarySync(
   };
 
   const tick = () => {
+    if (document.visibilityState === "hidden") return;
     const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
     if (serialized !== lastSerialized) schedulePush();
   };
 
   const intervalId = window.setInterval(tick, 1500);
 
-  const flushNow = () => {
+  const flushAsync = () => {
     const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
     if (serialized !== lastSerialized) void runPush();
   };
 
+  const flushKeepalive = () => {
+    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
+    if (serialized === lastSerialized || serialized === keepaliveSerialized) return;
+    keepaliveSerialized = serialized;
+    const request = getBrowserSync()?.prepareKeepalive(userId);
+    const config = supabase as unknown as SupabasePublicConfig;
+    if (request && sendLibraryKeepaliveRequest(request, accessToken, config)) {
+      return;
+    }
+    // Oversized payloads, missing sessions, and unsupported fetches fall back
+    // to the normal authenticated push. localStorage remains intact if the
+    // browser terminates before that best-effort request completes.
+    void runPush();
+  };
+
   const onVisibility = () => {
-    if (document.visibilityState === "hidden") flushNow();
+    if (document.visibilityState === "hidden") {
+      flushKeepalive();
+    } else {
+      // A page restored from the back-forward cache performs a normal push so
+      // the in-memory CAS baseline catches up with the keepalive write.
+      keepaliveSerialized = null;
+      flushAsync();
+    }
   };
 
   document.addEventListener("visibilitychange", onVisibility);
-  window.addEventListener("beforeunload", flushNow);
+  window.addEventListener("pagehide", flushKeepalive);
 
   return () => {
     stopped = true;
     if (debounceTimer) window.clearTimeout(debounceTimer);
     window.clearInterval(intervalId);
     document.removeEventListener("visibilitychange", onVisibility);
-    window.removeEventListener("beforeunload", flushNow);
+    window.removeEventListener("pagehide", flushKeepalive);
+    authSubscription.subscription.unsubscribe();
   };
 }
