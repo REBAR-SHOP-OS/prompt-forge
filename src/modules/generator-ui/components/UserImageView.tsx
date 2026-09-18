@@ -6,7 +6,7 @@
 // stored as public-bucket URLs that return 400/"Bucket not found" when loaded
 // directly (see resolveImageBucketKey), so the browser shows its broken-image
 // glyph instead of the picture.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { ImageIcon } from 'lucide-react'
 
 import { signUserImageUrl } from '@/modules/generator-ui/lib/userImageUrl'
@@ -23,16 +23,19 @@ export function UserImageView({
   className,
   imageKey,
   loading,
+  onIntrinsicSize,
 }: {
   src: string
   alt: string
   className?: string
   imageKey?: string
   loading?: 'lazy' | 'eager'
+  onIntrinsicSize?: (dimensions: { width: number; height: number }) => void
 }) {
   const [resolved, setResolved] = useState(src)
   const [broken, setBroken] = useState(false)
   const retriedRef = useRef(false)
+  const reportedIntrinsicSizeRef = useRef<string | null>(null)
   const sourceRef = useRef(src)
   const requestGenerationRef = useRef(0)
   sourceRef.current = src
@@ -42,6 +45,7 @@ export function UserImageView({
     setResolved(src)
     setBroken(false)
     retriedRef.current = false
+    reportedIntrinsicSizeRef.current = null
     return () => {
       requestGenerationRef.current += 1
     }
@@ -73,6 +77,16 @@ export function UserImageView({
       })
   }, [src, resolved])
 
+  const handleLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    if (!onIntrinsicSize) return
+    const { naturalWidth: width, naturalHeight: height } = event.currentTarget
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+    const measurementKey = `${src}:${width}x${height}`
+    if (reportedIntrinsicSizeRef.current === measurementKey) return
+    reportedIntrinsicSizeRef.current = measurementKey
+    onIntrinsicSize({ width, height })
+  }, [onIntrinsicSize, src])
+
   if (broken) {
     return (
       <div className={`flex flex-col items-center justify-center gap-2 bg-surface-2 text-center ${className ?? ''}`}>
@@ -89,6 +103,7 @@ export function UserImageView({
       alt={alt}
       className={className}
       loading={loading}
+      onLoad={handleLoad}
       onError={handleError}
     />
   )
