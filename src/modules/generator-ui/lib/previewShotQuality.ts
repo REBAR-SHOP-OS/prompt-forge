@@ -25,7 +25,7 @@ export type PreviewShotContext = {
 export const MAX_PREVIEW_SHOT_ATTEMPTS = 3
 
 export class PreviewShotQualityError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly imageUrl: string) {
     super(message)
     this.name = 'PreviewShotQualityError'
   }
@@ -66,9 +66,11 @@ export async function generateQualityCheckedPreviewShot(
   const attemptsLimit = Math.max(1, Math.floor(maxAttempts))
   let correction: string | undefined
   let lastEvaluation: PreviewShotQualityEvaluation | null = null
+  let lastImageUrl = ''
 
   for (let attempt = 1; attempt <= attemptsLimit; attempt += 1) {
     const imageUrl = await generate(correction)
+    lastImageUrl = imageUrl
     let evaluation: PreviewShotQualityEvaluation
     try {
       evaluation = await evaluate(imageUrl, context)
@@ -86,5 +88,6 @@ export async function generateQualityCheckedPreviewShot(
   const detail = lastEvaluation?.summary.trim() || lastEvaluation?.contradiction?.trim() || 'The image did not match its planned action.'
   throw new PreviewShotQualityError(
     `Preview shot ${context.shotIndex + 1} still failed action-quality review after ${attemptsLimit} attempts. ${detail} Regenerate this shot to try again.`,
+    lastImageUrl,
   )
 }
