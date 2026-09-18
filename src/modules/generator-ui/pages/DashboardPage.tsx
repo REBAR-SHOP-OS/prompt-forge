@@ -232,6 +232,14 @@ import {
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
 import {
+  imageAspectCss,
+  imageRatioPreset,
+  readImageFileDimensions,
+  recoverableImageDimensions,
+  validImageDimensions,
+  type ImageDimensions,
+} from '@/modules/generator-ui/lib/imageAspect'
+import {
   autoFilmPreviewReducer,
   createAutoFilmPreviewState,
   summarizeAutoFilmBatch,
@@ -2652,6 +2660,70 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  const recoveringImageDimensionsRef = useRef(new Set<string>())
+  const recoverLegacyImageDimensions = useCallback(async (
+    image: UserImageItem,
+    measured: ImageDimensions,
+  ) => {
+    const dimensions = recoverableImageDimensions(
+      image.width,
+      image.height,
+      measured.width,
+      measured.height,
+    )
+    if (!dimensions || !userId || recoveringImageDimensionsRef.current.has(image.id)) return
+    recoveringImageDimensionsRef.current.add(image.id)
+
+    const { error } = await supabase
+      .from('generator_user_images')
+      .update(dimensions)
+      .eq('id', image.id)
+      .eq('user_id', userId)
+    if (error) {
+      recoveringImageDimensionsRef.current.delete(image.id)
+      console.warn('[image-dimensions] legacy recovery failed', error)
+      return
+    }
+
+    const updateItems = (items: UserImageItem[]): UserImageItem[] => {
+      let changed = false
+      const next = items.map((item) => {
+        if (item.id !== image.id || validImageDimensions(item.width, item.height)) return item
+        changed = true
+        return { ...item, ...dimensions }
+      })
+      return changed ? next : items
+    }
+    const updateGroups = (
+      groups: Record<string, UserImageItem[]>,
+    ): Record<string, UserImageItem[]> => {
+      let changed = false
+      const next: Record<string, UserImageItem[]> = {}
+      for (const [id, items] of Object.entries(groups)) {
+        const updated = updateItems(items)
+        if (updated !== items) changed = true
+        next[id] = updated
+      }
+      return changed ? next : groups
+    }
+
+    setUserImages(updateItems)
+    setProjectSourceImages((previous) => {
+      const next = updateGroups(previous)
+      if (next !== previous && projectSourceImagesKey) {
+        try { window.localStorage.setItem(projectSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+    setDraftSourceImages((previous) => {
+      const next = updateGroups(previous)
+      if (next !== previous && draftSourceImagesKey) {
+        try { window.localStorage.setItem(draftSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+  }, [draftSourceImagesKey, projectSourceImagesKey, userId])
+
   // Permanent ownership maps: every generated clip / uploaded image belongs to
   // EXACTLY one draft, stamped at creation time. Draft snapshots are derived
   // from these maps (not from "is it live in the workspace"), which is what
@@ -5024,6 +5096,15 @@ export default function DashboardPage() {
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
+  const previewImageDimensions = previewItem?.kind === 'image'
+    ? validImageDimensions(previewItem.image.width, previewItem.image.height)
+    : null
+  const previewImageAspect = previewItem?.kind === 'image'
+    ? imageAspectCss(previewItem.image.width, previewItem.image.height, ratioToCss(aspectRatio))
+    : ratioToCss(aspectRatio)
+  const previewImageWidth = previewImageDimensions
+    ? `min(calc(100vw - 56rem), ${previewMaxHeightPx * previewImageDimensions.width / previewImageDimensions.height}px)`
+    : ratioToWidth(aspectRatio)
 
   // True when the previewed video is an already-merged Final Film / Library
   // project. These have the contact overlay permanently burned in during merge,
@@ -5351,6 +5432,7 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
     resumeSelectedProject()
     try {
+      const intrinsicDimensions = await readImageFileDimensions(file)
       const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
       const path = `${userId}/${crypto.randomUUID()}.${ext}`
       const up = await supabase.storage
@@ -5368,6 +5450,8 @@ export default function DashboardPage() {
           storage_path: publicUrl,
           size_bytes: file.size,
           mime_type: file.type,
+          width: intrinsicDimensions?.width ?? null,
+          height: intrinsicDimensions?.height ?? null,
           draft_group_id: imageGroupId,
         })
         .select('id, storage_path, created_at, still_duration_seconds, width, height, draft_group_id')
@@ -11558,7 +11642,11 @@ export default function DashboardPage() {
                     kind: 'image' as const,
                     id: c.id,
                     src: c.image.storage_path,
-                    ratio: lockedProjectRatio ?? aspectRatio,
+                    ratio: imageRatioPreset(
+                      c.image.width,
+                      c.image.height,
+                      lockedProjectRatio ?? aspectRatio,
+                    ),
                     durationSec: Math.max(1, c.image.still_duration_seconds || 3),
                     label: 'Uploaded image',
                   }
@@ -11602,7 +11690,7 @@ export default function DashboardPage() {
               <div
                 className="overflow-hidden rounded-[22px] border border-border bg-surface/95 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
                 style={{
-                  width: ratioToWidth(aspectRatio),
+                  width: previewImageWidth,
                   maxWidth: 'calc(100vw - 56rem)',
                   maxHeight: `${previewMaxHeightPx}px`,
                 }}
@@ -11611,8 +11699,9 @@ export default function DashboardPage() {
                   ref={setContactBoxRef}
                   className="relative overflow-hidden bg-black"
                   style={{
-                    aspectRatio: ratioToCss(aspectRatio),
-                    height: ratioToHeight(aspectRatio),
+                    aspectRatio: previewImageAspect,
+                    width: '100%',
+                    maxHeight: `${previewMaxHeightPx}px`,
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
@@ -11621,6 +11710,9 @@ export default function DashboardPage() {
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
+                    onIntrinsicSize={previewImageDimensions ? undefined : (dimensions) => {
+                      void recoverLegacyImageDimensions(previewItem.image, dimensions)
+                    }}
                   />
                   {renderContactPreviewOverlay()}
                   <button
@@ -12092,13 +12184,22 @@ export default function DashboardPage() {
                       >
                         <div
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2"
-                          style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
+                          style={{
+                            aspectRatio: imageAspectCss(
+                              img.width,
+                              img.height,
+                              ratioToCss(lockedProjectRatio ?? aspectRatio),
+                            ),
+                          }}
                         >
                           <UserImageView
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-contain"
                             loading="lazy"
+                            onIntrinsicSize={validImageDimensions(img.width, img.height) ? undefined : (dimensions) => {
+                              void recoverLegacyImageDimensions(img, dimensions)
+                            }}
                           />
                           <span
                             className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-surface-2 px-1.5 text-xs font-semibold tabular-nums text-foreground shadow-md ring-1 ring-foreground/15"
