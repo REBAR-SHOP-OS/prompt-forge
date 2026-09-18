@@ -29,6 +29,33 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }))
 
+vi.mock('./AiImageDialog', () => ({
+  default: ({
+    open,
+    initialImageUrl,
+    onSaved,
+  }: {
+    open: boolean
+    initialImageUrl?: string | null
+    onSaved: (row: { id: string; storage_path: string; created_at: string; still_duration_seconds: number }) => void
+  }) => open ? (
+    <div data-testid="mock-image-editor">
+      <span>{initialImageUrl}</span>
+      <button
+        type="button"
+        onClick={() => onSaved({
+          id: 'edited-image',
+          storage_path: 'https://x/edited-shot.png',
+          created_at: '2026-09-18T00:00:00Z',
+          still_duration_seconds: 5,
+        })}
+      >
+        Save edited image
+      </button>
+    </div>
+  ) : null,
+}))
+
 // A controllable generateSceneImage spy that records the exact payload the
 // wizard passes (urls + characterSheet flag) for both initial and Regenerate.
 type WizardProps = Parameters<typeof MakeFilmWizardDialog>[0]
@@ -277,6 +304,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     fireEvent.click(screen.getByText('Generate preview images'))
 
     await waitFor(() => expect(screen.getByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toBeInTheDocument())
+    expect(screen.getAllByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toHaveLength(1)
     expect(generateSceneImage).toHaveBeenCalledTimes(8)
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-4')
@@ -294,6 +322,11 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
       nextPlannedAction: expect.stringContaining('Plan three'),
     })
 
+    const beforeFailedRegenerate = generateSceneImage.mock.calls.length
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+    await waitFor(() => expect(generateSceneImage.mock.calls.length).toBe(beforeFailedRegenerate + 3))
+    expect(screen.getAllByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toHaveLength(1)
+
     allowShotTwo = true
     const beforeRegenerate = generateSceneImage.mock.calls.length
     fireEvent.click(screen.getAllByText('Regenerate')[1])
@@ -302,6 +335,29 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     expect(generateSceneImage.mock.calls.length).toBe(beforeRegenerate + 1)
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
     expect(screen.queryByText(/Preview shot 2 still failed action-quality review/i)).not.toBeInTheDocument()
+  }, 15_000)
+
+  it('opens each preview card in the existing image editor and applies the saved edit only to that shot', async () => {
+    let generated = 0
+    generateSceneImage.mockImplementation(async () => `data:image/png;base64,SCENE-${++generated}`)
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Edit image for shot/ })).toHaveLength(6))
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-2')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit image for shot 2' }))
+    expect(screen.getByTestId('mock-image-editor')).toHaveTextContent('data:image/png;base64,SCENE-2')
+    fireEvent.click(screen.getByTestId('mock-image-editor').querySelector('button')!)
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'https://x/edited-shot.png'))
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
   }, 15_000)
 
   it('keeps an image visible but blocks approval when the evaluator returns an invalid-response 502, then recovers on regeneration', async () => {
@@ -611,7 +667,7 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     generateSceneImage.mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
     fireEvent.click(screen.getAllByText('Regenerate')[0])
 
-    await waitFor(() => expect(screen.getAllByText(/Could not preserve every selected identity/i)).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText(/Could not preserve every selected identity/i)).toHaveLength(1))
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST')
   })
 
