@@ -158,7 +158,7 @@ describe('Make Full Film Step 3 independent preview quality retries', () => {
     expect(retriedShotCalls[1][7]).toContain('hands float away from the stirrup')
   })
 
-  it('fails only a truly invalid shot after three bounded attempts and requires regeneration', async () => {
+  it('keeps the last identity-safe candidate after three bounded action-quality attempts and requires regeneration', async () => {
     setEvaluator((shotIndex) => shotIndex !== 1)
     renderWizard()
     await reachPreviewGeneration()
@@ -173,7 +173,7 @@ describe('Make Full Film Step 3 independent preview quality retries', () => {
       expect(generateSceneImage.mock.calls.filter((call) => call[0] === plan)).toHaveLength(1)
       expect(screen.getByAltText(`Preview for scene ${index + 1}`)).toBeInTheDocument()
     }
-    expect(screen.queryByAltText('Preview for scene 2')).not.toBeInTheDocument()
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE')
     expect(screen.getAllByRole('button', { name: /Regenerate$/ }).length).toBeGreaterThan(0)
   })
 })
