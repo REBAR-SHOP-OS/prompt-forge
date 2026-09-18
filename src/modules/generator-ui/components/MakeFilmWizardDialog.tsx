@@ -26,6 +26,7 @@ import {
   HardHat,
   Scale,
   Award,
+  Pencil,
 } from 'lucide-react'
 import {
   Dialog,
@@ -56,6 +57,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
 import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
+import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import { groupProductPhotos, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
 import {
   PRODUCT_IDENTITY_CATEGORIES,
@@ -248,6 +250,7 @@ export function MakeFilmWizardDialog({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
+  const [editImageIndex, setEditImageIndex] = useState<number | null>(null)
   const [scenarioReviewOpen, setScenarioReviewOpen] = useState(false)
   const [reviewLang, setReviewLang] = useState('en')
   const [reviewTranslation, setReviewTranslation] = useState<string | null>(null)
@@ -299,9 +302,11 @@ export function MakeFilmWizardDialog({
       setCharacterPickerOpen(false)
       setCharacterSheetSource(null)
       setLightboxOpen(false)
+      setEditImageIndex(null)
     }
     if (!open) {
       hasInitialized.current = false
+      setEditImageIndex(null)
     }
   }, [open, initialPrompt, defaultDuration, defaultAspect, initialFilmType])
 
@@ -932,10 +937,25 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         copy[index] = msg
         return copy
       })
-      setError(msg)
     } finally {
       setRegenIndex(null)
     }
+  }
+
+  function handleEditedImageSaved(row: AiImageSavedRow) {
+    if (editImageIndex === null) return
+    const index = editImageIndex
+    setImages((cur) => {
+      const copy = [...cur]
+      copy[index] = row.storage_path
+      return copy
+    })
+    setImageErrors((cur) => {
+      const copy = [...cur]
+      copy[index] = undefined
+      return copy
+    })
+    setEditImageIndex(null)
   }
 
   function openLightbox(url: string, sceneText: string) {
@@ -1583,6 +1603,21 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                                 type="button"
                                 size="sm"
                                 variant="ghost"
+                                disabled={working}
+                                aria-label={`Edit image for shot ${i + 1}`}
+                                title={`Edit image for shot ${i + 1}`}
+                                onClick={() => setEditImageIndex(i)}
+                                className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
+                              >
+                                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                                Edit
+                              </Button>
+                            )}
+                            {url && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
                                 onClick={() => openLightbox(url, plan.scenarioText)}
                                 className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
                               >
@@ -1928,6 +1963,17 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         userId={userId}
         initialCharacter={characterSheetSource}
         onSheetCreated={handleCharacterSheetCreated}
+      />
+
+      <AiImageDialog
+        open={editImageIndex !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setEditImageIndex(null)
+        }}
+        userId={userId}
+        defaultAspect={aspect}
+        initialImageUrl={editImageIndex === null ? null : safeMediaUrl(images[editImageIndex])}
+        onSaved={handleEditedImageSaved}
       />
 
       {/* Lightbox for zoom */}
