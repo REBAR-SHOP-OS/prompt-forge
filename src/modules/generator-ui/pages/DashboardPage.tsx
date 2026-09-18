@@ -230,6 +230,10 @@ import {
   DEFAULT_MODEL_ID,
 } from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
+import {
+  resolveVisibleProjectImages,
+  selectLegacyProjectImagesByOwnerId,
+} from '@/modules/generator-ui/lib/projectImageIsolation'
 import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
 import {
   autoFilmPreviewReducer,
@@ -4526,31 +4530,19 @@ export default function DashboardPage() {
     for (const clips of Object.values(projectSourceJobs)) {
       for (const c of clips) claimedJobs.add(c.id)
     }
-    const claimedImgs = new Set<string>()
-    for (const imgs of Object.values(projectSourceImages)) {
-      for (const i of imgs) claimedImgs.add(i.id)
-    }
 
     const nextJobs = { ...projectSourceJobs }
     const nextImgs = { ...projectSourceImages }
     let jobsChanged = false
     let imgsChanged = false
 
-    // Items owned by ANY draft (via ownership maps or live draft snapshots)
-    // must never be claimed by a legacy Final Film backfill — that is exactly
-    // how a draft's image/clip leaks into another project. Only truly loose,
-    // unowned legacy items are eligible.
+    // Preserve the existing legacy VIDEO behavior while excluding clips owned
+    // by any draft. Images are handled separately below and never use this
+    // timestamp heuristic because chronology cannot prove image ownership.
     const draftOwnedJobIds = new Set<string>(Object.keys(jobDraftMap))
     for (const clips of Object.values(draftSourceJobs)) {
       for (const c of clips) draftOwnedJobIds.add(c.id)
     }
-    const draftOwnedImageIds = new Set<string>(Object.keys(imageDraftMap))
-    for (const imgs of Object.values(draftSourceImages)) {
-      for (const i of imgs) draftOwnedImageIds.add(i.id)
-    }
-    // Film covers belong to a specific project scope and must never be pulled
-    // into another project's legacy source-image backfill.
-    for (const ci of Object.values(coverImages)) draftOwnedImageIds.add(ci.id)
 
     for (const p of missing) {
       const cutoff = new Date(p.created_at).getTime()
@@ -4571,19 +4563,11 @@ export default function DashboardPage() {
       for (const c of sourceClips) claimedJobs.add(c.id)
 
       if (!(p.id in projectSourceImages)) {
-        const sourceImgs = [...userImages]
-          .filter(
-            (i) =>
-              !claimedImgs.has(i.id) &&
-              !draftOwnedImageIds.has(i.id) &&
-              (i.category ?? 'general') !== 'cover' &&
-              !!i.storage_path &&
-              new Date(i.created_at).getTime() <= cutoff,
-          )
-          .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
-        nextImgs[p.id] = sourceImgs
+        // A creation-time cutoff cannot prove which Final Film owns an image.
+        // No deterministic final-project ownership map exists for these legacy
+        // rows, so persist an explicit empty snapshot rather than guessing.
+        nextImgs[p.id] = selectLegacyProjectImagesByOwnerId(userImages, p.id, {})
         imgsChanged = true
-        for (const i of sourceImgs) claimedImgs.add(i.id)
       }
     }
 
@@ -4596,7 +4580,7 @@ export default function DashboardPage() {
       persistProjectSourceImages(nextImgs)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages, jobDraftMap, imageDraftMap, draftSourceJobs, draftSourceImages, coverImages])
+  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages, jobDraftMap, draftSourceJobs])
 
 
 
@@ -4802,36 +4786,16 @@ export default function DashboardPage() {
     return s
   }, [coverImages])
 
-  const visibleUserImages = useMemo<UserImageItem[]>(() => {
-    if (selectedProjectId) {
-      const snapshot = projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? []
-      const liveById = new Map(userImages.map((i) => [i.id, i]))
-      if (snapshot.length > 0) {
-        return snapshot
-          .map((s) => liveById.get(s.id) ?? s)
-          .filter((i) => !allCoverImageIds.has(i.id) && (i.category ?? 'general') !== 'reframe' && (i.category ?? 'general') !== 'cover')
-      }
-      // Single-clip Library entries never have image sources.
-      if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
-    }
-    const claimedByProjects = new Set<string>()
-    for (const imgs of Object.values(projectSourceImages)) {
-      for (const i of imgs) claimedByProjects.add(i.id)
-    }
-    for (const [did, imgs] of Object.entries(draftSourceImages)) {
-      if (did === activeDraftId) continue
-      for (const i of imgs) claimedByProjects.add(i.id)
-    }
-    return userImages.filter(
-      (i) =>
-        activeImageIds.has(i.id) &&
-        !workspaceHiddenImageIds.has(i.id) &&
-        !claimedByProjects.has(i.id) &&
-        !allCoverImageIds.has(i.id) &&
-        (i.category ?? 'general') !== 'reframe' &&
-        (i.category ?? 'general') !== 'cover',
-    )
-  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds, activeImageIds])
+  const visibleUserImages = useMemo<UserImageItem[]>(() => resolveVisibleProjectImages({
+    userImages,
+    selectedProjectId,
+    projectSourceImages,
+    draftSourceImages,
+    activeDraftId,
+    workspaceHiddenImageIds,
+    coverImageIds: allCoverImageIds,
+    activeImageIds,
+  }), [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds, activeImageIds])
 
 
 
