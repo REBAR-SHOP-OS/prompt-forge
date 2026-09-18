@@ -246,7 +246,7 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
 })
 
 describe('MakeFilmWizardDialog preview action quality (integration)', () => {
-  it('marks one failed preview shot, preserves passed shots, and regenerates only that shot', async () => {
+  it('keeps the last identity-safe image when one shot exhausts action-quality review, then regenerates only that shot', async () => {
     let allowShotTwo = false
     mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
       if (functionName !== 'film-preview-quality') return { data: null, error: null }
@@ -279,8 +279,8 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     await waitFor(() => expect(screen.getByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toBeInTheDocument())
     expect(generateSceneImage).toHaveBeenCalledTimes(8)
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
-    expect(screen.queryByAltText('Preview for scene 2')).not.toBeInTheDocument()
-    expect(screen.getAllByText('No image — regenerate')).toHaveLength(1)
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-4')
+    expect(screen.queryByText('No image — regenerate')).not.toBeInTheDocument()
 
     const qualityCalls = mockInvoke.mock.calls.filter(([name]) => name === 'film-preview-quality')
     const shotTwoCalls = qualityCalls.filter(([, options]) => options?.body?.shotIndex === 1)
@@ -302,6 +302,24 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     expect(generateSceneImage.mock.calls.length).toBe(beforeRegenerate + 1)
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
     expect(screen.queryByText(/Preview shot 2 still failed action-quality review/i)).not.toBeInTheDocument()
+  }, 15_000)
+
+  it('keeps a true identity-validation rejection blank instead of surfacing an unsafe candidate', async () => {
+    generateSceneImage
+      .mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
+      .mockResolvedValue('data:image/png;base64,SAFE')
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Could not preserve every selected identity/i)).toBeInTheDocument())
+    expect(screen.queryByAltText('Preview for scene 1')).not.toBeInTheDocument()
+    expect(screen.getByText('No image — regenerate')).toBeInTheDocument()
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SAFE')
   }, 15_000)
 })
 

@@ -59,14 +59,15 @@ describe('generateQualityCheckedPreviewShot', () => {
   })
 
   it('fails explicitly after the bounded attempts remain implausible', async () => {
-    const generate = vi.fn(async () => 'https://preview/failed.png')
+    let attempt = 0
+    const generate = vi.fn(async () => `https://preview/failed-${++attempt}.png`)
     const evaluate = vi.fn(async () => evaluation(false))
 
-    await expect(generateQualityCheckedPreviewShot(context, generate, evaluate, 3)).rejects.toEqual(
-      new PreviewShotQualityError(
-        'Preview shot 2 still failed action-quality review after 3 attempts. The hands do not contact the wire. Regenerate this shot to try again.',
-      ),
-    )
+    await expect(generateQualityCheckedPreviewShot(context, generate, evaluate, 3)).rejects.toMatchObject({
+      name: 'PreviewShotQualityError',
+      message: 'Preview shot 2 still failed action-quality review after 3 attempts. The hands do not contact the wire. Regenerate this shot to try again.',
+      imageUrl: 'https://preview/failed-3.png',
+    } satisfies Partial<PreviewShotQualityError>)
     expect(generate).toHaveBeenCalledTimes(3)
   })
 

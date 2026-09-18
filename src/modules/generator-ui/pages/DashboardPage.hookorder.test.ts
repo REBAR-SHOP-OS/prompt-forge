@@ -45,4 +45,11 @@ describe('DashboardPage Make Full Film identity handoff', () => {
     expect(source).toContain('generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction)')
     expect(source).not.toContain('productUrls ?? selectedProduct?.urls, characterUrl ?? selectedCharacter?.url')
   })
+
+  it('surfaces the ai-image-edit response body instead of a generic non-2xx message', () => {
+    expect(source).toContain("extractFunctionError(cErr, 'Could not compose this preview image.')")
+    expect(source).toContain("extractFunctionError(iErr, 'Could not generate this preview image.')")
+    expect(source).not.toContain('if (cErr) throw cErr')
+    expect(source).not.toContain('if (iErr) throw iErr')
+  })
 })

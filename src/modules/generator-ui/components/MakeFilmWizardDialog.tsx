@@ -41,6 +41,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import {
   generateQualityCheckedPreviewShot,
+  PreviewShotQualityError,
   type PreviewShotContext,
   type PreviewShotQualityEvaluation,
 } from '@/modules/generator-ui/lib/previewShotQuality'
@@ -881,7 +882,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
-        next[i] = undefined
+        // The image generator enforces product/character identity before it
+        // returns a URL. If only the separate action-quality review exhausts
+        // its retries, keep that last identity-safe candidate visible so the
+        // user can inspect or regenerate it instead of blanking the card.
+        next[i] = err instanceof PreviewShotQualityError ? err.imageUrl : undefined
         nextErrors[i] = err instanceof Error ? err.message : `Could not generate image ${i + 1}.`
       }
       setImages([...next])
