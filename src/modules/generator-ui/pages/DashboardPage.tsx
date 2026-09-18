@@ -28,7 +28,6 @@ import {
   History,
   Image as ImageIcon,
   ImagePlus,
-  CalendarPlus,
   Library,
   Languages,
   LoaderCircle,
@@ -104,7 +103,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
@@ -236,6 +234,14 @@ import {
 } from '@/modules/generator-ui/lib/projectImageIsolation'
 import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
 import {
+  imageAspectCss,
+  imageRatioPreset,
+  readImageFileDimensions,
+  recoverableImageDimensions,
+  validImageDimensions,
+  type ImageDimensions,
+} from '@/modules/generator-ui/lib/imageAspect'
+import {
   autoFilmPreviewReducer,
   createAutoFilmPreviewState,
   summarizeAutoFilmBatch,
@@ -354,65 +360,6 @@ type UserAudioItem = {
 // chain treats it as fatal; shorter multi-scene callers may continue unseeded.
 const SEED_FRAME_ERROR = 'SeedFrameCaptureError'
 const MERGED_BUCKET = 'merged-videos'
-// Locked parent origin for the "Schedule to Social Media" hand-off. The Final
-// Film card posts to this exact origin in production (never "*") so the schedule
-// payload can only ever be received by the Rebar OS shell that embeds this app.
-const SOCIAL_PARENT_ORIGIN = 'https://os.rebar.shop'
-
-// Temporary debug flag. When true, a last-resort "*" broadcast is allowed if no
-// allow-listed parent origin could be detected. MUST stay false in production.
-const SOCIAL_ALLOW_WILDCARD_FALLBACK = true
-
-// Is `origin` a trusted target we are allowed to postMessage to?
-// Allowed: the production Rebar OS origin, and any https *.lovable.app preview
-// origin (Rebar OS may be tested inside a Lovable preview).
-function isAllowedSocialOrigin(origin: string | null | undefined): boolean {
-  if (!origin) return false
-  try {
-    const u = new URL(origin)
-    if (u.protocol !== 'https:') return false
-    if (u.origin === SOCIAL_PARENT_ORIGIN) return true
-    const host = u.hostname.toLowerCase()
-    if (host === 'lovable.app' || host.endsWith('.lovable.app')) return true
-    return false
-  } catch {
-    return false
-  }
-}
-
-// Best-effort detection of the real parent origin when embedded. Cross-origin
-// iframes cannot read window.parent.location, so we fall back to document.referrer
-// (the embedding page's URL). Returns a validated origin or null.
-function detectParentOrigin(): string | null {
-  // 1) Same-origin parent (rare in practice) — read directly.
-  try {
-    if (window.parent && window.parent !== window && window.parent.location?.origin) {
-      const o = window.parent.location.origin
-      if (isAllowedSocialOrigin(o)) return o
-    }
-  } catch {
-    /* cross-origin: expected, fall through to referrer */
-  }
-  // 2) Referrer of the embedding page.
-  try {
-    if (document.referrer) {
-      const o = new URL(document.referrer).origin
-      if (isAllowedSocialOrigin(o)) return o
-    }
-  } catch {
-    /* ignore */
-  }
-  return null
-}
-
-// Build the list of target origins to post the schedule hand-off to. Production
-// always includes os.rebar.shop; a detected, allow-listed preview origin is added
-// so the Rebar OS Diagnostic HUD can receive the message inside a Lovable preview.
-function buildSocialTargetOrigins(detected: string | null): string[] {
-  const origins = new Set<string>([SOCIAL_PARENT_ORIGIN])
-  if (detected && isAllowedSocialOrigin(detected)) origins.add(detected)
-  return Array.from(origins)
-}
 const USER_AUDIO_BUCKET = 'user-audio'
 
 function mergeUserImageRows<T extends { id: string; created_at: string }>(current: T[], incoming: T[]): T[] {
@@ -2655,6 +2602,70 @@ export default function DashboardPage() {
       else window.localStorage.removeItem(activeDraftIdKey)
     } catch { /* ignore */ }
   }
+
+  const recoveringImageDimensionsRef = useRef(new Set<string>())
+  const recoverLegacyImageDimensions = useCallback(async (
+    image: UserImageItem,
+    measured: ImageDimensions,
+  ) => {
+    const dimensions = recoverableImageDimensions(
+      image.width,
+      image.height,
+      measured.width,
+      measured.height,
+    )
+    if (!dimensions || !userId || recoveringImageDimensionsRef.current.has(image.id)) return
+    recoveringImageDimensionsRef.current.add(image.id)
+
+    const { error } = await supabase
+      .from('generator_user_images')
+      .update(dimensions)
+      .eq('id', image.id)
+      .eq('user_id', userId)
+    if (error) {
+      recoveringImageDimensionsRef.current.delete(image.id)
+      console.warn('[image-dimensions] legacy recovery failed', error)
+      return
+    }
+
+    const updateItems = (items: UserImageItem[]): UserImageItem[] => {
+      let changed = false
+      const next = items.map((item) => {
+        if (item.id !== image.id || validImageDimensions(item.width, item.height)) return item
+        changed = true
+        return { ...item, ...dimensions }
+      })
+      return changed ? next : items
+    }
+    const updateGroups = (
+      groups: Record<string, UserImageItem[]>,
+    ): Record<string, UserImageItem[]> => {
+      let changed = false
+      const next: Record<string, UserImageItem[]> = {}
+      for (const [id, items] of Object.entries(groups)) {
+        const updated = updateItems(items)
+        if (updated !== items) changed = true
+        next[id] = updated
+      }
+      return changed ? next : groups
+    }
+
+    setUserImages(updateItems)
+    setProjectSourceImages((previous) => {
+      const next = updateGroups(previous)
+      if (next !== previous && projectSourceImagesKey) {
+        try { window.localStorage.setItem(projectSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+    setDraftSourceImages((previous) => {
+      const next = updateGroups(previous)
+      if (next !== previous && draftSourceImagesKey) {
+        try { window.localStorage.setItem(draftSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+  }, [draftSourceImagesKey, projectSourceImagesKey, userId])
 
   // Permanent ownership maps: every generated clip / uploaded image belongs to
   // EXACTLY one draft, stamped at creation time. Draft snapshots are derived
@@ -4988,6 +4999,15 @@ export default function DashboardPage() {
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
+  const previewImageDimensions = previewItem?.kind === 'image'
+    ? validImageDimensions(previewItem.image.width, previewItem.image.height)
+    : null
+  const previewImageAspect = previewItem?.kind === 'image'
+    ? imageAspectCss(previewItem.image.width, previewItem.image.height, ratioToCss(aspectRatio))
+    : ratioToCss(aspectRatio)
+  const previewImageWidth = previewImageDimensions
+    ? `min(calc(100vw - 56rem), ${previewMaxHeightPx * previewImageDimensions.width / previewImageDimensions.height}px)`
+    : ratioToWidth(aspectRatio)
 
   // True when the previewed video is an already-merged Final Film / Library
   // project. These have the contact overlay permanently burned in during merge,
@@ -4997,221 +5017,6 @@ export default function DashboardPage() {
     (previewItem.job.id === '__final_film_preview__' ||
       previewItem.job.provider_key === 'merged' ||
       (!!selectedProjectId && previewItem.job.id === selectedProjectId))
-
-  // --- Schedule the Final Film to the Rebar OS Social Media Manager ---
-  // Frontend-only hand-off: posts a durable signed video URL + schedule time to
-  // the embedding Rebar OS shell via postMessage (origin-locked). No backend or
-  // merge logic is touched here.
-  const [scheduleOpen, setScheduleOpen] = useState(false)
-  const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined)
-  const [scheduleTime, setScheduleTime] = useState('10:00')
-  const [scheduleSending, setScheduleSending] = useState(false)
-  const [scheduleStatus, setScheduleStatus] = useState<
-    { kind: 'idle' | 'sending' | 'sent' | 'error'; message?: string }
-  >({ kind: 'idle' })
-  // On-screen debug snapshot of the last Send attempt (visible inside the popover).
-  const [scheduleDebug, setScheduleDebug] = useState<{
-    clicked: boolean
-    isInIframe: boolean
-    videoUrlExists: boolean
-    videoUrlSource: string
-    scheduledAt: string
-    detectedParentOrigin: string
-    targetOrigins: string[]
-    sentToParent: Record<string, boolean>
-    sentToTop: Record<string, boolean>
-    error: string
-  } | null>(null)
-  // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
-  const isInIframe = useMemo(() => {
-    try {
-      return window.parent !== window
-    } catch {
-      // Cross-origin access throws -> we are definitely inside an iframe.
-      return true
-    }
-  }, [])
-
-  const handleScheduleToSocial = useCallback(async () => {
-    const detectedParentOrigin = detectParentOrigin()
-    const dbg = {
-      clicked: true,
-      isInIframe,
-      videoUrlExists: false,
-      videoUrlSource: '',
-      scheduledAt: '',
-      detectedParentOrigin: detectedParentOrigin ?? '',
-      targetOrigins: [] as string[],
-      sentToParent: {} as Record<string, boolean>,
-      sentToTop: {} as Record<string, boolean>,
-      error: '',
-    }
-    setScheduleDebug({ ...dbg })
-    console.log('[Schedule→Social] schedule button clicked')
-    console.log('[Schedule→Social] isInIframe:', isInIframe)
-    console.log('[Schedule→Social] detectedParentOrigin:', detectedParentOrigin)
-    if (!isInIframe) {
-      dbg.error = 'Not inside Rebar OS iframe'
-      setScheduleDebug({ ...dbg })
-      toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
-      return
-    }
-    if (!scheduleDate) {
-      dbg.error = 'No date selected'
-      setScheduleDebug({ ...dbg })
-      toast.error('Pick a date first.')
-      return
-    }
-    setScheduleSending(true)
-    setScheduleStatus({ kind: 'sending' })
-    try {
-      const rawPath = previewVideo?.video?.storage_path
-
-      // Durable, fetchable URL the other app can read. merged-videos is a
-      // private bucket, so mint a long-lived signed URL (1 year) instead of a
-      // public URL that would 403.
-      let videoUrl = rawPath ?? ''
-      dbg.videoUrlSource = rawPath
-        ? 'previewVideo.video.storage_path (signed)'
-        : 'previewVideo.video.storage_path (empty)'
-      if (rawPath) {
-        try {
-          // Accepts the bucket-relative form persisted since #202 as well as
-          // the legacy full storage URL; otherwise a bucket-relative path was
-          // double-prefixed and signing failed, handing Social Media Manager
-          // the raw unfetchable storage_path.
-          const ref = parseStorageRef(rawPath)
-          const bucket = ref?.bucket ?? MERGED_BUCKET
-          const path = ref?.path ?? rawPath
-          const { data, error } = await supabase.storage
-            .from(bucket)
-            .createSignedUrl(path, 60 * 60 * 24 * 365)
-          if (!error && data?.signedUrl) videoUrl = data.signedUrl
-        } catch {
-          /* fall back to the raw storage_path */
-        }
-      }
-
-      const [hh, mm] = scheduleTime.split(':').map((n) => parseInt(n, 10))
-      const when = new Date(scheduleDate)
-      when.setHours(Number.isFinite(hh) ? hh : 10, Number.isFinite(mm) ? mm : 0, 0, 0)
-
-      const posterUrl = previewVideo?.video?.thumbnail_url ?? undefined
-      const durationSec = previewVideo?.video?.duration ?? undefined
-      const caption = previewVideo?.input_prompt ?? ''
-      const scheduledAt = when.toISOString()
-
-      const payload = {
-        videoUrl,
-        ...(posterUrl ? { posterUrl } : {}),
-        mimeType: 'video/mp4',
-        ...(durationSec ? { durationSec } : {}),
-        caption,
-        scheduledAt,
-      }
-
-      dbg.videoUrlExists = !!videoUrl
-      dbg.scheduledAt = scheduledAt
-      setScheduleDebug({ ...dbg })
-
-      console.log('[Schedule→Social] videoUrl exists:', !!videoUrl)
-      console.log('[Schedule→Social] scheduledAt:', scheduledAt)
-      console.log('[Schedule→Social] payload:', payload)
-
-      // Hard validation: never silently send an empty hand-off.
-      if (!videoUrl) {
-        dbg.error = 'Final video URL is missing'
-        setScheduleDebug({ ...dbg })
-        toast.error('Final video URL is missing')
-        setScheduleStatus({ kind: 'error', message: 'Final video URL is missing' })
-        return
-      }
-      if (!scheduledAt) {
-        dbg.error = 'scheduledAt is missing'
-        setScheduleDebug({ ...dbg })
-        toast.error('Cannot send: missing scheduledAt')
-        setScheduleStatus({ kind: 'error', message: 'Missing scheduledAt' })
-        return
-      }
-
-      const message = { type: 'rebar.finalFilm.scheduleToSocial', payload }
-
-      // Resolve every allow-listed target origin. Production always includes
-      // os.rebar.shop; a detected, allow-listed Lovable preview origin is added
-      // so the Rebar OS Diagnostic HUD can receive the message in preview/test.
-      const targetOrigins = buildSocialTargetOrigins(detectedParentOrigin)
-      dbg.targetOrigins = [...targetOrigins]
-      console.log('[Schedule→Social] targetOrigins:', targetOrigins)
-
-      // Post to the embedding shell. In nested-iframe setups window.parent and
-      // window.top can differ, so post to both for every allow-listed origin.
-      let posted = false
-      for (const origin of targetOrigins) {
-        try {
-          window.parent?.postMessage(message, origin)
-          posted = true
-          dbg.sentToParent[origin] = true
-          console.log('[Schedule→Social] postMessage sent to window.parent', origin)
-        } catch (err) {
-          dbg.sentToParent[origin] = false
-          dbg.error = `parent.postMessage(${origin}): ${String((err as Error)?.message ?? err)}`
-          console.error('[Schedule→Social] window.parent.postMessage failed', origin, err)
-        }
-        try {
-          if (window.top && window.top !== window.parent) {
-            window.top.postMessage(message, origin)
-            posted = true
-            dbg.sentToTop[origin] = true
-            console.log('[Schedule→Social] postMessage also sent to window.top', origin)
-          }
-        } catch (err) {
-          dbg.sentToTop[origin] = false
-          dbg.error = `top.postMessage(${origin}): ${String((err as Error)?.message ?? err)}`
-          console.error('[Schedule→Social] window.top.postMessage failed', origin, err)
-        }
-      }
-
-      // Last-resort wildcard fallback — only behind the temporary debug flag, and
-      // only when no allow-listed parent origin could be detected. Never in prod.
-      if (!detectedParentOrigin && SOCIAL_ALLOW_WILDCARD_FALLBACK) {
-        try {
-          window.parent?.postMessage(message, '*')
-          window.top?.postMessage(message, '*')
-          posted = true
-          dbg.sentToParent['*'] = true
-          dbg.sentToTop['*'] = true
-          dbg.targetOrigins = [...dbg.targetOrigins, '* (debug fallback)']
-          console.warn('[Schedule→Social] wildcard fallback used (debug only)')
-        } catch (err) {
-          console.error('[Schedule→Social] wildcard fallback failed', err)
-        }
-      }
-
-      setScheduleDebug({ ...dbg })
-      console.log('[Schedule→Social] postMessage executed:', posted, '| scheduledAt:', scheduledAt)
-
-      if (!posted) {
-        if (!dbg.error) dbg.error = 'postMessage failed'
-        setScheduleDebug({ ...dbg })
-        toast.error('Failed to send message to Rebar OS')
-        setScheduleStatus({ kind: 'error', message: 'postMessage failed' })
-        return
-      }
-
-      toast.success(`Sent to Social Media Manager • ${scheduledAt}`)
-      setScheduleStatus({ kind: 'sent', message: `Message sent to Rebar OS • ${scheduledAt}` })
-      setTimeout(() => setScheduleOpen(false), 1800)
-    } catch (err) {
-      dbg.error = String((err as Error)?.message ?? err)
-      setScheduleDebug({ ...dbg })
-      console.error('[Schedule→Social] unexpected error', err)
-      toast.error('Failed to send to Social Media Manager')
-      setScheduleStatus({ kind: 'error', message: String((err as Error)?.message ?? err) })
-    } finally {
-      setScheduleSending(false)
-    }
-  }, [scheduleDate, scheduleTime, previewVideo, isInIframe])
-
 
   // Live progress tick is handled by the global setProgressTick effect below
   // (re-renders once per second while any job is active), so the preview's
@@ -5315,6 +5120,7 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
     resumeSelectedProject()
     try {
+      const intrinsicDimensions = await readImageFileDimensions(file)
       const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
       const path = `${userId}/${crypto.randomUUID()}.${ext}`
       const up = await supabase.storage
@@ -5332,6 +5138,8 @@ export default function DashboardPage() {
           storage_path: publicUrl,
           size_bytes: file.size,
           mime_type: file.type,
+          width: intrinsicDimensions?.width ?? null,
+          height: intrinsicDimensions?.height ?? null,
           draft_group_id: imageGroupId,
         })
         .select('id, storage_path, created_at, still_duration_seconds, width, height, draft_group_id')
@@ -10796,123 +10604,6 @@ export default function DashboardPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {isReadOnlyProject && (
-        <Popover open={scheduleOpen} onOpenChange={(o) => isInIframe && setScheduleOpen(o)}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              disabled={!isInIframe}
-              onClick={() => {
-                if (!isInIframe) {
-                  toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
-                }
-              }}
-              className="flex h-9 items-center gap-1.5 rounded-md border border-accent-cool/40 bg-accent-cool/15 px-3 text-xs uppercase tracking-[0.18em] text-accent-cool transition hover:border-accent-cool/60 hover:bg-accent-cool/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-accent-cool/40 disabled:hover:bg-accent-cool/15"
-              aria-label="Schedule to Social Media Manager"
-              title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
-            >
-              <CalendarPlus className="h-[14px] w-[14px]" aria-hidden="true" />
-              <span className="hidden xl:inline">Schedule</span>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="center" className="w-auto p-3">
-            <div className="space-y-3">
-              <div>
-                <p className="mb-1 text-xs font-medium text-foreground/90">Date</p>
-                <Calendar
-                  mode="single"
-                  selected={scheduleDate}
-                  onSelect={setScheduleDate}
-                  initialFocus
-                  className="pointer-events-auto rounded-md border"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-foreground/90" htmlFor="schedule-time">
-                  Time
-                </label>
-                <input
-                  id="schedule-time"
-                  type="time"
-                  value={scheduleTime}
-                  onChange={(e) => setScheduleTime(e.target.value)}
-                  className="h-9 w-full rounded-md border border-border bg-accent/40 px-3 text-sm text-foreground outline-none focus:border-border"
-                />
-              </div>
-              <Button
-                type="button"
-                className="w-full"
-                disabled={!scheduleDate || scheduleSending}
-                onClick={handleScheduleToSocial}
-              >
-                {scheduleSending ? 'Sending…' : 'Send to Social Media Manager'}
-              </Button>
-              {scheduleStatus.kind !== 'idle' && (
-                <p
-                  className={
-                    'text-xs ' +
-                    (scheduleStatus.kind === 'error'
-                      ? 'text-danger'
-                      : scheduleStatus.kind === 'sent'
-                        ? 'text-action-emerald'
-                        : 'text-accent-cool')
-                  }
-                >
-                  {scheduleStatus.kind === 'sending'
-                    ? 'Sending…'
-                    : scheduleStatus.kind === 'sent'
-                      ? scheduleStatus.message ?? 'Message sent to Rebar OS'
-                      : scheduleStatus.message ?? 'Failed to send'}
-                </p>
-              )}
-              {scheduleDebug && (
-                <div className="space-y-0.5 rounded-md border border-border bg-surface-2/60 p-2 font-mono text-[10px] leading-relaxed text-foreground/80">
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Debug
-                  </p>
-                  <p>clicked: {scheduleDebug.clicked ? 'yes' : 'no'}</p>
-                  <p>isInIframe: {String(scheduleDebug.isInIframe)}</p>
-                  <p>
-                    videoUrl exists:{' '}
-                    <span className={scheduleDebug.videoUrlExists ? 'text-action-emerald' : 'text-danger'}>
-                      {String(scheduleDebug.videoUrlExists)}
-                    </span>
-                  </p>
-                  <p className="break-all">videoUrl source: {scheduleDebug.videoUrlSource || '—'}</p>
-                  {!scheduleDebug.videoUrlExists && (
-                    <p className="text-danger">Final video URL is missing</p>
-                  )}
-                  <p className="break-all">scheduledAt: {scheduleDebug.scheduledAt || '—'}</p>
-                  <p className="break-all">detectedParentOrigin: {scheduleDebug.detectedParentOrigin || '— (none detected)'}</p>
-                  <p className="break-all">
-                    targetOrigins:{' '}
-                    {scheduleDebug.targetOrigins.length
-                      ? scheduleDebug.targetOrigins.join(', ')
-                      : '—'}
-                  </p>
-                  {scheduleDebug.targetOrigins.length > 0 ? (
-                    scheduleDebug.targetOrigins.map((o) => (
-                      <p key={o} className="break-all">
-                        {o} → parent: {scheduleDebug.sentToParent[o] ? 'yes' : 'no'} | top:{' '}
-                        {scheduleDebug.sentToTop[o] ? 'yes' : 'no'}
-                      </p>
-                    ))
-                  ) : (
-                    <p>postMessage → parent/top: not sent</p>
-                  )}
-                  {scheduleDebug.error && (
-                    <p className="break-all text-danger">error: {scheduleDebug.error}</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-          </PopoverContent>
-        </Popover>
-      )}
-
-
-
       {!isReadOnlyProject && (
       <>
       {/* Gated Make Full Film wizard: always clickable. Opens a review flow —
@@ -11522,7 +11213,11 @@ export default function DashboardPage() {
                     kind: 'image' as const,
                     id: c.id,
                     src: c.image.storage_path,
-                    ratio: lockedProjectRatio ?? aspectRatio,
+                    ratio: imageRatioPreset(
+                      c.image.width,
+                      c.image.height,
+                      lockedProjectRatio ?? aspectRatio,
+                    ),
                     durationSec: Math.max(1, c.image.still_duration_seconds || 3),
                     label: 'Uploaded image',
                   }
@@ -11566,7 +11261,7 @@ export default function DashboardPage() {
               <div
                 className="overflow-hidden rounded-[22px] border border-border bg-surface/95 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
                 style={{
-                  width: ratioToWidth(aspectRatio),
+                  width: previewImageWidth,
                   maxWidth: 'calc(100vw - 56rem)',
                   maxHeight: `${previewMaxHeightPx}px`,
                 }}
@@ -11575,8 +11270,9 @@ export default function DashboardPage() {
                   ref={setContactBoxRef}
                   className="relative overflow-hidden bg-black"
                   style={{
-                    aspectRatio: ratioToCss(aspectRatio),
-                    height: ratioToHeight(aspectRatio),
+                    aspectRatio: previewImageAspect,
+                    width: '100%',
+                    maxHeight: `${previewMaxHeightPx}px`,
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
@@ -11585,6 +11281,9 @@ export default function DashboardPage() {
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
+                    onIntrinsicSize={previewImageDimensions ? undefined : (dimensions) => {
+                      void recoverLegacyImageDimensions(previewItem.image, dimensions)
+                    }}
                   />
                   {renderContactPreviewOverlay()}
                   <button
@@ -12056,13 +11755,22 @@ export default function DashboardPage() {
                       >
                         <div
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2"
-                          style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
+                          style={{
+                            aspectRatio: imageAspectCss(
+                              img.width,
+                              img.height,
+                              ratioToCss(lockedProjectRatio ?? aspectRatio),
+                            ),
+                          }}
                         >
                           <UserImageView
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-contain"
                             loading="lazy"
+                            onIntrinsicSize={validImageDimensions(img.width, img.height) ? undefined : (dimensions) => {
+                              void recoverLegacyImageDimensions(img, dimensions)
+                            }}
                           />
                           <span
                             className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-surface-2 px-1.5 text-xs font-semibold tabular-nums text-foreground shadow-md ring-1 ring-foreground/15"
