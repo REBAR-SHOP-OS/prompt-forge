@@ -32,7 +32,11 @@ export class PreviewShotQualityError extends Error {
 }
 
 export class PreviewShotVerificationError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(
+    message: string,
+    readonly imageUrl: string,
+    readonly cause?: unknown,
+  ) {
     super(message)
     this.name = 'PreviewShotVerificationError'
   }
@@ -69,14 +73,29 @@ export async function generateQualityCheckedPreviewShot(
   let lastImageUrl = ''
 
   for (let attempt = 1; attempt <= attemptsLimit; attempt += 1) {
-    const imageUrl = await generate(correction)
+    let imageUrl: string
+    try {
+      imageUrl = await generate(correction)
+    } catch (error) {
+      // A correction attempt may fail identity validation even though the
+      // previous candidate already passed identity checks. Keep that known-safe
+      // candidate available; a first-attempt identity failure still rethrows
+      // without an image so an unsafe result is never surfaced.
+      if (!lastImageUrl) throw error
+      throw new PreviewShotVerificationError(
+        error instanceof Error ? error.message : `Could not regenerate preview shot ${context.shotIndex + 1}.`,
+        lastImageUrl,
+        error,
+      )
+    }
     lastImageUrl = imageUrl
     let evaluation: PreviewShotQualityEvaluation
     try {
       evaluation = await evaluate(imageUrl, context)
     } catch (error) {
       throw new PreviewShotVerificationError(
-        `Could not verify preview shot ${context.shotIndex + 1}. It was not regenerated automatically.`,
+        `Could not verify preview shot ${context.shotIndex + 1}. The generated image is kept for review; regenerate this shot to retry verification.`,
+        imageUrl,
         error,
       )
     }

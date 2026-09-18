@@ -42,6 +42,7 @@ import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import {
   generateQualityCheckedPreviewShot,
   PreviewShotQualityError,
+  PreviewShotVerificationError,
   type PreviewShotContext,
   type PreviewShotQualityEvaluation,
 } from '@/modules/generator-ui/lib/previewShotQuality'
@@ -883,10 +884,12 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
         // The image generator enforces product/character identity before it
-        // returns a URL. If only the separate action-quality review exhausts
-        // its retries, keep that last identity-safe candidate visible so the
-        // user can inspect or regenerate it instead of blanking the card.
-        next[i] = err instanceof PreviewShotQualityError ? err.imageUrl : undefined
+        // returns a URL. Keep a known identity-safe candidate when only the
+        // separate action-quality review or a later correction attempt fails;
+        // a first-attempt identity rejection carries no URL and stays blank.
+        next[i] = err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError
+          ? err.imageUrl
+          : undefined
         nextErrors[i] = err instanceof Error ? err.message : `Could not generate image ${i + 1}.`
       }
       setImages([...next])
@@ -917,6 +920,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : `Could not regenerate image ${index + 1}.`
+      if (err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError) {
+        setImages((cur) => {
+          const copy = [...cur]
+          copy[index] = err.imageUrl
+          return copy
+        })
+      }
       setImageErrors((cur) => {
         const copy = [...cur]
         copy[index] = msg
@@ -1703,7 +1713,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               {step === 'images' && (
                 <Button
                   type="button"
-                  disabled={working || !canApproveFilm(images)}
+                  disabled={working || !canApproveFilm(images) || imageErrors.some(Boolean)}
                   onClick={handleApprove}
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >

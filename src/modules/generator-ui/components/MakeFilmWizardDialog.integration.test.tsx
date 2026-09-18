@@ -304,7 +304,89 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     expect(screen.queryByText(/Preview shot 2 still failed action-quality review/i)).not.toBeInTheDocument()
   }, 15_000)
 
-  it('keeps a true identity-validation rejection blank instead of surfacing an unsafe candidate', async () => {
+  it('keeps an image visible but blocks approval when the evaluator returns an invalid-response 502, then recovers on regeneration', async () => {
+    let allowShotTwo = false
+    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
+      if (functionName !== 'film-preview-quality') return { data: null, error: null }
+      if (options?.body?.shotIndex === 1 && !allowShotTwo) {
+        return { data: null, error: new Error('Preview quality evaluator returned an invalid response') }
+      }
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    })
+    let generated = 0
+    generateSceneImage.mockImplementation(async () => `data:image/png;base64,SCENE-${++generated}`)
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Could not verify preview shot 2/i)).toBeInTheDocument())
+    expect(generateSceneImage).toHaveBeenCalledTimes(6)
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-2')
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+
+    allowShotTwo = true
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-7'))
+    expect(screen.queryByText(/Could not verify preview shot 2/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
+  }, 15_000)
+
+  it('keeps the previous identity-safe candidate when a corrected generation gets a 422, then allows controlled regeneration', async () => {
+    let allowShotTwo = false
+    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
+      if (functionName !== 'film-preview-quality') return { data: null, error: null }
+      if (options?.body?.shotIndex === 1 && !allowShotTwo) {
+        return {
+          data: {
+            evaluation: {
+              ...passingPreviewEvaluation,
+              plannedActionFaithfulness: { passed: false, reason: 'The fastening action is missing.' },
+              summary: 'The planned action is not visible.',
+              passed: false,
+            },
+          },
+          error: null,
+        }
+      }
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    })
+    let shotTwoAttempts = 0
+    generateSceneImage.mockImplementation(async (sceneText: string) => {
+      if (!sceneText.includes('Plan two')) return 'data:image/png;base64,OTHER'
+      shotTwoAttempts += 1
+      if (shotTwoAttempts === 2) {
+        throw new Error('Could not preserve every selected identity in the edited image.')
+      }
+      return shotTwoAttempts === 1
+        ? 'data:image/png;base64,IDENTITY-SAFE'
+        : 'data:image/png;base64,RECOVERED'
+    })
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Could not preserve every selected identity/i)).toBeInTheDocument())
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,IDENTITY-SAFE')
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+
+    allowShotTwo = true
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,RECOVERED'))
+    expect(screen.queryByText(/Could not preserve every selected identity/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
+  }, 15_000)
+
+  it('keeps a first-attempt identity-validation rejection blank until controlled regeneration succeeds', async () => {
     generateSceneImage
       .mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
       .mockResolvedValue('data:image/png;base64,SAFE')
@@ -320,6 +402,13 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     expect(screen.queryByAltText('Preview for scene 1')).not.toBeInTheDocument()
     expect(screen.getByText('No image — regenerate')).toBeInTheDocument()
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SAFE')
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+
+    fireEvent.click(screen.getAllByText('Regenerate')[0])
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SAFE'))
+    expect(screen.queryByText(/Could not preserve every selected identity/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
   }, 15_000)
 })
 

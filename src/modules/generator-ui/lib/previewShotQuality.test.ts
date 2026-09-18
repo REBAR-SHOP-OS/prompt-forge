@@ -71,13 +71,43 @@ describe('generateQualityCheckedPreviewShot', () => {
     expect(generate).toHaveBeenCalledTimes(3)
   })
 
-  it('does not spend another generation when the evaluator itself fails', async () => {
+  it('retains the generated image without spending another generation when the evaluator fails', async () => {
     const generate = vi.fn(async () => 'https://preview/unverified.png')
-    const evaluate = vi.fn(async () => { throw new Error('gateway unavailable') })
+    const evaluatorError = new Error('gateway unavailable')
+    const evaluate = vi.fn(async () => { throw evaluatorError })
 
-    await expect(generateQualityCheckedPreviewShot(context, generate, evaluate)).rejects.toBeInstanceOf(
-      PreviewShotVerificationError,
-    )
+    await expect(generateQualityCheckedPreviewShot(context, generate, evaluate)).rejects.toMatchObject({
+      name: 'PreviewShotVerificationError',
+      imageUrl: 'https://preview/unverified.png',
+      cause: evaluatorError,
+      message: expect.stringContaining('generated image is kept for review'),
+    } satisfies Partial<PreviewShotVerificationError>)
     expect(generate).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains the previous identity-safe image when a correction generation fails identity validation', async () => {
+    const identityError = new Error('Could not preserve every selected identity in the edited image.')
+    const generate = vi.fn()
+      .mockResolvedValueOnce('https://preview/identity-safe.png')
+      .mockRejectedValueOnce(identityError)
+    const evaluate = vi.fn(async () => evaluation(false))
+
+    await expect(generateQualityCheckedPreviewShot(context, generate, evaluate)).rejects.toMatchObject({
+      name: 'PreviewShotVerificationError',
+      imageUrl: 'https://preview/identity-safe.png',
+      cause: identityError,
+      message: identityError.message,
+    } satisfies Partial<PreviewShotVerificationError>)
+    expect(generate).toHaveBeenCalledTimes(2)
+    expect(evaluate).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a first-attempt identity failure explicit without inventing a retained image', async () => {
+    const identityError = new Error('Could not preserve every selected identity in the edited image.')
+    const generate = vi.fn(async () => { throw identityError })
+    const evaluate = vi.fn(async () => evaluation(true))
+
+    await expect(generateQualityCheckedPreviewShot(context, generate, evaluate)).rejects.toBe(identityError)
+    expect(evaluate).not.toHaveBeenCalled()
   })
 })
