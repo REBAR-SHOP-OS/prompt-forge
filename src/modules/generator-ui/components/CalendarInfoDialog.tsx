@@ -22,6 +22,7 @@ interface CalendarInfoDialogProps {
   onOpenChange: (open: boolean) => void
   onApplyPrompt?: (prompt: string) => void
   todayOnly?: boolean
+  durationSeconds?: number
 }
 
 type Category = OccasionCategory
@@ -62,11 +63,11 @@ const labels = {
     monthEmpty: 'No major occasions this month.',
     canada: 'Canada', international: 'International', religious: 'Religious',
     scenarioTitle: 'Scenario',
-    pickOccasion: 'Click an occasion to generate a 10-second cinematic scenario.',
+    pickOccasion: (d: number) => `Click an occasion to generate a ${d}-second cinematic scenario.`,
     generating: 'Writing scenario…',
     regenerate: 'Regenerate',
     useInPrompt: 'Use in prompt',
-    badge10s: '10s',
+    badgeDuration: (d: number) => `${d}s`,
     scenarioError: 'Could not generate scenario.',
   },
 
@@ -74,7 +75,7 @@ const labels = {
 
 const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 
-export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, todayOnly = false }: CalendarInfoDialogProps) {
+export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, todayOnly = false, durationSeconds = 10 }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
   const [lang, setLang] = useState('en')
@@ -261,17 +262,17 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setSelectedDate(dt)
   }
 
-  const scenarioCacheKey = selectedOccasion?.title ?? ''
+  const scenarioCacheKey = selectedOccasion ? `${selectedOccasion.title}::${lang}::${durationSeconds}` : ''
   const currentScenario = scenarioCacheKey ? scenarioCache[scenarioCacheKey] ?? null : null
 
   const generateScenario = async (occ: Occasion, force = false) => {
-    const key = occ.title
+    const key = `${occ.title}::${lang}::${durationSeconds}`
     if (!force && scenarioCache[key]) return
     setScenarioLoading(true)
     setScenarioError(null)
     try {
       const about = detailCache[detailKey(occ)]?.whatItIs ?? ''
-      const seed = `A cinematic 10-second scene about "${occ.title}" (${occ.category}). ${about}`.trim()
+      const seed = `A cinematic ${durationSeconds}-second scene about "${occ.title}" (${occ.category}). ${about}`.trim()
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
         body: { prompt: seed, mode: 'silent' },
       })
@@ -510,12 +511,12 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                 <div className="text-sm font-medium text-foreground/90">{t.scenarioTitle}</div>
               </div>
               <span className="rounded-full border border-accent-warm/30 bg-accent-warm/10 px-2 py-0.5 text-[10px] font-semibold text-accent-warm">
-                {t.badge10s}
+                {t.badgeDuration(durationSeconds)}
               </span>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-3">
               {!selectedOccasion && (
-                <div className="px-1 text-sm text-muted-foreground" dir="auto">{t.pickOccasion}</div>
+                <div className="px-1 text-sm text-muted-foreground" dir="auto">{t.pickOccasion(durationSeconds)}</div>
               )}
               {selectedOccasion && (
                 <div className="space-y-3">

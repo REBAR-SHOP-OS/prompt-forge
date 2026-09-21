@@ -79,6 +79,49 @@ beforeEach(() => {
 })
 
 describe('CalendarInfoDialog occasion detail', () => {
+  it('includes the selected duration in the scenario prompt', async () => {
+    const onApplyPrompt = vi.fn()
+    render(
+      <CalendarInfoDialog
+        open
+        todayOnly
+        durationSeconds={15}
+        onOpenChange={vi.fn()}
+        onApplyPrompt={onApplyPrompt}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /International Day of Peace/i }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', expect.objectContaining({
+        body: { prompt: 'A cinematic 15-second scene about "International Day of Peace" (international).', mode: 'silent' },
+      }))
+    })
+
+    // Click Use in prompt
+    fireEvent.click(await screen.findByRole('button', { name: /Use in prompt/i }))
+    expect(onApplyPrompt).toHaveBeenCalledWith('A peaceful cinematic scene.')
+  })
+
+  it('defaults to 10s if durationSeconds is omitted', async () => {
+    render(
+      <CalendarInfoDialog
+        open
+        todayOnly
+        onOpenChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /International Day of Peace/i }))
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', expect.objectContaining({
+        body: { prompt: 'A cinematic 10-second scene about "International Day of Peace" (international).', mode: 'silent' },
+      }))
+    })
+  })
+
   it('selects exact dates, keeps the dialog open, and preserves month navigation', () => {
     const onOpenChange = vi.fn()
     render(<CalendarInfoDialog open onOpenChange={onOpenChange} />)

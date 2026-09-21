@@ -10570,9 +10570,9 @@ export default function DashboardPage() {
         open={isCalendarOpen}
         onOpenChange={setIsCalendarOpen}
         todayOnly={false}
+        durationSeconds={durationSeconds}
         onApplyPrompt={(p) => {
           setPromptText(p)
-          setDurationSeconds(10)
           setIsCalendarOpen(false)
         }}
       />
