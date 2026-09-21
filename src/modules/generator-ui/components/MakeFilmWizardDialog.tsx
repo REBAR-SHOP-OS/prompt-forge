@@ -509,7 +509,7 @@ IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, s
 Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
   }
 
-  function buildScenarioRequest(idea: string, variation: boolean, characterDescription = '') {
+  function buildScenarioRequest(idea: string, variation: boolean, characterDescription = '', previousScenario = '') {
     let enrichedPrompt = generateDurationPrompt(idea, duration)
     const resolvedProductName = currentProductName()
     // Identity-leakage guard: sanitize UUID-like titles so raw character/product
@@ -546,6 +546,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
     if (variation) {
       enrichedPrompt += `\n\nVARIATION REQUEST: Write a fresh, different variation of this scenario. Do not repeat the previous wording — change the shot descriptions, actions, and camera moves while keeping the same product, character, film type, duration, and visual style.`
+      if (previousScenario) {
+        enrichedPrompt += `\n\nPREVIOUS SCENARIO TO DEVIATE FROM:\n${previousScenario}`
+      }
     }
 
     return {
@@ -627,7 +630,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       // leak into the regenerated scenario. Skipped synchronously when no
       // character is selected.
       const characterDescription = selectedCharacter ? (characterDesc || await resolveCharacterDescription(selectedCharacter)) : ''
-      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true, characterDescription)
+      const previousScenario = plans.map((p) => p.scenarioText).join('\n\n')
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true, characterDescription, previousScenario)
       const written = await writeScenario(enrichedPrompt, options)
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (rawScenes.length === 0) {
