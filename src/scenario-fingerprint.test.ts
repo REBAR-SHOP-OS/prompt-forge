@@ -176,6 +176,19 @@ describe("runAntiDuplicatePass", () => {
     expect(result.reason).toBe("empty");
   });
 
+  it("passes the duplicate candidate into the regeneration instruction", async () => {
+    const history = [entry(coffee())];
+    let capturedInstruction = "";
+    const regenerate = vi.fn(async (instruction: string) => {
+      capturedInstruction = instruction;
+      return steel();
+    });
+    const judge = vi.fn(async () => false);
+    await runAntiDuplicatePass(coffee(), history, regenerate, judge);
+    expect(capturedInstruction).toContain("PREVIOUS SCENARIO TO DEVIATE FROM:");
+    expect(capturedInstruction).toContain("Coffee opening"); // It contains the passed scenario (capitalized in the setup)
+  });
+
   it("uses the semantic judge for the ambiguous band (synonym duplicate)", async () => {
     // A synonym-only variation lands in the ambiguous band; the judge says duplicate.
     const history = [entry(coffee())];
@@ -264,5 +277,11 @@ describe("buildVariationInstruction", () => {
     expect(instr).toContain("CAMERA FLOW");
     expect(instr).toContain("ENDING");
     expect(instr.toLowerCase()).toContain("synonym");
+  });
+
+  it("appends the previous scenario text when supplied", () => {
+    const instr = buildVariationInstruction("SCENARIO PREVIOUS TEXT");
+    expect(instr).toContain("PREVIOUS SCENARIO TO DEVIATE FROM:");
+    expect(instr).toContain("SCENARIO PREVIOUS TEXT");
   });
 });
