@@ -1748,7 +1748,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               {step === 'images' && (
                 <Button
                   type="button"
-                  disabled={working || !canApproveFilm(images) || imageErrors.some(Boolean)}
+                  disabled={working || !canApproveFilm(images, imageErrors)}
                   onClick={handleApprove}
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >

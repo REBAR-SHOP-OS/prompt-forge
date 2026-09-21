@@ -730,8 +730,12 @@ export function resolveSceneNarration(
  * scene image is ready. A single missing image (or a failed image) blocks
  * approval so the user cannot render a film with incomplete scenes.
  */
-export function canApproveFilm(images: Array<string | undefined>): boolean {
-  return images.length > 0 && images.every((u) => typeof u === 'string' && u.length > 0)
+export function canApproveFilm(images: Array<string | undefined>, imageErrors?: Array<string | undefined>): boolean {
+  if (images.length === 0) return false
+  if (!images.every((url) => typeof url === 'string' && url.length > 0)) return false
+  if (!imageErrors) return true
+  if (imageErrors.length !== images.length) return false
+  return imageErrors.every((error) => typeof error !== 'string' || error.trim().length === 0)
 }
 
 /**
