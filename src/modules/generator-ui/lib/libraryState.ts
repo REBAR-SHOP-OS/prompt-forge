@@ -28,6 +28,7 @@ const TRACKED_PREFIXES = [
   "job-draft-map",
   "image-draft-map",
   "project-cover-images",
+  "project-cover-durations",
   "deleted-draft-ids",
   "workspace-hidden-images",
   "workspace-active-jobs",

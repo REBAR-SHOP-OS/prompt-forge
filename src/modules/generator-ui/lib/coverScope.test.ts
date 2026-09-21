@@ -4,6 +4,8 @@ import {
   getCoverDurationForScope,
   clearCoverForScope,
   clearCoverDurationForScope,
+  moveCoverBetweenScopes,
+  moveCoverDurationBetweenScopes,
   shouldIncludeCoverInMerge,
   type CoverMap,
   type CoverDurationMap,
@@ -107,6 +109,27 @@ describe('coverScope', () => {
     it('returns the same map when scopeKey is null', () => {
       const durations: CoverDurationMap = { 'draft-a': 5 }
       expect(clearCoverDurationForScope(durations, null)).toBe(durations)
+    })
+  })
+
+  describe('same-project lifecycle moves', () => {
+    it('moves a draft cover to the finalized project scope', () => {
+      const cover = makeCover('img-1')
+      const next = moveCoverBetweenScopes({ 'draft-a': cover }, 'draft-a', 'merged-a')
+      expect(next).toEqual({ 'merged-a': cover })
+    })
+
+    it('moves the cover and duration back to a reopened draft scope', () => {
+      const cover = makeCover('img-1')
+      expect(moveCoverBetweenScopes({ 'merged-a': cover }, 'merged-a', 'draft-reopened'))
+        .toEqual({ 'draft-reopened': cover })
+      expect(moveCoverDurationBetweenScopes({ 'merged-a': 5 }, 'merged-a', 'draft-reopened'))
+        .toEqual({ 'draft-reopened': 5 })
+    })
+
+    it('does not invent a cover when the source scope has none', () => {
+      const covers: CoverMap = { unrelated: makeCover('other') }
+      expect(moveCoverBetweenScopes(covers, 'missing', 'draft-a')).toBe(covers)
     })
   })
 

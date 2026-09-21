@@ -1,9 +1,10 @@
 // Pure helpers for film cover scoping.
 //
 // A cover is valid ONLY when the user has explicitly created/selected it for
-// the current project scope (selectedProjectId or activeDraftId). Covers must
-// never auto-carry between draft → finalized, finalized → draft, or across
-// Start Over. These helpers keep the logic side-effect free and testable.
+// the current project scope (selectedProjectId or activeDraftId). A cover may
+// move only when that same project changes lifecycle scope (draft → final or
+// final → reopened draft); it must never leak into another project or Start Over.
+// These helpers keep the logic side-effect free and testable.
 
 import type { UserImageItem } from '@/modules/generator-ui/pages/DashboardPage'
 
@@ -56,6 +57,30 @@ export function clearCoverDurationForScope(
   if (!scopeKey || !(scopeKey in durations)) return durations
   const { [scopeKey]: _drop, ...rest } = durations
   return rest
+}
+
+/** Move a cover when the same project changes lifecycle scope. */
+export function moveCoverBetweenScopes(
+  covers: CoverMap,
+  fromScopeKey: string | null,
+  toScopeKey: string | null,
+): CoverMap {
+  if (!fromScopeKey || !toScopeKey || fromScopeKey === toScopeKey || !covers[fromScopeKey]) return covers
+  const cover = covers[fromScopeKey]
+  const { [fromScopeKey]: _moved, ...rest } = covers
+  return { ...rest, [toScopeKey]: cover }
+}
+
+/** Move the matching cover duration with its cover. */
+export function moveCoverDurationBetweenScopes(
+  durations: CoverDurationMap,
+  fromScopeKey: string | null,
+  toScopeKey: string | null,
+): CoverDurationMap {
+  if (!fromScopeKey || !toScopeKey || fromScopeKey === toScopeKey || !(fromScopeKey in durations)) return durations
+  const duration = durations[fromScopeKey]
+  const { [fromScopeKey]: _moved, ...rest } = durations
+  return { ...rest, [toScopeKey]: duration }
 }
 
 /**
