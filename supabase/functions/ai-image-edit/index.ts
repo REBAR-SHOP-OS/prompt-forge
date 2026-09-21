@@ -5,6 +5,8 @@ import { getServiceClient } from "../_shared/core/supabase.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import {
   buildIdentityEvalPrompt,
+  buildEvaluationRetryFeedback,
+  buildTechnicalInteractionGuidance,
   classifyEvalVerdict,
   MAX_REFERENCE_IMAGES,
   parseIdentityEvalResponse,
@@ -159,8 +161,9 @@ Deno.serve(async (req) => {
       });
     }
 
+    const interactionGuidance = buildTechnicalInteractionGuidance();
     const multiRefText = identitySpecs.length > 0
-      ? `You will receive ${imageUrls.length} labelled identity reference images. Preserve every labelled identity exactly and include them together in the result. Apply this instruction (which may be in any language, including Persian/Farsi/Arabic): ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio unless the instruction explicitly requires otherwise."} Respond with ONLY the resulting image — no text, captions, or explanations.`
+      ? `You will receive ${imageUrls.length} labelled identity reference images. Preserve every labelled identity exactly and include them together in the result. Apply this instruction (which may be in any language, including Persian/Farsi/Arabic): ${prompt}. Physical interaction guidance: ${interactionGuidance}${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio unless the instruction explicitly requires otherwise."} Respond with ONLY the resulting image — no text, captions, or explanations.`
       : imageUrls.length > 1
       ? `You will receive ${imageUrls.length} images. Image 1 is the BASE image to edit/transform. The remaining ${imageUrls.length - 1} image(s) are visual REFERENCES — use their style, subject, products, or details to guide the edit. Apply this instruction (which may be in any language, including Persian/Farsi/Arabic) to image 1: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the base image unless the instruction explicitly requires otherwise."} Respond with ONLY the resulting image — no text, captions, or explanations.`
       : `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."} Respond with ONLY the edited image — no text, captions, or explanations.`;
@@ -192,13 +195,13 @@ Deno.serve(async (req) => {
         ];
 
 
-    const callModel = async (model: string, identityRetry = false) => {
-      const content = identityRetry
+    const callModel = async (model: string, reviewFeedback?: string) => {
+      const content = reviewFeedback
         ? [
             ...messageContent,
             {
               type: "text",
-              text: "The previous output failed identity validation. The new output MUST contain the exact same product and the exact same character from the labelled reference images. Do not substitute, omit, or redesign either identity.",
+              text: `The previous output failed identity/action-quality review. Reviewer feedback: ${reviewFeedback} Correct every listed issue. The new output MUST contain the exact same product and the exact same character from the labelled reference images. Do not substitute, omit, or redesign either identity.`,
             },
           ]
         : messageContent;
@@ -274,8 +277,8 @@ Deno.serve(async (req) => {
         : { verdict, outcome };
     }
 
-    async function generateOnce(model: string, identityRetry: boolean) {
-      const resp = await callModel(model, identityRetry);
+    async function generateOnce(model: string, reviewFeedback?: string) {
+      const resp = await callModel(model, reviewFeedback);
       if (resp.status === 429) return { kind: "error" as const, status: 429, error: "Rate limit reached. Try again in a moment." };
       if (resp.status === 402) return { kind: "error" as const, status: 402, error: "AI credits exhausted. Add credits to continue." };
       if (!resp.ok) {
@@ -293,12 +296,13 @@ Deno.serve(async (req) => {
     const result = await runIdentityCheckedEdit({
       referenceCount: identitySpecs.length,
       maxAttempts: identitySpecs.length > 0 ? MAX_IDENTITY_ATTEMPTS : 1,
-      generate: async (attempt) => {
+      generate: async (attempt, previousOutcome) => {
         const model = attempt === 0 ? PRIMARY : FALLBACK;
-        const generated = await generateOnce(model, attempt > 0);
+        const reviewFeedback = attempt > 0 ? buildEvaluationRetryFeedback(previousOutcome) : undefined;
+        const generated = await generateOnce(model, reviewFeedback);
         if (identitySpecs.length === 0 && generated.kind === "error" && generated.status === 422) {
           console.warn("ai-image-edit primary returned no image, retrying with fallback model");
-          return await generateOnce(FALLBACK, false);
+          return await generateOnce(FALLBACK);
         }
         return generated;
       },

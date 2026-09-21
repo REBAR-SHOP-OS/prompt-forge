@@ -1,4 +1,8 @@
-import type { EvalVerdict, IdentityEvalOutcome } from "../_shared/identity-eval.ts";
+import {
+  buildEvaluationRetryFeedback,
+  type EvalVerdict,
+  type IdentityEvalOutcome,
+} from "../_shared/identity-eval.ts";
 
 export type EditAttemptResult =
   | { kind: "success"; dataUrl: string }
@@ -27,13 +31,13 @@ export async function runIdentityCheckedEdit({
 }: {
   referenceCount: number;
   maxAttempts: number;
-  generate: (attempt: number) => Promise<EditAttemptResult>;
+  generate: (attempt: number, previousOutcome: IdentityEvalOutcome | null) => Promise<EditAttemptResult>;
   evaluate: (dataUrl: string) => Promise<IdentityCheckResult>;
 }): Promise<IdentityCheckedEditResult> {
   let lastOutcome: IdentityEvalOutcome | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const generated = await generate(attempt);
+    const generated = await generate(attempt, lastOutcome);
     if (generated.kind === "error") return generated;
     if (referenceCount === 0) return generated;
 
@@ -53,7 +57,7 @@ export async function runIdentityCheckedEdit({
   return {
     kind: "error",
     status: 422,
-    error: "Could not preserve every selected identity in the edited image.",
+    error: `Image identity/action-quality review failed after ${maxAttempts} attempts: ${buildEvaluationRetryFeedback(lastOutcome)} Edit the shot prompt or regenerate it.`,
     outcome: lastOutcome,
   };
 }

@@ -33,10 +33,19 @@ export interface IdentityEvalResult {
   reason: string;
 }
 
+export interface ActionQualityResult {
+  /** True when visible product interactions are physically plausible. */
+  passed: boolean;
+  /** Short human-readable reason for the verdict. */
+  reason: string;
+}
+
 export interface IdentityEvalOutcome {
   /** Per-reference verdicts, aligned 1:1 with the validated reference specs. */
   perReference: IdentityEvalResult[];
-  /** True only when every supplied reference is present AND matches. */
+  /** Physical/action-quality verdict for visible product interactions. */
+  actionQuality: ActionQualityResult;
+  /** True only when every identity and the action-quality review pass. */
   passed: boolean;
 }
 
@@ -57,6 +66,34 @@ export const ALLOWED_ROLES: readonly ReferenceRole[] = ["product", "character"];
 // below for how identity-eval judges only a bounded subset of them). 6 covers
 // a realistic folder (up to 5 angles) plus one character reference.
 export const MAX_REFERENCE_IMAGES = 6;
+
+/**
+ * Shared, scoped guidance for generating and reviewing visible physical
+ * interactions. Standalone product shots are not rejected merely for lacking
+ * an interaction; only depicted handling, assembly, installation, or contact
+ * is judged.
+ */
+export function buildTechnicalInteractionGuidance(): string {
+  return [
+    "When the scene depicts a product being handled, assembled, installed, or touching another object, keep the physical relationship plausible and intentional.",
+    "Reject floating parts, impossible penetration, unintended overlap, unsupported contact, or an installation that contradicts the depicted product's normal use.",
+    "For construction materials such as rebar, stirrups, and wire mesh, preserve credible placement: stirrups enclose the intended reinforcing bars, ties occur at plausible intersections, and separate products do not fuse or intersect randomly.",
+    "A standalone display with no visible interaction should pass this action-quality check unless it contains an obvious physical impossibility.",
+  ].join(" ");
+}
+
+/** Build concrete retry guidance from every failed review dimension. */
+export function buildEvaluationRetryFeedback(outcome: IdentityEvalOutcome | null): string {
+  if (!outcome) return "The identity or action-quality review did not pass.";
+  const reasons = outcome.perReference
+    .filter((result) => !result.present || !result.match)
+    .map((result) => result.reason.trim())
+    .filter(Boolean);
+  if (!outcome.actionQuality.passed && outcome.actionQuality.reason.trim()) {
+    reasons.push(outcome.actionQuality.reason.trim());
+  }
+  return reasons.join("; ") || "The identity or action-quality review did not pass.";
+}
 
 /**
  * Validate the reference payload. Returns the validated specs (url + role +
@@ -176,6 +213,8 @@ export function buildIdentityEvalPrompt(specs: ReferenceSpec[]): string {
     "For EACH reference, decide whether the SAME identity (the exact same product or the exact same character) is present in GENERATED_OUTPUT and matches closely enough.",
     "A product matches when it is the same item (same shape, materials, colors, branding) — not a similar-looking substitute.",
     "A character matches when it is the same person (same face, hair, skin tone, body type, and outfit) — not a different person.",
+    "Separately review ACTION QUALITY for visible physical interactions.",
+    buildTechnicalInteractionGuidance(),
     "A character reference may be a MULTI-VIEW CHARACTER SHEET: a single image containing several turnaround views and facial expressions of ONE person. Treat the whole sheet as a single identity — every view is the same person.",
     "For a character sheet, the output is a match ONLY if the person in GENERATED_OUTPUT is the SAME person shown across the sheet's views (same face, hairstyle, skin tone, body type, and outfit). A different person — even a real-looking woman or man — is NOT a match, even if a person is present.",
     "Be strict: if the identity is absent or clearly different, mark it as not present / not matching.",
@@ -184,9 +223,9 @@ export function buildIdentityEvalPrompt(specs: ReferenceSpec[]): string {
     refs,
     "",
     "Respond with ONLY a single minified JSON object, no markdown, no code fences, with EXACTLY this shape:",
-    '{"perReference":[{"present":boolean,"match":boolean,"reason":string}]}',
+    '{"perReference":[{"present":boolean,"match":boolean,"reason":string}],"actionQuality":{"passed":boolean,"reason":string}}',
     "The perReference array MUST have exactly one entry per reference, in the same order as REF_1, REF_2, ...",
-    '"reason" is one short sentence per reference explaining the verdict.',
+    'Each "reason" is one short sentence explaining that verdict. actionQuality.reason must describe the visible interaction defect, or briefly say that visible interactions are plausible/not applicable.',
   ].join("\n");
 }
 
@@ -200,7 +239,7 @@ export function parseIdentityEvalResponse(
   expectedCount: number,
 ): IdentityEvalOutcome | null {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  let parsed: { perReference?: unknown };
+  let parsed: { perReference?: unknown; actionQuality?: unknown };
   try {
     const start = cleaned.indexOf("{");
     const end = cleaned.lastIndexOf("}");
@@ -222,8 +261,15 @@ export function parseIdentityEvalResponse(
       reason: typeof o.reason === "string" ? o.reason : "",
     });
   }
-  const passed = perReference.every((r) => r.present && r.match);
-  return { perReference, passed };
+  if (typeof parsed.actionQuality !== "object" || parsed.actionQuality === null) return null;
+  const action = parsed.actionQuality as Record<string, unknown>;
+  if (typeof action.passed !== "boolean") return null;
+  const actionQuality: ActionQualityResult = {
+    passed: action.passed,
+    reason: typeof action.reason === "string" ? action.reason : "",
+  };
+  const passed = perReference.every((r) => r.present && r.match) && actionQuality.passed;
+  return { perReference, actionQuality, passed };
 }
 
 /**

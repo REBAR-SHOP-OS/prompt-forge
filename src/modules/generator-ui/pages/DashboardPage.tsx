@@ -7843,7 +7843,7 @@ export default function DashboardPage() {
           aspectRatio: ratio,
         }),
       })
-      if (cErr) throw cErr
+      if (cErr) throw new Error(await extractFunctionError(cErr, 'Could not generate the reviewed preview image.'))
       const composedUrl = (cData as { dataUrl?: unknown } | null)?.dataUrl
       if (typeof composedUrl !== 'string' || !composedUrl) throw new Error('No composed image returned')
       return await stageImageIntoFramesBucket(composedUrl)
@@ -7873,7 +7873,7 @@ export default function DashboardPage() {
         aspectRatio: ratio,
       }),
     })
-    if (iErr) throw iErr
+    if (iErr) throw new Error(await extractFunctionError(iErr, 'Could not generate the reviewed preview image.'))
     const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
     if (typeof dataUrl !== 'string' || !dataUrl) throw new Error('No image returned')
     return await stageImageIntoFramesBucket(dataUrl)

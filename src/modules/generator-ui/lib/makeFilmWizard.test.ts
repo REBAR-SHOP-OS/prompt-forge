@@ -298,6 +298,16 @@ describe('canApproveFilm', () => {
   it('is true only when every scene image is present', () => {
     expect(canApproveFilm(['https://x/1.png', 'https://x/2.png', 'https://x/3.png'])).toBe(true)
   })
+  it('blocks approval when a shot has a persistent review failure', () => {
+    expect(canApproveFilm(
+      ['https://x/1.png', 'https://x/2.png'],
+      [undefined, 'Image identity/action-quality review failed after 3 attempts.'],
+    )).toBe(false)
+  })
+  it('requires review state to align one-to-one with images when supplied', () => {
+    expect(canApproveFilm(['https://x/1.png', 'https://x/2.png'], [undefined])).toBe(false)
+    expect(canApproveFilm(['https://x/1.png', 'https://x/2.png'], [undefined, '  '])).toBe(true)
+  })
 })
 
 describe('isCharacterSheet', () => {
