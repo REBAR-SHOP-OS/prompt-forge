@@ -160,6 +160,8 @@ describe('MakeFilmWizardDialog Regenerate full scenario', () => {
     // Explicit variation request.
     expect(promptArg).toContain('VARIATION REQUEST')
     expect(promptArg).toContain('Do not repeat the previous wording')
+    expect(promptArg).toContain('PREVIOUS SCENARIO TO DEVIATE FROM')
+    expect(promptArg).toContain('Plan one:')
 
     // Options carry duration + plan unit.
     expect(options.duration).toBe(30)

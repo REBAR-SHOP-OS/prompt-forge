@@ -201,13 +201,13 @@ export function assessPlanScenarios(plans: string[], durationSeconds: number): S
   return issues;
 }
 
-export function buildPlanCorrectiveRetryInstruction(durationSeconds: number, issues: ScenarioQualityIssue[]): string {
+export function buildPlanCorrectiveRetryInstruction(durationSeconds: number, issues: ScenarioQualityIssue[], previousAttempt?: string): string {
   const policy = getPlanDurationPolicy(durationSeconds);
   const delimiterRule = policy.planCount > 1
     ? ` Return exactly ${policy.planCount} plans separated only by ${SCENE_DELIMITER} on its own line.`
     : " Return exactly one plan.";
 
-  return [
+  const inst = [
     "CORRECTIVE RETRY — rewrite the complete scenario once; do not explain the correction.",
     `Problems in the prior output: ${issues.map((issue) => issue.message).join("; ")}.`,
     delimiterRule,
@@ -215,6 +215,11 @@ export function buildPlanCorrectiveRetryInstruction(durationSeconds: number, iss
     "Every plan must include concrete action, framing or camera movement, a lighting or emotional change, and forward story progress without repetition.",
     `Keep the whole film's narration within ${policy.maxSpokenWordsPerFilm} naturally speakable words, divided across the plans.`,
   ].join(" ");
+
+  if (previousAttempt) {
+    return inst + `\n\nPREVIOUS ATTEMPT WITH ERRORS:\n${previousAttempt}`;
+  }
+  return inst;
 }
 
 function planQualityWarning(
@@ -245,7 +250,7 @@ export async function runPlanQualityPass(
     let retryRaw: string | null = null;
     try {
       const instruction = [
-        buildPlanCorrectiveRetryInstruction(durationSeconds, finalIssues),
+        buildPlanCorrectiveRetryInstruction(durationSeconds, finalIssues, finalRaw),
         `This is bounded correction attempt ${retryAttempts} of ${MAX_PLAN_CORRECTIVE_ATTEMPTS}; count every plan before returning the answer.`,
       ].join(" ");
       retryRaw = await correctiveRetry(instruction);
@@ -328,13 +333,13 @@ export function assessScenarioScenes(scenes: string[], durationSeconds: number):
   return issues;
 }
 
-export function buildCorrectiveRetryInstruction(durationSeconds: number, issues: ScenarioQualityIssue[]): string {
+export function buildCorrectiveRetryInstruction(durationSeconds: number, issues: ScenarioQualityIssue[], previousAttempt?: string): string {
   const policy = getScenarioDurationPolicy(durationSeconds);
   const delimiterRule = policy.sceneCount > 1
     ? ` Return exactly ${policy.sceneCount} scenes separated only by ${SCENE_DELIMITER} on its own line.`
     : " Return exactly one scene.";
 
-  return [
+  const inst = [
     "CORRECTIVE RETRY — rewrite the complete scenario once; do not explain the correction.",
     `Problems in the prior output: ${issues.map((issue) => issue.message).join("; ")}.`,
     delimiterRule,
@@ -342,6 +347,11 @@ export function buildCorrectiveRetryInstruction(durationSeconds: number, issues:
     "Every beat must include concrete action, framing or camera movement, a lighting or emotional change, and forward story progress without repetition.",
     `Keep all narration and dialogue within ${policy.maxSpokenWordsPerScene} naturally speakable words per scene.`,
   ].join(" ");
+
+  if (previousAttempt) {
+    return inst + `\n\nPREVIOUS ATTEMPT WITH ERRORS:\n${previousAttempt}`;
+  }
+  return inst;
 }
 
 function qualityWarning(durationSeconds: number, issues: ScenarioQualityIssue[]): string {
@@ -360,7 +370,7 @@ export async function runScenarioQualityPass(
 
   let retryRaw: string | null = null;
   try {
-    retryRaw = await correctiveRetry(buildCorrectiveRetryInstruction(durationSeconds, initialIssues));
+    retryRaw = await correctiveRetry(buildCorrectiveRetryInstruction(durationSeconds, initialIssues, initialRaw));
   } catch {
     retryRaw = null;
   }
