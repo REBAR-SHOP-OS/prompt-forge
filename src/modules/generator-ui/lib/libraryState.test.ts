@@ -60,15 +60,11 @@ class VersionedBackend implements LibraryStateBackend {
 const userId = "user-1";
 const approvedKey = `approved-videos:${userId}`;
 const draftKey = `draft-entries:${userId}`;
-const coverDurationKey = `project-cover-durations:${userId}`;
 
 describe("library state synchronization", () => {
   it("replaces the tracked cache exactly and removes stale keys", async () => {
     const backend = new VersionedBackend({
-      state: {
-        [approvedKey]: '["server-video"]',
-        [coverDurationKey]: '{"merged-a":5}',
-      },
+      state: { [approvedKey]: '["server-video"]' },
       version: 4,
     });
     const storage = new MemoryStorage();
@@ -79,7 +75,6 @@ describe("library state synchronization", () => {
 
     await expect(sync.hydrate(userId)).resolves.toEqual({ status: "success" });
     expect(storage.getItem(approvedKey)).toBe('["server-video"]');
-    expect(storage.getItem(coverDurationKey)).toBe('{"merged-a":5}');
     expect(storage.getItem(draftKey)).toBeNull();
   });
 

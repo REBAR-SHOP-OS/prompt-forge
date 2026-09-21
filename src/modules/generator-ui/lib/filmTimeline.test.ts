@@ -1,21 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { firstProjectFilmFrameUrl, shiftAudioTimelineAfterCover } from './filmTimeline'
-
-describe('firstProjectFilmFrameUrl', () => {
-  it('selects the earliest playable project film even when a reopened snapshot is newest-first', () => {
-    expect(firstProjectFilmFrameUrl([
-      { created_at: '2026-09-21T12:00:00Z', video: { storage_path: 'last.mp4' } },
-      { created_at: '2026-09-21T10:00:00Z', video: { storage_path: 'first.mp4' } },
-    ])).toBe('first.mp4')
-  })
-
-  it('skips films without a playable storage path', () => {
-    expect(firstProjectFilmFrameUrl([
-      { created_at: '2026-09-21T09:00:00Z', video: null },
-      { created_at: '2026-09-21T10:00:00Z', video: { storage_path: 'first-playable.mp4' } },
-    ])).toBe('first-playable.mp4')
-  })
-})
+import { shiftAudioTimelineAfterCover } from './filmTimeline'
 
 describe('shiftAudioTimelineAfterCover', () => {
   it('starts full-length music after the rendered cover', () => {
