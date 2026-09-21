@@ -110,4 +110,13 @@ describe("scenario corrective retry", () => {
     expect(instruction).toContain("forward story progress");
     expect(instruction).toContain("30 naturally speakable words");
   });
+
+  it("appends the previous attempt when supplied", () => {
+    const instruction = buildCorrectiveRetryInstruction(15, [
+      { type: "word-count", message: "scene 1 has 20 words; expected 70-100" },
+    ], "FAILED SCENARIO OUTPUT");
+
+    expect(instruction).toContain("PREVIOUS ATTEMPT WITH ERRORS:");
+    expect(instruction).toContain("FAILED SCENARIO OUTPUT");
+  });
 });

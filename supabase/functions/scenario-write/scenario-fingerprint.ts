@@ -353,7 +353,7 @@ export async function runAntiDuplicatePass(
 
     let next: string[] | null
     try {
-      next = await regenerate(buildVariationInstruction())
+      next = await regenerate(buildVariationInstruction(candidateText))
     } catch (error) {
       // A duplicate-regeneration gateway/parser failure is another verification
       // failure. Keep it fail-closed and observable instead of letting it escape
@@ -374,8 +374,8 @@ export async function runAntiDuplicatePass(
  * as a duplicate. It forces a genuinely different concept — not synonym swaps —
  * by naming the dimensions that must change.
  */
-export function buildVariationInstruction(): string {
-  return [
+export function buildVariationInstruction(previousScenarioText?: string): string {
+  const inst = [
     'VARIATION REQUIRED — the scenario you produced is too similar to a film this user already made.',
     'Produce a GENUINELY different film. Change at least one of these at the story level, not just the wording:',
     '- the STORY CONCEPT (a different premise, not the same idea reworded),',
@@ -385,4 +385,8 @@ export function buildVariationInstruction(): string {
     '- the ENDING/PAYOFF (a different resolution or call-to-action).',
     'Do NOT merely swap synonyms or reorder the same beats. The new scenario must read as a different film.',
   ].join(' ')
+  if (previousScenarioText) {
+    return inst + `\n\nPREVIOUS SCENARIO TO DEVIATE FROM:\n${previousScenarioText}`
+  }
+  return inst
 }
