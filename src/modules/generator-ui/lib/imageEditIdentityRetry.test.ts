@@ -6,6 +6,7 @@ const mismatch = {
     { present: true, match: true, reason: 'same product' },
     { present: true, match: false, reason: 'different character' },
   ],
+  actionQuality: { passed: false, reason: 'stirrup intersects the reinforcing bars incorrectly' },
   passed: false,
 }
 
@@ -19,6 +20,7 @@ describe('ai-image-edit identity retry policy', () => {
           { present: true, match: true, reason: 'same product' },
           { present: true, match: true, reason: 'same character' },
         ],
+        actionQuality: { passed: true, reason: 'interactions are plausible' },
         passed: true,
       },
     }))
@@ -37,7 +39,12 @@ describe('ai-image-edit identity retry policy', () => {
 
     expect(result).toMatchObject({ kind: 'error', status: 422, outcome: mismatch })
     expect(generate).toHaveBeenCalledTimes(2)
+    expect(generate).toHaveBeenNthCalledWith(1, 0, null)
+    expect(generate).toHaveBeenNthCalledWith(2, 1, mismatch)
     expect(evaluate).toHaveBeenCalledTimes(2)
+    expect(result).toMatchObject({
+      error: expect.stringContaining('different character; stirrup intersects the reinforcing bars incorrectly'),
+    })
   })
 
   it.each([

@@ -256,6 +256,14 @@ import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl, parseStorageRef } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
+import {
+  moveCoverBetweenScopes,
+  moveCoverDurationBetweenScopes,
+} from '@/modules/generator-ui/lib/coverScope'
+import {
+  firstProjectFilmFrameUrl,
+  shiftAudioTimelineAfterCover,
+} from '@/modules/generator-ui/lib/filmTimeline'
 
 /**
  * Generates a unique random id. Uses WebCrypto (randomUUID / getRandomValues) when
@@ -4784,11 +4792,13 @@ export default function DashboardPage() {
   const currentCoverDuration: number = coverScopeKey
     ? Math.max(1, Math.min(10, coverDurations[coverScopeKey] ?? DEFAULT_COVER_DURATION))
     : DEFAULT_COVER_DURATION
-  // Opening clip of the current film — its first frame seeds a cover.
-  const coverFilmFrameUrl: string | null = useMemo(() => {
-    const first = displayedVideos.find((v) => !!v.video?.storage_path)
-    return first?.video?.storage_path ?? null
-  }, [displayedVideos])
+  // Opening clip of the current film — its first frame seeds a cover. Saved
+  // snapshots are not guaranteed to retain chronological array order, so pick
+  // the earliest playable film explicitly instead of trusting index zero.
+  const coverFilmFrameUrl: string | null = useMemo(
+    () => firstProjectFilmFrameUrl(displayedVideos),
+    [displayedVideos],
+  )
   // All cover image ids across every scope — used to hide them from the normal
   // clip list so a cover never double-renders as a generation source.
   const allCoverImageIds = useMemo(() => {
@@ -6225,11 +6235,19 @@ export default function DashboardPage() {
       })
     }
 
-    // 8. Do NOT move or delete the film cover. The finalized project keeps
-    // its cover association (it still exists in Library). The new draft starts
-    // without a cover — the user can create one if desired. This prevents
-    // both stale cover leaks into the draft AND unnecessary cover loss from
-    // the original Final project.
+    // 8. The Final entry is being removed, so move its cover association to
+    // the reopened Draft. Leaving it under finalId orphaned the cover and made
+    // Reopen look destructive even though the underlying image still existed.
+    setCoverImages((prev) => {
+      const next = moveCoverBetweenScopes(prev, finalId, draftId)
+      if (next !== prev) persistCoverImages(next)
+      return next
+    })
+    setCoverDurations((prev) => {
+      const next = moveCoverDurationBetweenScopes(prev, finalId, draftId)
+      if (next !== prev) persistCoverDurations(next)
+      return next
+    })
 
     // 8b. Move the film's persisted audio over to the draft scope so the
     // soundtrack stays attached and is restored into the live audio state.
@@ -8578,10 +8596,12 @@ export default function DashboardPage() {
       // SECURITY: currentCover is derived from coverScopeKey (the current
       // project/draft scope) ONLY. Covers from other scopes, stale
       // localStorage entries, or previous projects can never reach here.
+      let renderedCoverDuration = 0
       if (currentCover?.storage_path) {
         try {
           const coverSrc = await pipeline.race(proxiedVideoUrl(currentCover.storage_path))
           mergeClips.unshift({ kind: 'image', url: coverSrc, durationSec: currentCoverDuration })
+          renderedCoverDuration = currentCoverDuration
         } catch (e) {
           if (pipeline.signal.aborted) throw pipeline.signal.reason
           console.warn('[merge] could not load cover image, skipping cover:', e)
@@ -8603,6 +8623,11 @@ export default function DashboardPage() {
 
       const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
+      // Music and voiceover timelines are authored relative to the film's real
+      // content. When a cover was rendered first, shift both tracks by that
+      // exact duration so no project audio can play over the cover.
+      const shiftedMusicTimeline = shiftAudioTimelineAfterCover(musicTimeline, renderedCoverDuration)
+      const shiftedVoiceoverTimeline = shiftAudioTimelineAfterCover(voiceoverTimeline, renderedCoverDuration)
       const mixedClipVolume = hasMusic
         ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
         : (hasVoiceover ? voiceoverClipVolume : 1)
@@ -8616,8 +8641,8 @@ export default function DashboardPage() {
                   musicVolume,
                   fadeInSec: musicFadeInSec,
                   fadeOutSec: musicFadeOutSec,
-                  timelineStartSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[0] : undefined,
-                  timelineEndSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : undefined,
+                  timelineStartSec: shiftedMusicTimeline.timelineStartSec,
+                  timelineEndSec: shiftedMusicTimeline.timelineEndSec,
                 }
               : undefined,
             voiceover: hasVoiceover
@@ -8626,8 +8651,8 @@ export default function DashboardPage() {
                   volume: voiceoverVolume,
                   sourceStartSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[0] : undefined,
                   sourceEndSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[1] : undefined,
-                  timelineStartSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[0] : undefined,
-                  timelineEndSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : undefined,
+                  timelineStartSec: shiftedVoiceoverTimeline.timelineStartSec,
+                  timelineEndSec: shiftedVoiceoverTimeline.timelineEndSec,
                 }
               : undefined,
             clipVolume: mixedClipVolume,
@@ -8760,6 +8785,19 @@ export default function DashboardPage() {
         if (approvedStorageKey) {
           try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
         }
+        return next
+      })
+      // Finalization changes only the lifecycle id of this same project. Move
+      // its cover (and duration) to the Final entry before retiring the Draft
+      // scope so Reopen can restore it instead of finding an orphaned mapping.
+      setCoverImages((prev) => {
+        const next = moveCoverBetweenScopes(prev, coverScopeKey, mergedId)
+        if (next !== prev) persistCoverImages(next)
+        return next
+      })
+      setCoverDurations((prev) => {
+        const next = moveCoverDurationBetweenScopes(prev, coverScopeKey, mergedId)
+        if (next !== prev) persistCoverDurations(next)
         return next
       })
       // Final Film produced — run the copyright/content check ONCE in the
@@ -8957,10 +8995,8 @@ export default function DashboardPage() {
             })
           }
         }
-        // Do NOT carry the Film Cover from the finalized draft/project scope
-        // over to the new merged project. Covers must only exist for the
-        // scope where the user explicitly created them. Auto-carrying causes
-        // stale covers from previous projects to leak into new projects.
+        // The cover was moved to mergedId above as part of this same project's
+        // lifecycle transition. It remains isolated from every other project.
         setActiveDraftId(null)
         persistActiveDraftId(null)
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
