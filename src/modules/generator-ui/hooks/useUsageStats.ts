@@ -7,7 +7,7 @@
 // `enabled` gates loading + the live subscription. Pass `open` from the
 // popover/dialog so data only loads while the surface is visible.
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useAuth } from '@/core/auth/AuthProvider'
+import { useAuth } from '@/core/auth/auth-context'
 import { supabase } from '@/integrations/supabase/client'
 
 export interface UsageStats {

@@ -3,10 +3,13 @@ import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+import { parseOwnedStorageRef } from "../_shared/core/owned-storage.ts";
 import {
   buildIdentityEvalPrompt,
   classifyEvalVerdict,
+  MAX_REFERENCE_IMAGES,
   parseIdentityEvalResponse,
+  selectEvaluatedSpecs,
   validateReferenceSpecs,
   type IdentityEvalOutcome,
   type ReferenceSpec,
@@ -24,22 +27,18 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-async function toInlineDataUrl(url: string): Promise<string> {
-  if (url.startsWith("data:")) return url;
-  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/);
-  if (m) {
-    const bucket = m[1];
-    const path = decodeURIComponent(m[2]);
-    const { data, error } = await getServiceClient().storage.from(bucket).download(path);
-    if (!error && data) {
-      const bytes = new Uint8Array(await data.arrayBuffer());
-      let mime = data.type?.split(";")[0]?.trim() || "image/png";
-      if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) mime = "image/png";
-      return `data:${mime};base64,${bytesToBase64(bytes)}`;
-    }
-  }
-  // Fall back to the raw URL (e.g. already-signed or external).
-  return url;
+async function toInlineDataUrl(url: string, userId: string): Promise<string> {
+  if (url.startsWith("data:image/")) return url;
+  const supabaseOrigin = new URL(Deno.env.get("SUPABASE_URL") ?? "").origin;
+  const owned = parseOwnedStorageRef(url, supabaseOrigin, userId, ["user-images", "wan-frames"]);
+  if (!owned) throw new Error("image reference is not owned by the caller");
+
+  const { data, error } = await getServiceClient().storage.from(owned.bucket).download(owned.path);
+  if (error || !data) throw new Error("image reference could not be downloaded");
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  let mime = data.type?.split(";")[0]?.trim() || "image/png";
+  if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) mime = "image/png";
+  return `data:${mime};base64,${bytesToBase64(bytes)}`;
 }
 
 
@@ -53,6 +52,7 @@ Deno.serve(async (req) => {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const userId = auth.userId;
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
@@ -61,8 +61,10 @@ Deno.serve(async (req) => {
       ? body.aspectRatio as "1:1" | "9:16" | "16:9"
       : null;
 
-    // Accept either a single imageUrl (legacy) or an imageUrls array (multiple references).
-    const MAX_REFERENCE_IMAGES = 4;
+    // Accept either a single imageUrl (legacy) or an imageUrls array (multiple
+    // references). The cap is identity-eval's own MAX_REFERENCE_IMAGES — a
+    // local, smaller redeclaration here would silently truncate a multi-angle
+    // product folder that validateReferenceSpecs would otherwise accept.
     const rawUrls: string[] = Array.isArray(body?.imageUrls)
       ? body.imageUrls.filter((u: unknown) => typeof u === "string").map((u: string) => u.trim())
       : (typeof body?.imageUrl === "string" ? [body.imageUrl.trim()] : []);
@@ -108,20 +110,20 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    // Allow data: URLs (from a freshly generated image) or https URLs from our supabase host.
-    const supabaseHost = (() => {
-      try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
+    // Data URLs are caller-provided bytes. Stored references must resolve to an
+    // allowed bucket under this caller's exact top-level folder; domain-only
+    // allowlisting is insufficient because service-role downloads bypass RLS.
+    const supabaseOrigin = (() => {
+      try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").origin; } catch { return ""; }
     })();
     const isUrlAllowed = (url: string): boolean => {
       if (url.startsWith("data:image/")) return true;
-      try {
-        const u = new URL(url);
-        return u.protocol === "https:" && (
-          u.hostname === supabaseHost ||
-          u.hostname.endsWith(".supabase.co") ||
-          u.hostname.endsWith(".supabase.in")
-        );
-      } catch { return false; }
+      return Boolean(supabaseOrigin && parseOwnedStorageRef(
+        url,
+        supabaseOrigin,
+        userId,
+        ["user-images", "wan-frames"],
+      ));
     };
     for (const url of imageUrls) {
       if (!isUrlAllowed(url)) {
@@ -165,7 +167,7 @@ Deno.serve(async (req) => {
     const generationSpecs = identitySpecs.length > 0
       ? identitySpecs
       : imageUrls.map((url) => ({ url, role: "product" as const, characterSheet: false }));
-    const inlinedUrls = await Promise.all(generationSpecs.map((s) => toInlineDataUrl(s.url)));
+    const inlinedUrls = await Promise.all(generationSpecs.map((s) => toInlineDataUrl(s.url, userId)));
 
     const messageContent = maskUrl
       ? [
@@ -222,7 +224,12 @@ Deno.serve(async (req) => {
     const FALLBACK = "google/gemini-2.5-flash-image";
     const MAX_IDENTITY_ATTEMPTS = 2;
     const evalModel = "google/gemini-3-flash-preview";
-    const evalPrompt = buildIdentityEvalPrompt(identitySpecs);
+    // Judge only the first product angle plus the character, never every
+    // grouped angle — a single generated image can only visually show one
+    // product angle, so evaluating the rest would fail spuriously. The extra
+    // product specs above are generation-only grounding.
+    const evaluatedSpecs = selectEvaluatedSpecs(identitySpecs);
+    const evalPrompt = buildIdentityEvalPrompt(evaluatedSpecs);
 
     async function evaluateIdentity(dataUrl: string) {
       const evalContent: unknown[] = [
@@ -230,10 +237,10 @@ Deno.serve(async (req) => {
         { type: "text", text: "GENERATED_OUTPUT:" },
         { type: "image_url", image_url: { url: dataUrl } },
       ];
-      for (let i = 0; i < identitySpecs.length; i++) {
-        const spec = identitySpecs[i];
+      for (let i = 0; i < evaluatedSpecs.length; i++) {
+        const spec = evaluatedSpecs[i];
         evalContent.push({ type: "text", text: `REF_${i + 1} (${spec.role.toUpperCase()}):` });
-        evalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url) } });
+        evalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url, userId) } });
       }
       const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
@@ -257,7 +264,7 @@ Deno.serve(async (req) => {
       const evalData = await readJsonLoose(evalResp, "ai-image-edit-identity-eval");
       const raw = String(evalData?.choices?.[0]?.message?.content ?? "").trim();
       const outcome: IdentityEvalOutcome | null = raw
-        ? parseIdentityEvalResponse(raw, identitySpecs.length)
+        ? parseIdentityEvalResponse(raw, evaluatedSpecs.length)
         : null;
       const verdict = classifyEvalVerdict(outcome);
       return verdict === "error"

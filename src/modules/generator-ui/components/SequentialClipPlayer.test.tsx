@@ -110,4 +110,31 @@ describe('SequentialClipPlayer batch autoplay', () => {
     })
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
+
+  it('renders an editable overlay inside the measured sequence frame', () => {
+    const frameRef = vi.fn()
+    const view = render(
+      <SequentialClipPlayer
+        clips={[{
+          kind: 'image',
+          id: 'still-1',
+          src: 'https://example.test/still-1.png',
+          ratio: '16:9',
+          durationSec: 3,
+        }]}
+        ratioToCss={() => '16 / 9'}
+        ratioToHeight={() => '20rem'}
+        ratioToWidth={() => '36rem'}
+        maxHeightPx={480}
+        frameRef={frameRef}
+        overlay={<span data-testid="contact-overlay">rebar.shop</span>}
+      />,
+    )
+
+    const overlay = screen.getByTestId('contact-overlay')
+    expect(overlay).toBeInTheDocument()
+    expect(overlay.parentElement).toHaveClass('relative')
+    expect(frameRef).toHaveBeenCalledWith(overlay.parentElement)
+    expect(view.container.querySelector('img')).toHaveAttribute('src', 'https://example.test/still-1.png')
+  })
 })

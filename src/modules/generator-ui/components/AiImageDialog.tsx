@@ -113,6 +113,8 @@ type Props = {
   userId: string | null
   defaultAspect: AiImageAspect
   onSaved: (row: AiImageSavedRow) => void
+  /** Existing image to preload into the refine editor. */
+  initialImageUrl?: string | null
   products?: AiProductOption[]
   productsLoading?: boolean
   onProductsRefresh?: () => Promise<AiProductOption[] | unknown> | AiProductOption[] | unknown
@@ -263,6 +265,7 @@ export default function AiImageDialog({
   userId,
   defaultAspect,
   onSaved,
+  initialImageUrl = null,
   products = [],
   productsLoading = false,
   onProductsRefresh,
@@ -317,13 +320,14 @@ export default function AiImageDialog({
   const referenceInputRef = useRef<HTMLInputElement | null>(null)
   const refineReferenceInputRef = useRef<HTMLInputElement | null>(null)
   const isDrawingRef = useRef(false)
+  const productSignature = products.map((product) => `${product.id}:${product.url}`).join('|')
 
   useEffect(() => {
     if (open) {
       setAspect(defaultAspect)
       setPrompt('')
       setEditPrompt('')
-      setImageDataUrl(null)
+      setImageDataUrl(initialImageUrl)
       setReferenceImages([])
       setRefineReferenceImages([])
       setError(null)
@@ -345,11 +349,11 @@ export default function AiImageDialog({
         refineReferenceInputRef.current.value = ''
       }
     }
-  }, [open, defaultAspect])
+  }, [open, defaultAspect, initialImageUrl])
 
   useEffect(() => {
     setBrokenProductIds(new Set())
-  }, [products.map((p) => `${p.id}:${p.url}`).join('|')])
+  }, [productSignature])
 
   useEffect(() => {
     setHasMask(false)

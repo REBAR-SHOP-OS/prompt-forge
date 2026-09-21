@@ -9,6 +9,7 @@
 import { corsHeaders, errorResponse, jsonResponse, readJsonBody } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
+import { parseOwnedStorageRef } from "../_shared/core/owned-storage.ts";
 import { jobService } from "../_shared/modules/job-orchestrator/service.ts";
 
 interface UploadJobBody {
@@ -60,6 +61,21 @@ Deno.serve(async (req) => {
   if (!parsed.ok) return errorResponse("VALIDATION_ERROR", parsed.message, 400, requestId);
 
   const { storagePath, durationSeconds, aspectRatio, prompt } = parsed.value;
+  let supabaseOrigin = "";
+  try {
+    supabaseOrigin = new URL(Deno.env.get("SUPABASE_URL") ?? "").origin;
+  } catch {
+    return errorResponse("INTERNAL_ERROR", "Storage is not configured", 500, requestId);
+  }
+  const ownedUpload = parseOwnedStorageRef(
+    storagePath,
+    supabaseOrigin,
+    auth.userId,
+    ["user-videos"],
+  );
+  if (!ownedUpload) {
+    return errorResponse("VALIDATION_ERROR", "storagePath must reference your uploaded video", 400, requestId);
+  }
 
   const svc = getServiceClient();
   try {
@@ -78,7 +94,7 @@ Deno.serve(async (req) => {
     await jobService.completeJob(svc, {
       userId: auth.userId,
       jobId,
-      storagePath,
+      storagePath: ownedUpload.canonical,
       thumbnailUrl: null,
       aspectRatio: aspectRatio ?? null,
       duration: durationSeconds ?? null,

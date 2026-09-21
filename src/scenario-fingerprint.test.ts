@@ -4,6 +4,7 @@ import {
   buildSemanticJudgePrompt,
   buildVariationInstruction,
   fingerprintSimilarity,
+  hydrateScenarioHistoryEntry,
   normalizeText,
   parseSemanticJudgeResult,
   runAntiDuplicatePass,
@@ -57,6 +58,26 @@ describe("buildScenarioFingerprint", () => {
     const fp = buildScenarioFingerprint(joined, PRODUCT_A);
     expect(fp.opening).toContain("tea opening");
     expect(fp.ending).toContain("tea ending");
+  });
+});
+
+describe("hydrateScenarioHistoryEntry", () => {
+  it("rebuilds a legacy or malformed persisted fingerprint from scenario text", () => {
+    const scenarioText = coffee().join("\n\n");
+    const entry = hydrateScenarioHistoryEntry(
+      { opening: "legacy", subjectCombo: PRODUCT_A },
+      scenarioText,
+    );
+
+    expect(entry).not.toBeNull();
+    expect(entry?.fingerprint.concept.length).toBeGreaterThan(0);
+    expect(entry?.fingerprint.camera).toContain("wide");
+    expect(entry?.fingerprint.subjectCombo).toBe(PRODUCT_A);
+    expect(() => fingerprintSimilarity(buildScenarioFingerprint(steel()), entry!.fingerprint)).not.toThrow();
+  });
+
+  it("rejects rows without canonical scenario text", () => {
+    expect(hydrateScenarioHistoryEntry({}, "   ")).toBeNull();
   });
 });
 
@@ -155,6 +176,19 @@ describe("runAntiDuplicatePass", () => {
     expect(result.reason).toBe("empty");
   });
 
+  it("passes the duplicate candidate into the regeneration instruction", async () => {
+    const history = [entry(coffee())];
+    let capturedInstruction = "";
+    const regenerate = vi.fn(async (instruction: string) => {
+      capturedInstruction = instruction;
+      return steel();
+    });
+    const judge = vi.fn(async () => false);
+    await runAntiDuplicatePass(coffee(), history, regenerate, judge);
+    expect(capturedInstruction).toContain("PREVIOUS SCENARIO TO DEVIATE FROM:");
+    expect(capturedInstruction).toContain("Coffee opening"); // It contains the passed scenario (capitalized in the setup)
+  });
+
   it("uses the semantic judge for the ambiguous band (synonym duplicate)", async () => {
     // A synonym-only variation lands in the ambiguous band; the judge says duplicate.
     const history = [entry(coffee())];
@@ -165,6 +199,50 @@ describe("runAntiDuplicatePass", () => {
     expect(judge).toHaveBeenCalled();
     expect(result.accepted).toBe(true); // regenerated to steel, which is different
     expect(result.attempts).toBe(2);
+  });
+
+  it("fails closed with a controlled reason when the semantic judge errors", async () => {
+    const history = [entry(coffee())];
+    const candidate = scenario("Coffee", "wide", "zoom", "the barista grins and passes the mug");
+    const regenerate = vi.fn(async () => steel());
+    const judgeError = new Error("temporary gateway failure");
+    const judge = vi.fn(async () => {
+      throw judgeError;
+    });
+    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await runAntiDuplicatePass(candidate, history, regenerate, judge);
+
+    expect(result).toEqual({
+      accepted: false,
+      scenes: [],
+      attempts: 1,
+      reason: "judge-error",
+    });
+    expect(regenerate).not.toHaveBeenCalled();
+    expect(logError).toHaveBeenCalledWith("scenario-write semantic judge error", judgeError);
+    logError.mockRestore();
+  });
+
+  it("contains and logs duplicate-regeneration errors instead of throwing Internal error", async () => {
+    const history = [entry(coffee())];
+    const regenerateError = new Error("gateway response parse failed");
+    const regenerate = vi.fn(async () => {
+      throw regenerateError;
+    });
+    const judge = vi.fn(async () => false);
+    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await runAntiDuplicatePass(coffee(), history, regenerate, judge);
+
+    expect(result).toEqual({
+      accepted: false,
+      scenes: [],
+      attempts: 1,
+      reason: "judge-error",
+    });
+    expect(logError).toHaveBeenCalledWith("scenario-write duplicate regeneration error", regenerateError);
+    logError.mockRestore();
   });
 
   it("flags a re-told story with a new identity as a duplicate (identity is metadata)", async () => {
@@ -199,5 +277,11 @@ describe("buildVariationInstruction", () => {
     expect(instr).toContain("CAMERA FLOW");
     expect(instr).toContain("ENDING");
     expect(instr.toLowerCase()).toContain("synonym");
+  });
+
+  it("appends the previous scenario text when supplied", () => {
+    const instr = buildVariationInstruction("SCENARIO PREVIOUS TEXT");
+    expect(instr).toContain("PREVIOUS SCENARIO TO DEVIATE FROM:");
+    expect(instr).toContain("SCENARIO PREVIOUS TEXT");
   });
 });

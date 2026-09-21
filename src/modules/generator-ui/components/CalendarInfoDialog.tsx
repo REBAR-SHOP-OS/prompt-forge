@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ChevronDown, Church, Clapperboard, Globe2, Languages, Leaf, LoaderCircle, RefreshCw, Wand2 } from 'lucide-react'
 import { Calendar } from '@/components/ui/calendar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -7,6 +7,8 @@ import { supabase } from '@/integrations/supabase/client'
 import { request } from '@/core/api/client'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { REVIEW_LANGS, isRtlLang } from '@/modules/generator-ui/lib/scenarioReview'
+import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import {
   getOccasionsForDate,
   getOccasionsForMonth,
@@ -38,8 +40,18 @@ interface OccasionDetail {
   history: string
 }
 
+interface OccasionTranslation extends OccasionDetail {
+  title: string
+  whatItIsLabel: string
+  historyLabel: string
+}
+
+interface DayInfoResponse {
+  occasion?: OccasionDetail
+  occasions?: Array<OccasionDetail & { title?: string }>
+}
+
 const fmt = (d: Date) => toDateKey(d)
-const fmtMonth = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
 const labels = {
   en: {
@@ -66,10 +78,14 @@ const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, todayOnly = false, durationSeconds = 10 }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
-  const [lang, setLang] = useState<'en'>('en')
+  const [lang, setLang] = useState('en')
+  const langRef = useRef('en')
   const [detailCache, setDetailCache] = useState<Record<string, OccasionDetail>>({})
   const [detailLoadingKey, setDetailLoadingKey] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [translationCache, setTranslationCache] = useState<Record<string, OccasionTranslation>>({})
+  const [translationLoadingKey, setTranslationLoadingKey] = useState<string | null>(null)
+  const [translationError, setTranslationError] = useState<string | null>(null)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
   const [activeFilters, setActiveFilters] = useState<Set<Category>>(() => new Set(ALL_CATEGORIES))
   const [selectedOccasion, setSelectedOccasion] = useState<Occasion | null>(null)
@@ -77,13 +93,12 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   const [scenarioLoading, setScenarioLoading] = useState(false)
   const [scenarioError, setScenarioError] = useState<string | null>(null)
   const { toast } = useToast()
+  useDocumentLanguage(lang, open)
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
-  const monthKey = useMemo(() => fmtMonth(visibleMonth), [visibleMonth])
-  // Cache keys bumped (day v2 -> v3, month v1 -> v2) so anything persisted
-  // from the LLM-dated era is not read back.
-  const dayCacheKey = `v3:${dateKey}:${lang}`
-  const monthCacheKey = `v2:${monthKey}:${lang}`
+  // Cache key bumped (day v2 -> v3) so anything persisted from the
+  // LLM-dated era is not read back.
+  const dayCacheKey = `v3:${dateKey}`
 
   // Deterministic, synchronous, no network. Both panels read one source.
   const occasions = useMemo<Occasion[]>(() => getOccasionsForDate(selectedDate), [selectedDate])
@@ -91,7 +106,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     () => getOccasionsForMonth(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1),
     [visibleMonth],
   )
-  const t = labels[lang]
+  const t = labels.en
   useEffect(() => {
     setExpandedIndex(null)
   }, [dayCacheKey])
@@ -107,35 +122,95 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   }, [open, todayOnly])
 
 
-  const detailKey = (occ: Occasion) => `v3:${occ.date}:${occ.title}:${lang}`
+  const detailKey = (occ: Occasion) => `v3:${occ.date}:${occ.title}`
+  const translationKey = (occ: Occasion, targetLang: string) => `${detailKey(occ)}:${targetLang}`
 
   // Prose only. The occasion and its date are already known and were never
   // asked of a model, so there is nothing here that can drift by a day.
-  const loadDetail = async (occ: Occasion) => {
+  const loadDetail = async (occ: Occasion): Promise<OccasionDetail | null> => {
     const key = detailKey(occ)
-    if (detailCache[key] || detailLoadingKey === key) return
+    if (detailCache[key]) return detailCache[key]
+    if (detailLoadingKey === key) return null
     setDetailLoadingKey(key)
     setDetailError(null)
     try {
-      const data = await request<{ occasion?: OccasionDetail }>('/day-info', {
+      const data = await request<DayInfoResponse>('/day-info', {
         method: 'POST',
-        body: JSON.stringify({ occasion: { title: occ.title, date: occ.date, category: occ.category }, lang }),
+        body: JSON.stringify({
+          date: occ.date,
+          occasion: { title: occ.title, date: occ.date, category: occ.category },
+          lang: 'en',
+        }),
       })
-      const detail = data.occasion
-      setDetailCache((c) => ({
-        ...c,
-        [key]: {
-          whatItIs: detail?.whatItIs?.trim() || '',
-          history: detail?.history?.trim() || '',
-        },
-      }))
+      // `date` keeps this request valid against the legacy deployed handler,
+      // while `occasion` selects the prose-only path in the current handler.
+      const responseDetail = data.occasion
+        ?? data.occasions?.find((candidate) => candidate.title === occ.title)
+        ?? data.occasions?.[0]
+      const detail = {
+        whatItIs: responseDetail?.whatItIs?.trim() || '',
+        history: responseDetail?.history?.trim() || '',
+      }
+      setDetailCache((cache) => ({ ...cache, [key]: detail }))
+      return detail
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load occasion detail'
       setDetailError(msg)
       toast({ title: 'Could not load occasion detail', description: msg, variant: 'destructive' })
+      return null
     } finally {
-      setDetailLoadingKey((k) => (k === key ? null : k))
+      setDetailLoadingKey((current) => (current === key ? null : current))
     }
+  }
+
+  const translateText = async (text: string, targetLang: string): Promise<string> => {
+    const { data, error } = await supabase.functions.invoke<{ translation?: string; error?: string }>('translate-text', {
+      body: { text, targetLang },
+    })
+    if (error) throw new Error(error.message)
+    if (data?.error) throw new Error(data.error)
+    if (!data?.translation?.trim()) throw new Error('No translation returned')
+    return data.translation.trim()
+  }
+
+  const translateOccasion = async (occ: Occasion, detail: OccasionDetail, targetLang: string) => {
+    if (targetLang === 'en') return
+    const key = translationKey(occ, targetLang)
+    if (translationCache[key] || translationLoadingKey === key) return
+    setTranslationLoadingKey(key)
+    setTranslationError(null)
+    try {
+      const [title, whatItIsLabel, whatItIs, historyLabel, history] = await Promise.all([
+        translateText(occ.title, targetLang),
+        translateText(t.whatItIs, targetLang),
+        translateText(detail.whatItIs, targetLang),
+        translateText(t.history, targetLang),
+        translateText(detail.history, targetLang),
+      ])
+      setTranslationCache((cache) => ({
+        ...cache,
+        [key]: { title, whatItIsLabel, whatItIs, historyLabel, history },
+      }))
+    } catch (err) {
+      if (langRef.current === targetLang) {
+        setTranslationError(err instanceof Error ? err.message : 'Could not translate occasion details.')
+      }
+    } finally {
+      setTranslationLoadingKey((current) => current === key ? null : current)
+    }
+  }
+
+  const changeLanguage = (targetLang: string) => {
+    langRef.current = targetLang
+    setLang(targetLang)
+    setTranslationError(null)
+    if (targetLang === 'en') {
+      setTranslationLoadingKey(null)
+      return
+    }
+    if (!selectedOccasion) return
+    const detail = detailCache[detailKey(selectedOccasion)]
+    if (detail) void translateOccasion(selectedOccasion, detail, targetLang)
   }
 
   // (The month list is derived above, synchronously, from the same source as
@@ -216,7 +291,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   const pickOccasion = (occ: Occasion) => {
     setSelectedOccasion(occ)
-    void loadDetail(occ)
+    void loadDetail(occ).then((detail) => {
+      const targetLang = langRef.current
+      if (detail && targetLang !== 'en') void translateOccasion(occ, detail, targetLang)
+    })
     void generateScenario(occ)
   }
 
@@ -255,7 +333,22 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-border">
             <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-2">
               <div className="text-sm font-medium text-foreground/90" dir="auto">{longLabel}</div>
-
+              <div className="inline-flex items-center gap-1 rounded-full border border-border bg-accent/40 pl-2 pr-1 py-0.5">
+                <Languages className="h-3.5 w-3.5 text-fuchsia-300" aria-hidden="true" />
+                <select
+                  value={lang}
+                  onChange={(event) => changeLanguage(event.target.value)}
+                  aria-label="Translate occasion details"
+                  className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-foreground/90 outline-none [&>option]:bg-card [&>option]:text-foreground/90"
+                >
+                  {REVIEW_LANGS.map((language) => (
+                    <option key={language.code} value={language.code}>{language.label}</option>
+                  ))}
+                </select>
+                {translationLoadingKey ? (
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin text-fuchsia-300" aria-hidden="true" />
+                ) : null}
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
               {occasions.length === 0 && (
@@ -265,6 +358,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                 <ul className="flex flex-col gap-1.5">
                   {occasions.map((occ, i) => {
                     const isOpen = expandedIndex === i
+                    const activeTranslation = lang === 'en' ? null : translationCache[translationKey(occ, lang)]
                     return (
                       <li key={i} className="rounded-md border border-border/50 bg-accent/20">
                         <button
@@ -276,7 +370,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                           )}
                           dir="auto"
                         >
-                          <span className="text-sm font-medium text-accent-warm">{occ.title}</span>
+                          <span className="text-sm font-medium text-accent-warm">{activeTranslation?.title ?? occ.title}</span>
                           <ChevronDown
                             className={cn(
                               'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
@@ -288,8 +382,13 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                           const key = detailKey(occ)
                           const detail = detailCache[key]
                           const isLoadingDetail = detailLoadingKey === key
+                          const translatedDetail = lang === 'en' ? null : translationCache[translationKey(occ, lang)]
                           return (
-                            <div className="space-y-3 border-t border-border/50 px-3 py-3 text-sm text-foreground/90" dir="auto">
+                            <div
+                              className="space-y-3 border-t border-border/50 px-3 py-3 text-sm text-foreground/90"
+                              dir={translatedDetail && isRtlLang(lang) ? 'rtl' : 'ltr'}
+                              data-testid="occasion-detail-body"
+                            >
                               {isLoadingDetail && (
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -299,15 +398,24 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                               {!isLoadingDetail && !detail && detailError && (
                                 <div className="text-sm text-rose-300">{detailError}</div>
                               )}
+                              {lang !== 'en' && translationError && (
+                                <div role="alert" className="text-sm text-rose-300">
+                                  Translation failed: {translationError}. Showing the original English.
+                                </div>
+                              )}
                               {detail && (
                                 <>
                                   <div>
-                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.whatItIs}</div>
-                                    <p className="leading-relaxed">{detail.whatItIs}</p>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                      {translatedDetail?.whatItIsLabel ?? t.whatItIs}
+                                    </div>
+                                    <p className="leading-relaxed">{translatedDetail?.whatItIs ?? detail.whatItIs}</p>
                                   </div>
                                   <div>
-                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t.history}</div>
-                                    <p className="leading-relaxed">{detail.history}</p>
+                                    <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                      {translatedDetail?.historyLabel ?? t.history}
+                                    </div>
+                                    <p className="leading-relaxed">{translatedDetail?.history ?? detail.history}</p>
                                   </div>
                                 </>
                               )}

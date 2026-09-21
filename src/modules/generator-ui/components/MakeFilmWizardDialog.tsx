@@ -26,6 +26,7 @@ import {
   HardHat,
   Scale,
   Award,
+  Pencil,
 } from 'lucide-react'
 import {
   Dialog,
@@ -34,19 +35,36 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ChooseProductDialog } from '@/modules/generator-ui/components/ChooseProductDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
+import {
+  generateQualityCheckedPreviewShot,
+  PreviewShotQualityError,
+  PreviewShotVerificationError,
+  type PreviewShotContext,
+  type PreviewShotQualityEvaluation,
+} from '@/modules/generator-ui/lib/previewShotQuality'
 
-import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
+import { inFlightSigns } from '@/modules/generator-ui/lib/makeFilmSigning'
+import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
 import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
-import { groupProductPhotos, productPhotoForScene, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
+import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
+import { groupProductPhotos, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
+import {
+  PRODUCT_IDENTITY_CATEGORIES,
+  filterProductIdentityGroups,
+  productIdentityCategory,
+  type ProductIdentityCategoryId,
+} from '@/modules/generator-ui/lib/productIdentity'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 
@@ -92,12 +110,18 @@ async function signStorageUrl(storagePath: string | null | undefined, bucket: st
   return raw
 }
 
-type ProductPhoto = { id: string; title: string | null; url: string; urls?: string[]; imageType?: string | null }
+type ProductPhoto = {
+  id: string
+  title: string | null
+  url: string
+  urls?: string[]
+  category?: ProductIdentityCategoryId
+  description?: string | null
+  imageType?: string | null
+}
 
 type ProductPhotoSource = { id: string; title: string | null; storagePath: string; imageType?: string | null }
 type ProductPhotoGroupSource = ProductPhotoGroup<ProductPhotoSource>
-
-export const inFlightSigns = new Map<string, Promise<string>>()
 
 async function signStorageUrlDeduped(storagePath: string, bucket: string, userId?: string | null): Promise<string> {
   const cacheKey = `${userId ?? 'anon'}:${bucket}:${storagePath}`
@@ -126,7 +150,10 @@ async function signStorageUrlDeduped(storagePath: string, bucket: string, userId
 type WizardStep = 'prompt' | 'scenario' | 'images'
 
 export interface FilmIdentity {
+  productId?: string
+  productCategory?: ProductIdentityCategoryId
   productUrl?: string
+  productUrls?: string[]
   productName?: string | null
   productDescription?: string | null
   characterUrl?: string
@@ -134,8 +161,11 @@ export interface FilmIdentity {
 }
 
 export interface IdentityRef {
+  id: string
   url: string
   urls?: string[]
+  category?: ProductIdentityCategoryId
+  description?: string | null
   role: 'product' | 'character'
   imageType?: string | null
   characterSheet: boolean
@@ -163,8 +193,8 @@ export interface MakeFilmWizardDialogProps {
   defaultAspect: FilmAspect
   userId: string | null
   writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
-  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean) => Promise<string>
-  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrls?: string[], characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean, correction?: string) => Promise<string>
+  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
 }
 
 export function MakeFilmWizardDialog({
@@ -204,6 +234,7 @@ export function MakeFilmWizardDialog({
   const [selectedTheme, setSelectedTheme] = useState('auto')
   const [selectedFilmType, setSelectedFilmType] = useState<string>(normalizeFilmType(initialFilmType))
   const [productPhotos, setProductPhotos] = useState<ProductPhotoGroupSource[]>([])
+  const [productCategory, setProductCategory] = useState<ProductIdentityCategoryId>('products')
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const productPickerControllerRef = useRef<AbortController | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
@@ -219,6 +250,7 @@ export function MakeFilmWizardDialog({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
+  const [editImageIndex, setEditImageIndex] = useState<number | null>(null)
   const [scenarioReviewOpen, setScenarioReviewOpen] = useState(false)
   const [reviewLang, setReviewLang] = useState('en')
   const [reviewTranslation, setReviewTranslation] = useState<string | null>(null)
@@ -228,6 +260,7 @@ export function MakeFilmWizardDialog({
   const [reviewCharacterNameEn, setReviewCharacterNameEn] = useState<string | null>(null)
   const reviewCache = useRef<Map<string, string>>(new Map())
   const hasInitialized = useRef(false)
+  useDocumentLanguage(reviewLang, scenarioReviewOpen)
 
   // Style picker dialogs
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false)
@@ -259,6 +292,7 @@ export function MakeFilmWizardDialog({
       setSelectedTheme('auto')
       setSelectedFilmType(normalizeFilmType(initialFilmType))
       setSelectedProduct(null)
+      setProductCategory('products')
       setSelectedCharacter(null)
       setProductName('')
       setCharacterDesc('')
@@ -268,14 +302,31 @@ export function MakeFilmWizardDialog({
       setCharacterPickerOpen(false)
       setCharacterSheetSource(null)
       setLightboxOpen(false)
+      setEditImageIndex(null)
     }
     if (!open) {
       hasInitialized.current = false
+      setEditImageIndex(null)
     }
   }, [open, initialPrompt, defaultDuration, defaultAspect, initialFilmType])
 
   const working = busy !== 'idle' || regenIndex !== null
   const canWriteScenario = prompt.trim().length > 0 && selectedProduct !== null && !working
+  // Step 1 requires a product (same gate as canWriteScenario / handleWriteScenario).
+  // Everything else — character, film type, camera angle, visual theme, narration and
+  // text mode — stays optional; the prompt text itself must NOT be required because
+  // this control is what produces it.
+  const canGeneratePrompt = selectedProduct !== null && !generatingPrompt && !optimizing
+  const visibleProductGroups = useMemo(
+    () => filterProductIdentityGroups(productPhotos, productCategory),
+    [productPhotos, productCategory],
+  )
+  const availableProductCategories = useMemo(
+    () => PRODUCT_IDENTITY_CATEGORIES.filter((category) =>
+      filterProductIdentityGroups(productPhotos, category.id).length > 0,
+    ),
+    [productPhotos],
+  )
 
   // Film type definitions — each with icon, label, and one-line description
   const FILM_TYPES: { value: string; label: string; icon: React.ReactNode; description: string }[] = [
@@ -313,7 +364,11 @@ export function MakeFilmWizardDialog({
           title: r.title ?? null,
           storagePath: r.storage_path,
         }))
-      setProductPhotos(groupProductPhotos(photos))
+      const groups = groupProductPhotos(photos)
+      setProductPhotos(groups)
+      if (filterProductIdentityGroups(groups, 'products').length === 0 && groups.length > 0) {
+        setProductCategory('legacy')
+      }
     } catch (e) {
       setProductLoadError((e as Error).message ?? 'Failed to load products')
     } finally {
@@ -433,8 +488,11 @@ export function MakeFilmWizardDialog({
   function toIdentityRef(photo: ProductPhoto | null, role: 'product' | 'character'): IdentityRef | undefined {
     if (!photo) return undefined
     return {
+      id: photo.id,
       url: photo.url,
       urls: photo.urls?.length ? photo.urls : [photo.url],
+      category: photo.category,
+      description: photo.description ?? null,
       role,
       imageType: photo.imageType ?? null,
       characterSheet: role === 'character' && isCharacterSheetRef(photo),
@@ -451,7 +509,7 @@ IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, s
 Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
   }
 
-  function buildScenarioRequest(idea: string, variation: boolean, characterDescription = '') {
+  function buildScenarioRequest(idea: string, variation: boolean, characterDescription = '', previousScenario = '') {
     let enrichedPrompt = generateDurationPrompt(idea, duration)
     const resolvedProductName = currentProductName()
     // Identity-leakage guard: sanitize UUID-like titles so raw character/product
@@ -488,6 +546,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
     if (variation) {
       enrichedPrompt += `\n\nVARIATION REQUEST: Write a fresh, different variation of this scenario. Do not repeat the previous wording — change the shot descriptions, actions, and camera moves while keeping the same product, character, film type, duration, and visual style.`
+      if (previousScenario) {
+        enrichedPrompt += `\n\nPREVIOUS SCENARIO TO DEVIATE FROM:\n${previousScenario}`
+      }
     }
 
     return {
@@ -569,7 +630,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       // leak into the regenerated scenario. Skipped synchronously when no
       // character is selected.
       const characterDescription = selectedCharacter ? (characterDesc || await resolveCharacterDescription(selectedCharacter)) : ''
-      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true, characterDescription)
+      const previousScenario = plans.map((p) => p.scenarioText).join('\n\n')
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true, characterDescription, previousScenario)
       const written = await writeScenario(enrichedPrompt, options)
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (rawScenes.length === 0) {
@@ -665,6 +727,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
    */
   async function handleGeneratePrompt() {
     if (generatingPrompt || optimizing) return
+    // Hard gate: a race or programmatic click must not reach enhance-prompt
+    // without the required product selection.
+    if (!selectedProduct) return
     setGeneratingPrompt(true)
     setGenerateError(null)
     const previous = prompt
@@ -753,6 +818,61 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     }
   }
 
+  function previewShotContext(index: number, snapshot: IdentitySnapshot): PreviewShotContext {
+    return {
+      shotIndex: index,
+      totalShots: plans.length,
+      plannedAction: plans[index].scenarioText,
+      previousPlannedAction: index > 0 ? plans[index - 1].scenarioText : undefined,
+      nextPlannedAction: index + 1 < plans.length ? plans[index + 1].scenarioText : undefined,
+      productName: snapshot.product?.name ?? undefined,
+    }
+  }
+
+  async function evaluatePreviewShot(
+    imageUrl: string,
+    context: PreviewShotContext,
+  ): Promise<PreviewShotQualityEvaluation> {
+    const { data, error: qualityError } = await supabase.functions.invoke('film-preview-quality', {
+      body: { imageUrl, ...context },
+    })
+    if (qualityError) throw qualityError
+    const evaluation = (data as { evaluation?: PreviewShotQualityEvaluation } | null)?.evaluation
+    if (!evaluation || typeof evaluation.passed !== 'boolean') {
+      throw new Error('Preview quality evaluator returned an invalid response.')
+    }
+    return evaluation
+  }
+
+  async function generateCheckedPreviewShot(
+    index: number,
+    snapshot: IdentitySnapshot,
+    creative: FilmCreative,
+  ): Promise<string> {
+    const characterSheet = snapshot.character?.characterSheet ?? false
+    const productUrls = snapshot.product?.urls?.length
+      ? snapshot.product.urls
+      : snapshot.product?.url
+        ? [snapshot.product.url]
+        : []
+    const context = previewShotContext(index, snapshot)
+    const result = await generateQualityCheckedPreviewShot(
+      context,
+      (correction) => generateSceneImage(
+        plans[index].scenarioText,
+        aspect,
+        productUrls,
+        snapshot.character?.url,
+        noTextOnImages,
+        creative,
+        characterSheet,
+        correction,
+      ),
+      evaluatePreviewShot,
+    )
+    return result.imageUrl
+  }
+
   async function handleGenerateImages() {
     if (plans.length === 0) return
     setBusy('images')
@@ -762,19 +882,23 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       character: toIdentityRef(selectedCharacter, 'character'),
     }
     setIdentitySnapshot(snapshot)
-    const characterSheet = snapshot.character?.characterSheet ?? false
     const next: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const nextErrors: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const creative = currentCreative()
     for (let i = 0; i < plans.length; i++) {
-      setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
+      setProgress(`Designing and checking preview image ${i + 1} of ${plans.length}…`)
       try {
-        const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], i) ?? snapshot.product?.url
-        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        next[i] = await generateCheckedPreviewShot(i, snapshot, creative)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
-        next[i] = undefined
+        // The image generator enforces product/character identity before it
+        // returns a URL. Keep a known identity-safe candidate when only the
+        // separate action-quality review or a later correction attempt fails;
+        // a first-attempt identity rejection carries no URL and stays blank.
+        next[i] = err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError
+          ? err.imageUrl
+          : undefined
         nextErrors[i] = err instanceof Error ? err.message : `Could not generate image ${i + 1}.`
       }
       setImages([...next])
@@ -792,9 +916,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     try {
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
-      const characterSheet = snapshot.character?.characterSheet ?? false
-      const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], index) ?? snapshot.product?.url
-      const url = await generateSceneImage(plans[index].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const url = await generateCheckedPreviewShot(index, snapshot, currentCreative())
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -807,15 +929,37 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : `Could not regenerate image ${index + 1}.`
+      if (err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError) {
+        setImages((cur) => {
+          const copy = [...cur]
+          copy[index] = err.imageUrl
+          return copy
+        })
+      }
       setImageErrors((cur) => {
         const copy = [...cur]
         copy[index] = msg
         return copy
       })
-      setError(msg)
     } finally {
       setRegenIndex(null)
     }
+  }
+
+  function handleEditedImageSaved(row: AiImageSavedRow) {
+    if (editImageIndex === null) return
+    const index = editImageIndex
+    setImages((cur) => {
+      const copy = [...cur]
+      copy[index] = row.storage_path
+      return copy
+    })
+    setImageErrors((cur) => {
+      const copy = [...cur]
+      copy[index] = undefined
+      return copy
+    })
+    setEditImageIndex(null)
   }
 
   function openLightbox(url: string, sceneText: string) {
@@ -826,16 +970,22 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
   function handleApprove() {
     try {
+      const productIdentity = identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product')
+      const characterIdentity = identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character')
       onApprove(plans.map((p) => p.scenarioText), images, {
         duration,
         aspect,
         withNarration,
         isPlanBased: true,
         identity: {
-          productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
-          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? currentProductName(),
-          characterUrl: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.url,
-          characterName: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.name ?? null,
+          productId: productIdentity?.id,
+          productCategory: productIdentity?.category,
+          productUrl: productIdentity?.url,
+          productUrls: productIdentity?.urls,
+          productName: productIdentity?.name ?? currentProductName(),
+          productDescription: productIdentity?.description ?? null,
+          characterUrl: characterIdentity?.url,
+          characterName: characterIdentity?.name ?? null,
         },
         creative: currentCreative(),
       })
@@ -1020,11 +1170,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     <Clock className="h-3.5 w-3.5" />
                     Film duration
                   </label>
-                  <div className="flex flex-wrap gap-2">
+                  <div role="radiogroup" aria-label="Film duration" className="flex flex-wrap gap-2">
                     {DURATIONS.map((d) => (
                       <Button
                         key={d}
                         type="button"
+                        role="radio"
+                        aria-checked={duration === d}
                         variant={duration === d ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setDuration(d)}
@@ -1049,11 +1201,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     <MonitorPlay className="h-3.5 w-3.5" />
                     Aspect ratio
                   </label>
-                  <div className="flex flex-wrap gap-2">
+                  <div role="radiogroup" aria-label="Aspect ratio" className="flex flex-wrap gap-2">
                     {ASPECTS.map((a) => (
                       <Button
                         key={a.value}
                         type="button"
+                        role="radio"
+                        aria-checked={aspect === a.value}
                         variant={aspect === a.value ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setAspect(a.value)}
@@ -1083,11 +1237,17 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         <span className="text-xs text-foreground/80">{currentProductName() || 'Product'}</span>
                         <button
                           type="button"
-                          onClick={() => { setSelectedProduct(null); setProductName('') }}
-                          aria-label="Remove product"
-                          className="ml-1 rounded p-0.5 text-muted-foreground hover:text-foreground/80"
+                          onClick={() => { setProductPickerOpen(true); void loadProductPhotos() }}
+                          className="rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-foreground/80 transition hover:bg-accent/60"
                         >
-                          <X className="h-3 w-3" />
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedProduct(null); setProductName('') }}
+                          className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition hover:text-foreground/80"
+                        >
+                          Clear
                         </button>
                       </div>
                     ) : (
@@ -1128,9 +1288,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         <button
                           type="button"
                           onClick={() => setSelectedCharacter(null)}
+                          aria-label="Remove selected character"
                           className="ml-1 rounded p-0.5 text-muted-foreground hover:text-foreground/80"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="h-3 w-3" aria-hidden="true" />
                         </button>
                       </div>
                     ) : (
@@ -1313,8 +1474,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           <button
                             type="button"
                             aria-label="Generate prompt"
-                            aria-disabled={generatingPrompt || optimizing}
-                            disabled={generatingPrompt || optimizing}
+                            aria-disabled={!canGeneratePrompt}
+                            disabled={!canGeneratePrompt}
                             onClick={handleGeneratePrompt}
                             className="absolute bottom-2 right-11 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
                           >
@@ -1326,7 +1487,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="text-xs">
-                          {generatingPrompt ? 'Writing a prompt…' : 'Generate a prompt from your selections'}
+                          {generatingPrompt
+                            ? 'Writing a prompt…'
+                            : !selectedProduct
+                              ? 'Choose a product first to generate a prompt'
+                              : 'Generate a prompt from your selections'}
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -1437,6 +1602,21 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                             Shot {i + 1}
                           </div>
                           <div className="flex items-center gap-1">
+                            {url && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={working}
+                                aria-label={`Edit image for shot ${i + 1}`}
+                                title={`Edit image for shot ${i + 1}`}
+                                onClick={() => setEditImageIndex(i)}
+                                className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
+                              >
+                                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                                Edit
+                              </Button>
+                            )}
                             {url && (
                               <Button
                                 type="button"
@@ -1572,7 +1752,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               {step === 'images' && (
                 <Button
                   type="button"
-                  disabled={working || !canApproveFilm(images)}
+                  disabled={working || !canApproveFilm(images) || imageErrors.some(Boolean)}
                   onClick={handleApprove}
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >
@@ -1676,24 +1856,23 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       />
 
       {/* Product Picker Dialog */}
-      <Dialog open={productPickerOpen} onOpenChange={(open) => {
-        setProductPickerOpen(open)
-        if (open) {
-          productPickerControllerRef.current = new AbortController()
-          void loadProductPhotos()
-        } else {
-          productPickerControllerRef.current?.abort()
-          productPickerControllerRef.current = new AbortController()
-        }
-      }}>
-        <DialogContent className="max-w-lg border-border bg-card text-foreground">
-          <DialogHeader>
-            <DialogTitle className="text-base">Choose a product</DialogTitle>
-            <DialogDescription>
-              Select a product folder. Its saved angles will rotate across the film scenes.
-            </DialogDescription>
-          </DialogHeader>
-          {loadingProducts ? (
+      <ChooseProductDialog
+        open={productPickerOpen}
+        onOpenChange={(open) => {
+          setProductPickerOpen(open)
+          if (open) {
+            productPickerControllerRef.current = new AbortController()
+            void loadProductPhotos()
+          } else {
+            productPickerControllerRef.current?.abort()
+            productPickerControllerRef.current = new AbortController()
+          }
+        }}
+        categories={availableProductCategories}
+        activeCategory={productCategory}
+        onCategoryChange={setProductCategory}
+        status={
+          loadingProducts ? (
             <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading products…
             </div>
@@ -1706,22 +1885,20 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             </div>
           ) : productPhotos.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">No saved product photos yet.</div>
-          ) : (
-            <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
-              {productPhotos.map((group) => (
-                <ProductPickerCard
-                  key={group.id}
-                  group={group}
-                  bucket={PRODUCTS_BUCKET}
-                  userId={userId}
-                  controllerRef={productPickerControllerRef}
-                  onSelect={pickProduct}
-                />
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          ) : null
+        }
+      >
+        {visibleProductGroups.map((group) => (
+          <ProductPickerCard
+            key={group.id}
+            group={group}
+            bucket={PRODUCTS_BUCKET}
+            userId={userId}
+            controllerRef={productPickerControllerRef}
+            onSelect={pickProduct}
+          />
+        ))}
+      </ChooseProductDialog>
 
       {/* Character Picker Dialog */}
       <Dialog open={characterPickerOpen} onOpenChange={setCharacterPickerOpen}>
@@ -1790,6 +1967,17 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         userId={userId}
         initialCharacter={characterSheetSource}
         onSheetCreated={handleCharacterSheetCreated}
+      />
+
+      <AiImageDialog
+        open={editImageIndex !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setEditImageIndex(null)
+        }}
+        userId={userId}
+        defaultAspect={aspect}
+        initialImageUrl={editImageIndex === null ? null : safeMediaUrl(images[editImageIndex])}
+        onSaved={handleEditedImageSaved}
       />
 
       {/* Lightbox for zoom */}
@@ -2001,10 +2189,11 @@ function ProductPickerCard({
       onClick={() => {
         if (!primaryAngle) return
         onSelect({
-          id: primaryAngle.id,
+          id: group.id,
           title: group.name,
           url: primaryAngle.url,
           urls: signedAngles.map((angle) => angle.url),
+          category: productIdentityCategory(group),
         })
       }}
       className={`group relative overflow-hidden rounded-md border border-border bg-surface-2 text-left transition hover:border-fuchsia-300/40 ${

@@ -19,7 +19,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 const onSaved = vi.fn()
 
-function renderDialog() {
+function renderDialog(initialImageUrl?: string) {
   return render(
     <AiImageDialog
       open
@@ -27,6 +27,7 @@ function renderDialog() {
       userId="user-1"
       defaultAspect="1:1"
       onSaved={onSaved}
+      initialImageUrl={initialImageUrl}
     />,
   )
 }
@@ -47,6 +48,14 @@ beforeEach(() => {
 })
 
 describe('AiImageDialog prompt optimization', () => {
+  it('opens a supplied existing image directly in the refine editor', () => {
+    renderDialog('https://x/shot-2.png')
+
+    expect(screen.getByAltText('Generated')).toHaveAttribute('src', 'https://x/shot-2.png')
+    expect(screen.getByText(/Refine with AI/i)).toBeInTheDocument()
+    expect(screen.queryByText('Generate')).not.toBeInTheDocument()
+  })
+
   it('does not invoke the edge function when the prompt is empty', async () => {
     renderDialog()
     const btn = optimizeButton()

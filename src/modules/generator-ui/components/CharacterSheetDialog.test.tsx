@@ -240,7 +240,7 @@ describe('CharacterSheetDialog upload', () => {
 
   it('surfaces the real PostgREST message instead of a generic upload failed', async () => {
     const upload = vi.fn(async () => ({ data: { path: 'user-1/u.png' }, error: null }))
-    const remove = vi.fn(async () => ({ data: null, error: null }))
+    const remove = vi.fn(async (_paths: string[]) => ({ data: null, error: null }))
     mockStorage.from.mockImplementation(() => ({
       upload,
       remove,
@@ -260,7 +260,7 @@ describe('CharacterSheetDialog upload', () => {
 
   it('removes the orphaned storage object when the DB insert fails', async () => {
     const upload = vi.fn(async () => ({ data: { path: 'user-1/u.png' }, error: null }))
-    const remove = vi.fn(async () => ({ data: null, error: null }))
+    const remove = vi.fn(async (_paths: string[]) => ({ data: null, error: null }))
     mockStorage.from.mockImplementation(() => ({
       upload,
       remove,

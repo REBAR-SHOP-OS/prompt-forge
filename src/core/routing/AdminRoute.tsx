@@ -1,5 +1,5 @@
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@/core/auth/AuthProvider";
+import { useAuth } from "@/core/auth/auth-context";
 import LoadingScreen from "@/core/ui/LoadingScreen";
 
 export default function AdminRoute({ children }: { children: React.ReactNode }) {

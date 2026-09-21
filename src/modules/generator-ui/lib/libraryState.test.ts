@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createLibraryStateSync,
   mergeLibraryDocs,
+  sendLibraryKeepaliveRequest,
   type LibraryBackendResult,
   type LibraryDoc,
   type LibraryStateBackend,
@@ -204,7 +205,7 @@ describe("library state synchronization", () => {
   it("does not let an aborted hydration mutate local state", async () => {
     let resolveRead: (result: LibraryBackendResult<LibraryStateRow | null>) => void = () => {};
     const backend: LibraryStateBackend = {
-      read: vi.fn(() => new Promise((resolve) => { resolveRead = resolve; })),
+      read: vi.fn(() => new Promise<LibraryBackendResult<LibraryStateRow | null>>((resolve) => { resolveRead = resolve; })),
       insert: vi.fn(),
       updateIfVersion: vi.fn(),
     };
@@ -230,5 +231,64 @@ describe("mergeLibraryDocs", () => {
       {},
       {},
     )).toEqual({ state: {}, conflictingKeys: [] });
+  });
+});
+
+describe("unload keepalive persistence", () => {
+  it("builds a bounded compare-and-swap request from the current local snapshot", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]' },
+      version: 7,
+    });
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+    await sync.hydrate(userId);
+    storage.setItem(approvedKey, '["changed-before-unload"]');
+
+    const request = sync.prepareKeepalive(userId);
+
+    expect(request).toEqual({
+      method: "PATCH",
+      query: `?user_id=eq.${userId}&version=eq.7`,
+      body: JSON.stringify({
+        state: { [approvedKey]: '["changed-before-unload"]' },
+        version: 8,
+      }),
+    });
+  });
+
+  it("rejects an oversized keepalive payload so the normal push can retry", async () => {
+    const backend = new VersionedBackend({ state: {}, version: 2 });
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+    await sync.hydrate(userId);
+    storage.setItem(approvedKey, "x".repeat(256));
+
+    expect(sync.prepareKeepalive(userId, 64)).toBeNull();
+  });
+
+  it("dispatches an authenticated keepalive fetch without exposing the token in the URL", () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    const request = {
+      method: "PATCH" as const,
+      query: `?user_id=eq.${userId}&version=eq.3`,
+      body: '{"state":{},"version":4}',
+    };
+
+    expect(sendLibraryKeepaliveRequest(
+      request,
+      "session-token",
+      { supabaseUrl: "https://project.supabase.co", supabaseKey: "public-key" },
+      fetchImpl,
+    )).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `https://project.supabase.co/rest/v1/generator_library_state${request.query}`,
+      expect.objectContaining({
+        method: "PATCH",
+        keepalive: true,
+        headers: expect.objectContaining({ Authorization: "Bearer session-token" }),
+      }),
+    );
+    expect(fetchImpl.mock.calls[0]?.[0]).not.toContain("session-token");
   });
 });

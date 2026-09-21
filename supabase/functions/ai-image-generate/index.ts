@@ -7,6 +7,8 @@ import {
   buildIdentityEvalPrompt,
   parseIdentityEvalResponse,
   classifyEvalVerdict,
+  selectEvaluatedSpecs,
+  MAX_REFERENCE_IMAGES,
   type ReferenceSpec,
   type IdentityEvalOutcome,
   type EvalVerdict,
@@ -140,8 +142,10 @@ Deno.serve(async (req) => {
     const refSpecs: ReferenceSpec[] = refValidation.specs;
     // Cap the number of reference images and validate each against the same
     // security rules as the job orchestrator (own storage under user folder or
-    // allowlisted host). Never accept arbitrary insecure URLs server-side.
-    const MAX_REFERENCE_IMAGES = 3;
+    // allowlisted host). Never accept arbitrary insecure URLs server-side. The
+    // cap is identity-eval's own MAX_REFERENCE_IMAGES — a local, smaller cap
+    // here would silently truncate a multi-angle product folder that
+    // validateReferenceSpecs would otherwise accept.
     const safeReferenceUrls = refSpecs
       .slice(0, MAX_REFERENCE_IMAGES)
       .filter((s) => s.url.length <= 2048 && isAllowedReferenceUrl(s.url, auth.userId));
@@ -226,14 +230,19 @@ Deno.serve(async (req) => {
     //   - error: the evaluator itself failed (technical error, invalid response,
     //     429/402/5xx) -> return immediately, do NOT start a fresh generation.
     const evalModel = "google/gemini-3-flash-preview";
-    const evalPrompt = buildIdentityEvalPrompt(safeReferenceUrls);
+    // Judge only the first product angle plus the character, never every
+    // grouped angle — a single generated image can only visually show one
+    // product angle, so evaluating the rest would fail spuriously. The extra
+    // product specs above are generation-only grounding.
+    const evaluatedSpecs = selectEvaluatedSpecs(safeReferenceUrls);
+    const evalPrompt = buildIdentityEvalPrompt(evaluatedSpecs);
 
     // Returns { verdict, outcome }. verdict is "pass" | "identity-fail" | "error".
     async function evaluateIdentity(dataUrl: string): Promise<{
       verdict: EvalVerdict;
       outcome: IdentityEvalOutcome | null;
     }> {
-      if (safeReferenceUrls.length === 0) {
+      if (evaluatedSpecs.length === 0) {
         // No references to preserve — nothing to evaluate.
         return { verdict: "pass", outcome: { perReference: [], passed: true } };
       }
@@ -244,8 +253,8 @@ Deno.serve(async (req) => {
         { type: "text", text: "GENERATED_OUTPUT:" },
         { type: "image_url", image_url: { url: dataUrl } },
       ];
-      for (let i = 0; i < safeReferenceUrls.length; i++) {
-        const spec = safeReferenceUrls[i];
+      for (let i = 0; i < evaluatedSpecs.length; i++) {
+        const spec = evaluatedSpecs[i];
         evalContent.push({
           type: "text",
           text: `REF_${i + 1} (${spec.role.toUpperCase()}):`,
@@ -278,7 +287,7 @@ Deno.serve(async (req) => {
       const evalData = await readJsonLoose(evalResp, "ai-image-generate-identity-eval");
       const raw: string = (evalData?.choices?.[0]?.message?.content ?? "").trim();
       if (!raw) return { verdict: "error", outcome: null };
-      const outcome = parseIdentityEvalResponse(raw, safeReferenceUrls.length);
+      const outcome = parseIdentityEvalResponse(raw, evaluatedSpecs.length);
       return { verdict: classifyEvalVerdict(outcome), outcome };
     }
 
