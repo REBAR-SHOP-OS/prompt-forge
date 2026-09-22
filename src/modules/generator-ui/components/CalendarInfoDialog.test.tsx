@@ -159,6 +159,14 @@ describe('CalendarInfoDialog occasion detail', () => {
     expect(await screen.findByText('A peaceful cinematic scene.')).toBeInTheDocument()
     const scenarioCalls = mockInvoke.mock.calls.filter(([fn]) => fn === 'enhance-prompt').length
 
+    // Translation succeeds here: the point of this test is the normal language
+    // switch, not the translation-error path.
+    mockInvoke.mockImplementation((fn: string) => Promise.resolve(
+      fn === 'translate-text'
+        ? { data: { translation: 'ترجمه' }, error: null }
+        : { data: { enhancedPrompt: 'A peaceful cinematic scene.' }, error: null },
+    ))
+
     fireEvent.change(screen.getByLabelText('Translate occasion details'), { target: { value: 'fa' } })
 
     // Switching the display language must not hide the scenario or pay for a new one.
