@@ -145,6 +145,27 @@ describe('CalendarInfoDialog occasion detail', () => {
     expect(screen.getByText('October 2026')).toBeInTheDocument()
   })
 
+  it('keeps the generated scenario when the detail language changes (cache is language-independent)', async () => {
+    render(
+      <CalendarInfoDialog
+        open
+        todayOnly
+        durationSeconds={15}
+        onOpenChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /International Day of Peace/i }))
+    expect(await screen.findByText('A peaceful cinematic scene.')).toBeInTheDocument()
+    const scenarioCalls = mockInvoke.mock.calls.filter(([fn]) => fn === 'enhance-prompt').length
+
+    fireEvent.change(screen.getByLabelText('Translate occasion details'), { target: { value: 'fa' } })
+
+    // Switching the display language must not hide the scenario or pay for a new one.
+    expect(await screen.findByText('A peaceful cinematic scene.')).toBeInTheDocument()
+    expect(mockInvoke.mock.calls.filter(([fn]) => fn === 'enhance-prompt').length).toBe(scenarioCalls)
+  })
+
   it('loads the current occasion response and preserves About, History, and Scenario', async () => {
     render(
       <CalendarInfoDialog

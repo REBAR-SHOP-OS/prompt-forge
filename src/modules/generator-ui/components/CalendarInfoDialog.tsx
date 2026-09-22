@@ -262,11 +262,11 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setSelectedDate(dt)
   }
 
-  const scenarioCacheKey = selectedOccasion ? `${selectedOccasion.title}::${lang}::${durationSeconds}` : ''
+  const scenarioCacheKey = selectedOccasion ? `${selectedOccasion.title}::${durationSeconds}` : ''
   const currentScenario = scenarioCacheKey ? scenarioCache[scenarioCacheKey] ?? null : null
 
   const generateScenario = async (occ: Occasion, force = false) => {
-    const key = `${occ.title}::${lang}::${durationSeconds}`
+    const key = `${occ.title}::${durationSeconds}`
     if (!force && scenarioCache[key]) return
     setScenarioLoading(true)
     setScenarioError(null)
