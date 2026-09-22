@@ -8,6 +8,7 @@ import {
   classifyEvalVerdict,
   ALLOWED_ROLES,
   MAX_REFERENCE_IMAGES,
+  ACTION_QUALITY_NOT_REPORTED,
 } from '../../../../supabase/functions/_shared/identity-eval'
 
 describe('validateReferenceSpecs', () => {
@@ -273,6 +274,41 @@ describe('parseIdentityEvalResponse', () => {
     }) + '\n```'
     const out = parseIdentityEvalResponse(raw, 1)
     expect(out?.passed).toBe(true)
+  })
+
+  it('keeps the identity verdict when the reviewer omits actionQuality (no technical error)', () => {
+    const raw = JSON.stringify({ perReference: [{ present: true, match: true, reason: 'same product' }] })
+    const out = parseIdentityEvalResponse(raw, 1)
+    expect(out).not.toBeNull()
+    expect(out!.actionQuality).toEqual({ passed: true, reason: ACTION_QUALITY_NOT_REPORTED })
+    expect(out!.passed).toBe(true)
+    expect(classifyEvalVerdict(out)).toBe('pass')
+  })
+
+  it('still fails a missing identity when actionQuality is omitted', () => {
+    const raw = JSON.stringify({ perReference: [{ present: false, match: false, reason: 'product missing' }] })
+    const out = parseIdentityEvalResponse(raw, 1)
+    expect(out).not.toBeNull()
+    expect(out!.passed).toBe(false)
+    expect(classifyEvalVerdict(out)).toBe('identity-fail')
+  })
+
+  it('treats a non-boolean actionQuality verdict (e.g. "n/a") as not reported', () => {
+    const raw = JSON.stringify({
+      perReference: [{ present: true, match: true, reason: 'ok' }],
+      actionQuality: { passed: 'n/a', reason: 'standalone product shot' },
+    })
+    const out = parseIdentityEvalResponse(raw, 1)
+    expect(out!.actionQuality).toEqual({ passed: true, reason: ACTION_QUALITY_NOT_REPORTED })
+    expect(classifyEvalVerdict(out)).toBe('pass')
+  })
+
+  it('still enforces an explicit failed actionQuality verdict', () => {
+    const raw = JSON.stringify({
+      perReference: [{ present: true, match: true, reason: 'ok' }],
+      actionQuality: { passed: false, reason: 'stirrup floats beside the bars' },
+    })
+    expect(classifyEvalVerdict(parseIdentityEvalResponse(raw, 1))).toBe('identity-fail')
   })
 })
 
