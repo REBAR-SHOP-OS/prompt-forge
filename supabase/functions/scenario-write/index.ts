@@ -128,11 +128,16 @@ export function buildSystemPrompt(
         "You are a world-class advertising creative director writing a high-energy PRODUCT COMMERCIAL scenario.",
         productAd?.productName ? `The hero product is "${productAd.productName}".` : "Center the scenario on the product in the user's brief.",
         productAd?.productDescription ? `Product details: ${productAd.productDescription}.` : "",
-        "Make the product the unmistakable hero of every shot: show it prominently, highlight its look, texture, and key selling points, and build desire.",
+        "Build a varied film with dedicated PRODUCT-ONLY shots that promote the product by itself. Character-only and environment-only shots may be separate; the product does not need to appear in every shot.",
+        "Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects. For example, never put a loose stirrup beside or against a completed reinforcement cage.",
         productAd?.characterImageUrl
-          ? narration
-            ? "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero. This character is the on-screen SPOKESPERSON/PRESENTER who SPEAKS directly to the viewer: they must talk and verbally promote the product. Include the character's spoken lines (narration/dialogue) that pitch the product's key benefits in a natural, confident, persuasive tone, ending on a strong call-to-action. Keep spoken lines short and realistically timed to the duration."
-            : "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting silently with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero. Communicate the product's benefits and call-to-action through visible actions, expressions, staging, and product-focused imagery only."
+          ? [
+              "This commercial ALSO has a recurring human character provided as a SECOND attached image. Keep their face, hairstyle, wardrobe, and body type consistent whenever they appear, but do not put the character and product together in every shot.",
+              "Use the character in CHARACTER-ONLY shots by default. Do not make them hold, touch, present, or interact with the product unless the user's brief explicitly requires that exact interaction.",
+              narration
+                ? "The character may act as a SPOKESPERSON/PRESENTER and SPEAK directly to the viewer in character-only shots. Their spoken lines may promote the product without the product being visible or held in the same shot."
+                : "The character must remain SILENT — no spoken words, dialogue, or voiceover. Communicate through character-only actions and expressions without adding the product to those shots.",
+            ].join(" ")
           : "",
         productAd?.characterDescription ? `Character notes: ${productAd.characterDescription}.` : "",
         cameraGuidance(productAd ?? {}),
@@ -160,7 +165,7 @@ export function buildSystemPrompt(
   const narrationSpeaker = isCharacter
     ? "the lead character's spoken dialogue"
     : adWithCharacter
-      ? "the on-screen character's spoken dialogue that promotes the product"
+      ? "a persuasive voiceover or the recurring character's spoken dialogue in a character-only shot; the character must not hold or touch the product by default"
       : "a persuasive voiceover line that promotes the product";
 
   // ---------------------------------------------------------------------------
@@ -191,6 +196,15 @@ export function buildSystemPrompt(
       ? `Camera coverage cycles across the film: ${planPolicy.coverage.join(" → ")}. Each plan must explicitly use its assigned coverage (wide = establishing, medium = mid-shot, close = detail/face).`
       : `Use a medium shot for this single plan.`;
 
+    const shotModeContract = isAd
+      ? [
+          `Begin every plan with exactly one shot-mode marker on its own line: [SHOT: PRODUCT_ONLY], [SHOT: CHARACTER_ONLY], [SHOT: ENVIRONMENT_ONLY], or [SHOT: INTERACTION].`,
+          `[SHOT: PRODUCT_ONLY] means the product is the only promoted visual subject: no character, and no placement beside, against, attached to, touching, or interacting with unrelated structures or objects.`,
+          `[SHOT: CHARACTER_ONLY] means the recurring character may appear without the product. [SHOT: ENVIRONMENT_ONLY] means neither selected reference appears.`,
+          `[SHOT: INTERACTION] is allowed only when the user's brief explicitly requires character-product interaction. Never choose it by default, and never invent holding or touching.`,
+        ].join(" ")
+      : "";
+
     return [
       persona,
       businessLine,
@@ -199,7 +213,8 @@ export function buildSystemPrompt(
       `structured as ${numWord} sequential 5-second plans (shots) that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening plan is an attention-grabbing hook that establishes the subject and setting, the middle plans develop the story and build interest and desire, and the final plan delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${planCount} plan blocks separated by the literal delimiter "${SCENE_DELIMITER}" on its own line.`,
-      `Do not number the plans, no markdown, no preamble.`,
+      shotModeContract,
+      `Do not number the plans, no markdown, no preamble beyond the required shot-mode marker.`,
       `Each plan is a 5-second clip with exactly ONE beat (0-5s).`,
       "For each plan, specify the concrete ACTION, the FRAME/CAMERA MOVE, the LIGHTING or EMOTIONAL change, and clear STORY PROGRESS. Make every plan vivid, specific, exciting, and meaningfully different from the previous plan.",
       `Each plan must be ${planPolicy.minWordsPerPlan}-${planPolicy.maxWordsPerPlan} words and self-contained as a video prompt (include subject, action, camera move, lighting),`,
@@ -287,9 +302,9 @@ async function callGateway(
   unit: "scene" | "plan" = "scene",
 ): Promise<Response> {
   const refText = characterSheet
-    ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
+    ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look whenever they appear, and keep them consistent across the film.`
     : productAd
-      ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
+      ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every product-focused shot. Product-only shots must isolate it from unrelated structures or objects.`
       : autoFromImage
         ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
         : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
@@ -301,7 +316,7 @@ async function callGateway(
       ]
     : [];
   if (imageUrl && characterImageUrl) {
-    contentBlocks.push({ type: "text", text: "The image below is the recurring human character to feature in the commercial — match their exact face, hair, wardrobe, and body in every shot." });
+    contentBlocks.push({ type: "text", text: "The image below is the recurring human character. Match their exact face, hair, wardrobe, and body whenever they appear, but use character-only shots by default and never force them together with the product." });
     contentBlocks.push({ type: "image_url", image_url: { url: characterImageUrl } });
   }
   const baseUserContent: unknown = imageUrl

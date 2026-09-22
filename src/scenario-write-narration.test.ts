@@ -46,17 +46,31 @@ describe("scenario-write narration policy", () => {
   it("keeps a product-ad character silent when narration is disabled", () => {
     const prompt = buildSystemPrompt(15, productWithCharacter, false, undefined, undefined, "en", false);
 
-    expect(prompt).toContain("interacting silently with the product");
-    expect(prompt).toContain("visible actions, expressions, staging");
+    expect(prompt).toContain("Use the character in CHARACTER-ONLY shots by default");
+    expect(prompt).toContain("without adding the product to those shots");
     expect(prompt).toContain("Do NOT include any narration");
     expect(prompt).not.toMatch(/SPOKESPERSON|SPEAKS directly|must talk|spoken lines|narration\/dialogue/i);
   });
 
-  it("preserves the spokesperson instruction when narration is enabled", () => {
+  it("preserves the spokesperson instruction without forcing product contact when narration is enabled", () => {
     const prompt = buildSystemPrompt(15, productWithCharacter, false, undefined, undefined, "en", true);
 
     expect(prompt).toContain("SPOKESPERSON/PRESENTER");
-    expect(prompt).toContain("SPEAKS directly");
+    expect(prompt).toContain("SPEAK directly");
+    expect(prompt).toContain("character-only shots");
+    expect(prompt).toContain("without the product being visible or held");
     expect(prompt).toContain("Narration:");
+  });
+
+  it("requires explicit per-plan shot modes and defaults interaction off", () => {
+    const prompt = buildSystemPrompt(30, productWithCharacter, false, undefined, undefined, "en", true, "plan");
+
+    expect(prompt).toContain("[SHOT: PRODUCT_ONLY]");
+    expect(prompt).toContain("[SHOT: CHARACTER_ONLY]");
+    expect(prompt).toContain("[SHOT: ENVIRONMENT_ONLY]");
+    expect(prompt).toContain("[SHOT: INTERACTION]");
+    expect(prompt).toContain("allowed only when the user's brief explicitly requires character-product interaction");
+    expect(prompt).toContain("Never choose it by default");
+    expect(prompt).toContain("no placement beside, against, attached to, touching, or interacting with unrelated structures or objects");
   });
 });

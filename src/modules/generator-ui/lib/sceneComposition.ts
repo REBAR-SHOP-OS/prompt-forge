@@ -47,10 +47,10 @@ export function buildSceneCompositionPrompt(input: SceneCompositionInput): strin
 
   const lines: string[] = [
     'Image 1 is the PRODUCT. Image 2 is the on-screen CHARACTER / presenter.',
-    'Compose a single photorealistic scene image for a film in which the character is presenting, holding, or interacting with the product, with the product clearly visible as the hero of the shot.',
+    'Compose a single photorealistic scene image only for the character-product interaction explicitly described by the user-approved scene below.',
     `The scene and its events are: ${sceneText.trim()}`,
     "Keep the character's face, hair, wardrobe and body identical to image 2, and keep the product's exact shape, colors and label from image 1.",
-    'The product and the character MUST appear together prominently in the same shot, interacting with each other.',
+    'Show only the exact interaction stated in the scene. Do not invent holding, touching, presenting, leaning, attachment, or contact. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects.',
   ]
 
   if (input.characterSheet) {

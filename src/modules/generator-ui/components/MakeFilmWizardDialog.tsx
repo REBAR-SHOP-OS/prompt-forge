@@ -39,7 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed, storyboardReferencesForShot } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
@@ -460,11 +460,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     const resolvedCharacterName = safeTitle(selectedCharacter?.title)
     if (selectedProduct && selectedCharacter) {
       const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
-      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''} (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
+      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) and the ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''} (image: ${selectedCharacter.url}) may appear in separate shots across the film. Never put them together by default or force the character to hold, touch, present, or interact with the product. Character-product interaction is allowed only when the user's concept explicitly requires that interaction. Product-focused shots must promote the product by itself as the visual subject; character-only and environment-only shots may be separate. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects (for example, never put a loose stirrup beside or against a completed reinforcement cage).`
     } else if (selectedProduct) {
-      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. Feature the product by itself as the visual subject in product-focused shots. Environment-only shots may be separate. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects (for example, never put a loose stirrup beside or against a completed reinforcement cage).`
     } else if (resolvedProductName) {
-      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. Feature the product by itself as the visual subject in product-focused shots. Environment-only shots may be separate. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects (for example, never put a loose stirrup beside or against a completed reinforcement cage).`
     } else if (selectedCharacter) {
       const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
       enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
@@ -769,8 +769,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     for (let i = 0; i < plans.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
       try {
-        const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], i) ?? snapshot.product?.url
-        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        const shotProductUrl = productPhotoForScene(snapshot.product?.urls ?? [], i) ?? snapshot.product?.url
+        const references = storyboardReferencesForShot(plans[i].shotMode ?? 'product', shotProductUrl, snapshot.character?.url)
+        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, references.productUrl, references.characterUrl, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -793,8 +794,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const characterSheet = snapshot.character?.characterSheet ?? false
-      const productUrl = productPhotoForScene(snapshot.product?.urls ?? [], index) ?? snapshot.product?.url
-      const url = await generateSceneImage(plans[index].scenarioText, aspect, productUrl, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const shotProductUrl = productPhotoForScene(snapshot.product?.urls ?? [], index) ?? snapshot.product?.url
+      const references = storyboardReferencesForShot(plans[index].shotMode ?? 'product', shotProductUrl, snapshot.character?.url)
+      const url = await generateSceneImage(plans[index].scenarioText, aspect, references.productUrl, references.characterUrl, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url

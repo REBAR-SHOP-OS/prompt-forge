@@ -19,7 +19,11 @@ describe('buildSceneCompositionPrompt', () => {
     expect(out).toContain('The scene and its events are: The barista pours coffee at sunrise.')
     expect(out).toContain('Keep the character\'s face, hair, wardrobe and body identical to image 2')
     expect(out).toContain('keep the product\'s exact shape, colors and label from image 1')
-    expect(out).toContain('MUST appear together prominently in the same shot')
+    expect(out).toContain('only for the character-product interaction explicitly described')
+    expect(out).toContain('Show only the exact interaction stated in the scene')
+    expect(out).toContain('Do not invent holding, touching, presenting, leaning, attachment, or contact')
+    expect(out).toContain('Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects')
+    expect(out).not.toContain('MUST appear together prominently')
   })
 
   it('appends camera and theme directives when provided', () => {
