@@ -145,6 +145,35 @@ describe('CalendarInfoDialog occasion detail', () => {
     expect(screen.getByText('October 2026')).toBeInTheDocument()
   })
 
+  it('keeps the generated scenario when the detail language changes (cache is language-independent)', async () => {
+    render(
+      <CalendarInfoDialog
+        open
+        todayOnly
+        durationSeconds={15}
+        onOpenChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /International Day of Peace/i }))
+    expect(await screen.findByText('A peaceful cinematic scene.')).toBeInTheDocument()
+    const scenarioCalls = mockInvoke.mock.calls.filter(([fn]) => fn === 'enhance-prompt').length
+
+    // Translation succeeds here: the point of this test is the normal language
+    // switch, not the translation-error path.
+    mockInvoke.mockImplementation((fn: string) => Promise.resolve(
+      fn === 'translate-text'
+        ? { data: { translation: 'ترجمه' }, error: null }
+        : { data: { enhancedPrompt: 'A peaceful cinematic scene.' }, error: null },
+    ))
+
+    fireEvent.change(screen.getByLabelText('Translate occasion details'), { target: { value: 'fa' } })
+
+    // Switching the display language must not hide the scenario or pay for a new one.
+    expect(await screen.findByText('A peaceful cinematic scene.')).toBeInTheDocument()
+    expect(mockInvoke.mock.calls.filter(([fn]) => fn === 'enhance-prompt').length).toBe(scenarioCalls)
+  })
+
   it('loads the current occasion response and preserves About, History, and Scenario', async () => {
     render(
       <CalendarInfoDialog

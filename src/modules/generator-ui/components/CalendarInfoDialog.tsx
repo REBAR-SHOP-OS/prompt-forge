@@ -73,6 +73,12 @@ const labels = {
 
 }
 
+// One place builds the scenario cache key for both the read and the write path:
+// a mismatch between them is what hid generated scenarios after #268. The key is
+// per occasion and duration, and deliberately NOT per language — the scenario is
+// generated once and only the surrounding detail text is translated (#252).
+const scenarioCacheKeyFor = (title: string, durationSeconds: number) => `${title}::${durationSeconds}`
+
 const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 
 export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, todayOnly = false, durationSeconds = 10 }: CalendarInfoDialogProps) {
@@ -262,11 +268,11 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setSelectedDate(dt)
   }
 
-  const scenarioCacheKey = selectedOccasion ? `${selectedOccasion.title}::${lang}::${durationSeconds}` : ''
+  const scenarioCacheKey = selectedOccasion ? scenarioCacheKeyFor(selectedOccasion.title, durationSeconds) : ''
   const currentScenario = scenarioCacheKey ? scenarioCache[scenarioCacheKey] ?? null : null
 
   const generateScenario = async (occ: Occasion, force = false) => {
-    const key = `${occ.title}::${lang}::${durationSeconds}`
+    const key = scenarioCacheKeyFor(occ.title, durationSeconds)
     if (!force && scenarioCache[key]) return
     setScenarioLoading(true)
     setScenarioError(null)
