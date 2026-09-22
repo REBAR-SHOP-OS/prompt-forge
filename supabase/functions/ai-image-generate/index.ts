@@ -191,7 +191,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    const fullPrompt = `Create a single high-quality photographic image that visually depicts the following subject. Do NOT respond with text, explanations, captions, or descriptions — output ONLY the rendered image. The user's subject may be in any language (including Persian/Farsi/Arabic); interpret it as the visual subject of the image.\n\nSubject: ${prompt}\n\nPHYSICAL INTERACTION GUIDANCE: ${buildTechnicalInteractionGuidance()}\n\n${ratioGuidance(aspectRatio)}`;
+    // Identity and action-quality review run only for the evaluated identities
+    // (first product angle + character). The physical-interaction guidance —
+    // including its rebar/stirrup/mesh rules — belongs only to those
+    // reference-backed generations, where the reviewer enforces it. Plain
+    // text-to-image prompts stay unchanged.
+    const evaluatedSpecs = selectEvaluatedSpecs(safeReferenceUrls);
+    const interactionGuidance = evaluatedSpecs.length > 0
+      ? `\n\nPHYSICAL INTERACTION GUIDANCE: ${buildTechnicalInteractionGuidance()}`
+      : "";
+    const fullPrompt = `Create a single high-quality photographic image that visually depicts the following subject. Do NOT respond with text, explanations, captions, or descriptions — output ONLY the rendered image. The user's subject may be in any language (including Persian/Farsi/Arabic); interpret it as the visual subject of the image.\n\nSubject: ${prompt}${interactionGuidance}\n\n${ratioGuidance(aspectRatio)}`;
 
     // Build the multimodal user content. Reference images (product, character,
     // and optionally the previous scene for continuity) are attached as real
@@ -236,7 +245,6 @@ Deno.serve(async (req) => {
     // grouped angle — a single generated image can only visually show one
     // product angle, so evaluating the rest would fail spuriously. The extra
     // product specs above are generation-only grounding.
-    const evaluatedSpecs = selectEvaluatedSpecs(safeReferenceUrls);
     const evalPrompt = buildIdentityEvalPrompt(evaluatedSpecs);
 
     // Returns { verdict, outcome }. verdict is "pass" | "identity-fail" | "error".

@@ -229,10 +229,36 @@ export function buildIdentityEvalPrompt(specs: ReferenceSpec[]): string {
   ].join("\n");
 }
 
+/** Reason recorded when the reviewer did not return a usable action-quality verdict. */
+export const ACTION_QUALITY_NOT_REPORTED =
+  "Action-quality verdict missing or invalid in the reviewer response; identity review only.";
+
+/**
+ * actionQuality is a secondary review dimension. When the reviewer omits it or
+ * returns a non-boolean verdict (for example "n/a" on a standalone product
+ * shot), keep the identity verdict authoritative instead of discarding the
+ * whole evaluation: a null outcome is classified as a technical error, which
+ * made ai-image-generate return an immediate 502 and ai-image-edit fail even
+ * though identity was verified. The explicit reason and warning keep the
+ * fallback observable.
+ */
+function parseActionQuality(value: unknown): ActionQualityResult {
+  if (typeof value === "object" && value !== null) {
+    const action = value as Record<string, unknown>;
+    if (typeof action.passed === "boolean") {
+      return { passed: action.passed, reason: typeof action.reason === "string" ? action.reason : "" };
+    }
+  }
+  console.warn("identity-eval: reviewer omitted or malformed actionQuality; using the identity-only verdict");
+  return { passed: true, reason: ACTION_QUALITY_NOT_REPORTED };
+}
+
 /**
  * Parse the evaluator's raw text response into a structured outcome. Returns
- * null when the response cannot be parsed or has the wrong shape (treated as a
- * technical error by the caller, NOT a retryable identity failure).
+ * null when the response cannot be parsed or the identity verdicts have the
+ * wrong shape (treated as a technical error by the caller, NOT a retryable
+ * identity failure). A missing or malformed actionQuality verdict does not
+ * null the outcome; see parseActionQuality.
  */
 export function parseIdentityEvalResponse(
   raw: string,
@@ -261,13 +287,7 @@ export function parseIdentityEvalResponse(
       reason: typeof o.reason === "string" ? o.reason : "",
     });
   }
-  if (typeof parsed.actionQuality !== "object" || parsed.actionQuality === null) return null;
-  const action = parsed.actionQuality as Record<string, unknown>;
-  if (typeof action.passed !== "boolean") return null;
-  const actionQuality: ActionQualityResult = {
-    passed: action.passed,
-    reason: typeof action.reason === "string" ? action.reason : "",
-  };
+  const actionQuality = parseActionQuality(parsed.actionQuality);
   const passed = perReference.every((r) => r.present && r.match) && actionQuality.passed;
   return { perReference, actionQuality, passed };
 }
