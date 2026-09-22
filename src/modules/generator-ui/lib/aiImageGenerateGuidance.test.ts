@@ -14,8 +14,18 @@ describe('ai-image-generate physical-interaction guidance scope', () => {
   })
 
   it('never injects the guidance unconditionally into the generation prompt', () => {
-    const fullPrompt = source.slice(source.indexOf('const fullPrompt'), source.indexOf('\n', source.indexOf('const fullPrompt')))
-    expect(fullPrompt).not.toContain('buildTechnicalInteractionGuidance()')
+    // Robust to reformatting: the helper may be called exactly once in the file
+    // (excluding its import), and that one call must be the conditional
+    // interactionGuidance assignment.
+    const withoutImports = source.replace(/^import[\s\S]*?from\s+["'][^"']+["'];?$/gm, '')
+    const calls = withoutImports.match(/buildTechnicalInteractionGuidance\(\)/g) ?? []
+    expect(calls).toHaveLength(1)
+    const assignment = withoutImports.slice(
+      withoutImports.indexOf('const interactionGuidance'),
+      withoutImports.indexOf('const fullPrompt'),
+    )
+    expect(assignment).toContain('buildTechnicalInteractionGuidance()')
+    expect(assignment).toContain('evaluatedSpecs.length > 0')
   })
 
   it('declares evaluatedSpecs before the prompt that depends on it', () => {
