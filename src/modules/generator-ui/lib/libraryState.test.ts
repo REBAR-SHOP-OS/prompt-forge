@@ -60,6 +60,7 @@ class VersionedBackend implements LibraryStateBackend {
 const userId = "user-1";
 const approvedKey = `approved-videos:${userId}`;
 const draftKey = `draft-entries:${userId}`;
+const coverDurationsKey = `project-cover-durations:${userId}`;
 
 describe("library state synchronization", () => {
   it("replaces the tracked cache exactly and removes stale keys", async () => {
@@ -68,6 +69,7 @@ describe("library state synchronization", () => {
       version: 4,
     });
     const storage = new MemoryStorage();
+    storage.setItem(coverDurationsKey, '{"merged-a":8}');
     storage.setItem(approvedKey, '["old-video"]');
     storage.setItem(draftKey, '["deleted-draft"]');
 
@@ -76,6 +78,10 @@ describe("library state synchronization", () => {
     await expect(sync.hydrate(userId)).resolves.toEqual({ status: "success" });
     expect(storage.getItem(approvedKey)).toBe('["server-video"]');
     expect(storage.getItem(draftKey)).toBeNull();
+    // Device-only keys are NOT tracked, so hydrate must leave them alone. Cover
+    // durations were briefly tracked (#270); every existing server row predates
+    // that key, so tracking it wiped each user's durations on first load.
+    expect(storage.getItem(coverDurationsKey)).toBe('{"merged-a":8}');
   });
 
   it("fails closed when hydration cannot read the server", async () => {
