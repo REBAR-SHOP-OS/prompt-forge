@@ -27,8 +27,23 @@ describe('Dashboard cover lifecycle and soundtrack contract', () => {
     expect(merge).toContain('moveCoverDurationBetweenScopes(prev, coverScopeKey, mergedId)')
   })
 
-  it('uses the earliest playable project film for Use film frame', () => {
-    expect(dashboardSource).toContain('() => firstProjectFilmFrameUrl(displayedVideos)')
+  it('seeds Use film frame from the first playable video in Final Film render order', () => {
+    // Render order is displayedClips' rule (oldest first, then manual drag order);
+    // handleMergeAllVideos documents that it applies the same rule.
+    const merge = section('async function handleMergeAllVideos()', 'function resetWorkspace')
+    expect(merge).toContain('Apply the same ordering rule as displayedClips')
+    const cover = section('const coverFilmFrameUrl', 'type PreviewItem')
+    expect(cover).toContain('for (const clip of displayedClips)')
+    expect(cover).toContain("clip.kind === 'video' && clip.job.video?.storage_path")
+    expect(cover).toContain('}, [displayedClips])')
+    // Declared after displayedClips (no temporal-dead-zone access).
+    expect(dashboardSource.indexOf('const displayedClips = useMemo'))
+      .toBeLessThan(dashboardSource.indexOf('const coverFilmFrameUrl'))
+  })
+
+  it('keeps a finalized project cover when Start Over leaves a read-only Final view', () => {
+    const reset = section('function resetWorkspace', 'async function handleStartOver')
+    expect(reset).toContain('if (scopeKey && !isReadOnlyProject) {')
   })
 
   it('shifts music and voiceover after the cover that was actually rendered', () => {

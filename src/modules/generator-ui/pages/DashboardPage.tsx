@@ -260,10 +260,7 @@ import {
   moveCoverBetweenScopes,
   moveCoverDurationBetweenScopes,
 } from '@/modules/generator-ui/lib/coverScope'
-import {
-  firstProjectFilmFrameUrl,
-  shiftAudioTimelineAfterCover,
-} from '@/modules/generator-ui/lib/filmTimeline'
+import { shiftAudioTimelineAfterCover } from '@/modules/generator-ui/lib/filmTimeline'
 
 /**
  * Generates a unique random id. Uses WebCrypto (randomUUID / getRandomValues) when
@@ -4792,13 +4789,6 @@ export default function DashboardPage() {
   const currentCoverDuration: number = coverScopeKey
     ? Math.max(1, Math.min(10, coverDurations[coverScopeKey] ?? DEFAULT_COVER_DURATION))
     : DEFAULT_COVER_DURATION
-  // Opening clip of the current film — its first frame seeds a cover. Saved
-  // snapshots are not guaranteed to retain chronological array order, so pick
-  // the earliest playable film explicitly instead of trusting index zero.
-  const coverFilmFrameUrl: string | null = useMemo(
-    () => firstProjectFilmFrameUrl(displayedVideos),
-    [displayedVideos],
-  )
   // All cover image ids across every scope — used to hide them from the normal
   // clip list so a cover never double-renders as a generation source.
   const allCoverImageIds = useMemo(() => {
@@ -4853,6 +4843,18 @@ export default function DashboardPage() {
     }
     return ordered
   }, [displayedVideos, visibleUserImages, manualOrder])
+
+  // Opening clip of the current film — its first frame seeds a cover. Use the
+  // exact ordering rule the Final Film render uses (displayedClips: oldest
+  // first, then the user's manual drag order), not raw displayedVideos order
+  // (a draft's saved snapshot can be newest-first) and not created_at alone
+  // (that ignores manual reordering).
+  const coverFilmFrameUrl: string | null = useMemo(() => {
+    for (const clip of displayedClips) {
+      if (clip.kind === 'video' && clip.job.video?.storage_path) return clip.job.video.storage_path
+    }
+    return null
+  }, [displayedClips])
 
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
@@ -9144,9 +9146,12 @@ export default function DashboardPage() {
     // into the next project. The underlying image file is NOT deleted — only
     // the scope→cover mapping is dropped. The user can create a fresh cover
     // in the new project.
+    // A finalized (read-only) project owns its cover: it moves back to the
+    // draft on Reopen. Start Over only leaves that view, so it must not drop
+    // the Final's mapping (its key can never be reused by the next project).
     {
       const scopeKey = selectedProjectId ?? activeDraftId ?? null
-      if (scopeKey) {
+      if (scopeKey && !isReadOnlyProject) {
         setCoverImages((prev) => {
           if (!(scopeKey in prev)) return prev
           const { [scopeKey]: _drop, ...rest } = prev
