@@ -767,15 +767,13 @@ export function resolveSceneNarration(
 
 /**
  * The "Approve & Make Film" button must stay disabled until EVERY required
- * scene image is ready. A single missing image (or a failed image) blocks
- * approval so the user cannot render a film with incomplete scenes.
+ * scene image is ready. Review diagnostics never override a usable preview:
+ * the user can inspect or regenerate that image, but a retained image keeps
+ * approval available. A genuinely missing image still blocks approval.
  */
-export function canApproveFilm(images: Array<string | undefined>, imageErrors?: Array<string | undefined>): boolean {
+export function canApproveFilm(images: Array<string | undefined>): boolean {
   if (images.length === 0) return false
-  if (!images.every((url) => typeof url === 'string' && url.length > 0)) return false
-  if (!imageErrors) return true
-  if (imageErrors.length !== images.length) return false
-  return imageErrors.every((error) => typeof error !== 'string' || error.trim().length === 0)
+  return images.every((url) => typeof url === 'string' && url.length > 0)
 }
 
 /**

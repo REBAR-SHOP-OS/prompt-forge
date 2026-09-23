@@ -18,6 +18,7 @@ describe("preview shot quality prompt", () => {
     const prompt = buildPreviewShotQualityPrompt({
       shotIndex: 1,
       totalShots: 3,
+      shotMode: "product",
       productName: "Rebar tie wire",
       plannedAction: "A worker fastens the crossing bars with tie wire.",
       previousPlannedAction: "The worker positions the bars.",
@@ -31,6 +32,26 @@ describe("preview shot quality prompt", () => {
     expect(prompt).toContain("surroundingContinuity");
     expect(prompt).toContain("plannedActionFaithfulness");
     expect(prompt).toContain("credible instant within an action");
+  });
+
+  it("does not require a product in character-only or environment-only shots", () => {
+    const characterPrompt = buildPreviewShotQualityPrompt({
+      shotIndex: 0,
+      totalShots: 2,
+      shotMode: "character",
+      plannedAction: "The presenter addresses the camera.",
+    });
+    const environmentPrompt = buildPreviewShotQualityPrompt({
+      shotIndex: 1,
+      totalShots: 2,
+      shotMode: "environment",
+      plannedAction: "The empty workshop establishes the location.",
+    });
+
+    expect(characterPrompt).toContain("CHARACTER_ONLY");
+    expect(characterPrompt).toContain("product is intentionally absent");
+    expect(environmentPrompt).toContain("ENVIRONMENT_ONLY");
+    expect(environmentPrompt).toContain("both selected identities are correctly absent");
   });
 });
 

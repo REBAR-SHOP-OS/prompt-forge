@@ -213,7 +213,6 @@ export function MakeFilmWizardDialog({
   const [prompt, setPrompt] = useState('')
   const [plans, setPlans] = useState<FilmPlan[]>([])
   const [images, setImages] = useState<(string | undefined)[]>([])
-  const [imageErrors, setImageErrors] = useState<(string | undefined)[]>([])
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -273,7 +272,6 @@ export function MakeFilmWizardDialog({
       setPrompt(initialPrompt ?? '')
       setPlans([])
       setImages([])
-      setImageErrors([])
       setBusy('idle')
       setRegenIndex(null)
       setError(null)
@@ -655,7 +653,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       // images so they never mismatch the new shots.
       setPlans(builtPlans)
       setImages(new Array(builtPlans.length).fill(undefined))
-      setImageErrors(new Array(builtPlans.length).fill(undefined))
       setIdentitySnapshot(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not regenerate the scenario.')
@@ -822,6 +819,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     return {
       shotIndex: index,
       totalShots: plans.length,
+      shotMode: plans[index].shotMode ?? 'product',
       plannedAction: plans[index].scenarioText,
       previousPlannedAction: index > 0 ? plans[index - 1].scenarioText : undefined,
       nextPlannedAction: index + 1 < plans.length ? plans[index + 1].scenarioText : undefined,
@@ -850,20 +848,31 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     creative: FilmCreative,
     noTextOnImages: boolean
   ): Promise<string> {
-    const characterSheet = snapshot.character?.characterSheet ?? false
-    const productUrls = snapshot.product?.urls?.length
-      ? snapshot.product.urls
-      : snapshot.product?.url
-        ? [snapshot.product.url]
-        : []
-    const context = previewShotContext(index, snapshot)
+    const plan = plans[index]
+    const references = storyboardReferencesForShot(
+      plan.shotMode ?? 'product',
+      snapshot.product?.url,
+      snapshot.character?.url,
+    )
+    const productUrls = references.productUrl
+      ? snapshot.product?.urls?.length
+        ? snapshot.product.urls
+        : [references.productUrl]
+      : []
+    const characterUrl = references.characterUrl ? snapshot.character?.url : undefined
+    const characterSheet = Boolean(characterUrl && snapshot.character?.characterSheet)
+    const shotSnapshot: IdentitySnapshot = {
+      product: references.productUrl ? snapshot.product : undefined,
+      character: characterUrl ? snapshot.character : undefined,
+    }
+    const context = previewShotContext(index, shotSnapshot)
     const result = await generateQualityCheckedPreviewShot(
       context,
       (correction) => generateSceneImage(
-        plans[index].scenarioText,
+        plan.scenarioText,
         aspect,
         productUrls,
-        snapshot.character?.url,
+        characterUrl,
         noTextOnImages,
         creative,
         characterSheet,
@@ -884,13 +893,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     }
     setIdentitySnapshot(snapshot)
     const next: (string | undefined)[] = new Array(plans.length).fill(undefined)
-    const nextErrors: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const creative = currentCreative()
     for (let i = 0; i < plans.length; i++) {
       setProgress(`Designing and checking preview image ${i + 1} of ${plans.length}…`)
       try {
         next[i] = await generateCheckedPreviewShot(i, snapshot, creative, noTextOnImages)
-        nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
         // The image generator enforces product/character identity before it
@@ -900,10 +907,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         next[i] = err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError
           ? err.imageUrl
           : undefined
-        nextErrors[i] = err instanceof Error ? err.message : `Could not generate image ${i + 1}.`
       }
       setImages([...next])
-      setImageErrors([...nextErrors])
     }
     setBusy('idle')
     setProgress(null)
@@ -923,13 +928,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         copy[index] = url
         return copy
       })
-      setImageErrors((cur) => {
-        const copy = [...cur]
-        copy[index] = undefined
-        return copy
-      })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : `Could not regenerate image ${index + 1}.`
+      console.error(`Make-film wizard: preview image ${index + 1} regeneration failed`, err)
       if (err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError) {
         setImages((cur) => {
           const copy = [...cur]
@@ -937,11 +937,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           return copy
         })
       }
-      setImageErrors((cur) => {
-        const copy = [...cur]
-        copy[index] = msg
-        return copy
-      })
     } finally {
       setRegenIndex(null)
     }
@@ -953,11 +948,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setImages((cur) => {
       const copy = [...cur]
       copy[index] = row.storage_path
-      return copy
-    })
-    setImageErrors((cur) => {
-      const copy = [...cur]
-      copy[index] = undefined
       return copy
     })
     setEditImageIndex(null)
@@ -1595,7 +1585,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   {plans.map((plan, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
-                    const sceneError = imageErrors[i]
                     return (
                       <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-3">
                         <div className="flex items-center justify-between">
@@ -1663,11 +1652,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                             </div>
                           )}
                         </div>
-                        {sceneError && (
-                          <div className="rounded border border-red-400/30 bg-red-500/10 px-2 py-1 text-[11px] leading-4 text-red-200">
-                            {sceneError}
-                          </div>
-                        )}
                         <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">{plan.scenarioText}</p>
                       </div>
                     )
@@ -1753,7 +1737,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               {step === 'images' && (
                 <Button
                   type="button"
-                  disabled={working || !canApproveFilm(images, imageErrors)}
+                  disabled={working || !canApproveFilm(images)}
                   onClick={handleApprove}
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >

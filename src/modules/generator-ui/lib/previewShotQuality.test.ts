@@ -55,7 +55,24 @@ describe('generateQualityCheckedPreviewShot', () => {
     expect(result.attempts).toBe(2)
     expect(generate).toHaveBeenCalledTimes(2)
     expect(generate.mock.calls[1][0]).toContain('regenerate this same planned shot, not a new story')
+    expect(generate.mock.calls[1][0]).toContain('product-only shot')
+    expect(generate.mock.calls[1][0]).toContain('do not add the character')
     expect(generate.mock.calls[1][0]).toContain('hands do not contact the wire')
+  })
+
+  it('uses character-only correction guidance without demanding the product', async () => {
+    const generate = vi.fn()
+      .mockResolvedValueOnce('https://preview/failed.png')
+      .mockResolvedValueOnce('https://preview/passed.png')
+    const evaluate = vi.fn()
+      .mockResolvedValueOnce(evaluation(false))
+      .mockResolvedValueOnce(evaluation(true))
+
+    await generateQualityCheckedPreviewShot({ ...context, shotMode: 'character', productName: undefined }, generate, evaluate)
+
+    expect(generate.mock.calls[1][0]).toContain('character-only shot')
+    expect(generate.mock.calls[1][0]).toContain('do not add the product')
+    expect(generate.mock.calls[1][0]).not.toContain('centered on the selected product')
   })
 
   it('fails explicitly after the bounded attempts remain implausible', async () => {

@@ -303,12 +303,12 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
 
-    await waitFor(() => expect(screen.getByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toBeInTheDocument())
-    expect(screen.getAllByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toHaveLength(1)
-    expect(generateSceneImage).toHaveBeenCalledTimes(8)
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(8))
+    expect(screen.queryByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).not.toBeInTheDocument()
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-4')
     expect(screen.queryByText('No image — regenerate')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
 
     const qualityCalls = mockInvoke.mock.calls.filter(([name]) => name === 'film-preview-quality')
     const shotTwoCalls = qualityCalls.filter(([, options]) => options?.body?.shotIndex === 1)
@@ -316,6 +316,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     expect(shotTwoCalls[0][1].body).toMatchObject({
       shotIndex: 1,
       totalShots: 6,
+      shotMode: 'product',
       productName: 'Test product',
       previousPlannedAction: expect.stringContaining('Plan one'),
       plannedAction: expect.stringContaining('Plan two'),
@@ -325,7 +326,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     const beforeFailedRegenerate = generateSceneImage.mock.calls.length
     fireEvent.click(screen.getAllByText('Regenerate')[1])
     await waitFor(() => expect(generateSceneImage.mock.calls.length).toBe(beforeFailedRegenerate + 3))
-    expect(screen.getAllByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toHaveLength(1)
+    expect(screen.queryByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).not.toBeInTheDocument()
 
     allowShotTwo = true
     const beforeRegenerate = generateSceneImage.mock.calls.length
@@ -360,7 +361,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
   }, 15_000)
 
-  it('keeps an image visible but blocks approval when the evaluator returns an invalid-response 502, then recovers on regeneration', async () => {
+  it('keeps an image usable and approval available when the evaluator returns an invalid-response 502', async () => {
     let allowShotTwo = false
     mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
       if (functionName !== 'film-preview-quality') return { data: null, error: null }
@@ -379,10 +380,10 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
 
-    await waitFor(() => expect(screen.getByText(/Could not verify preview shot 2/i)).toBeInTheDocument())
-    expect(generateSceneImage).toHaveBeenCalledTimes(6)
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
+    expect(screen.queryByText(/Could not verify preview shot 2/i)).not.toBeInTheDocument()
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-2')
-    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
 
     allowShotTwo = true
     fireEvent.click(screen.getAllByText('Regenerate')[1])
@@ -430,9 +431,9 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
 
-    await waitFor(() => expect(screen.getByText(/Image identity\/action-quality review failed/i)).toBeInTheDocument())
-    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,IDENTITY-SAFE')
-    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,IDENTITY-SAFE'))
+    expect(screen.queryByText(/Image identity\/action-quality review failed/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
 
     allowShotTwo = true
     fireEvent.click(screen.getAllByText('Regenerate')[1])
@@ -454,7 +455,8 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
 
-    await waitFor(() => expect(screen.getByText(/Image identity\/action-quality review failed/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('No image — regenerate')).toBeInTheDocument())
+    expect(screen.queryByText(/Image identity\/action-quality review failed/i)).not.toBeInTheDocument()
     expect(screen.queryByAltText('Preview for scene 1')).not.toBeInTheDocument()
     expect(screen.getByText('No image — regenerate')).toBeInTheDocument()
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SAFE')
@@ -576,10 +578,18 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await waitFor(() => expect(screen.getByText('Sarah — sheet')).toBeInTheDocument())
   })
 
-  it('freezes the selection into a snapshot and passes url + characterSheet to initial generation', async () => {
+  it('freezes the selection and routes only the references allowed by each shot marker', async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
       { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    writeScenario.mockResolvedValueOnce([
+      '[SHOT: PRODUCT_ONLY] Product hero shot.',
+      '[SHOT: CHARACTER_ONLY] Presenter addresses the camera.',
+      '[SHOT: ENVIRONMENT_ONLY] Empty workshop establishing shot.',
+      '[SHOT: INTERACTION] Presenter demonstrates the product as requested.',
+      '[SHOT: PRODUCT_ONLY] Product detail shot.',
+      '[SHOT: CHARACTER_ONLY] Presenter closes the story.',
     ])
     renderWizard()
 
@@ -601,22 +611,41 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
-    // The initial generation must receive the required product plus the sheet
-    // URL and characterSheet=true. Product is now the FULL grouped array (one
-    // photo here, so a single-element array), not a single rotated string.
     const calls = generateSceneImage.mock.calls
-    expect(calls.length).toBeGreaterThan(0)
-    for (const c of calls) {
-      expect(c[2]).toEqual(expect.arrayContaining([expect.stringContaining('product-1')]))
-      expect(c[3]).toContain('sheet-1') // character url from snapshot
-      expect(c[6]).toBe(true) // characterSheet flag from snapshot
-    }
+    expect(calls[0][2]).toEqual(expect.arrayContaining([expect.stringContaining('product-1')]))
+    expect(calls[0][3]).toBeUndefined()
+    expect(calls[0][6]).toBe(false)
+
+    expect(calls[1][2]).toEqual([])
+    expect(calls[1][3]).toContain('sheet-1')
+    expect(calls[1][6]).toBe(true)
+
+    expect(calls[2][2]).toEqual([])
+    expect(calls[2][3]).toBeUndefined()
+    expect(calls[2][6]).toBe(false)
+
+    expect(calls[3][2]).toEqual(expect.arrayContaining([expect.stringContaining('product-1')]))
+    expect(calls[3][3]).toContain('sheet-1')
+    expect(calls[3][6]).toBe(true)
+
+    const qualityCalls = mockInvoke.mock.calls.filter(([name]) => name === 'film-preview-quality')
+    expect(qualityCalls.map(([, options]) => options?.body?.shotMode)).toEqual([
+      'product', 'character', 'environment', 'interaction', 'product', 'character',
+    ])
   })
 
   it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', { timeout: 15_000 }, async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
       { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    writeScenario.mockResolvedValueOnce([
+      '[SHOT: CHARACTER_ONLY] Presenter opens the story.',
+      '[SHOT: PRODUCT_ONLY] Product detail.',
+      '[SHOT: PRODUCT_ONLY] Product benefit.',
+      '[SHOT: PRODUCT_ONLY] Product close-up.',
+      '[SHOT: PRODUCT_ONLY] Product result.',
+      '[SHOT: PRODUCT_ONLY] Product call to action.',
     ])
     renderWizard()
 
@@ -640,6 +669,7 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
 
     const c = generateSceneImage.mock.calls[0]
+    expect(c[2]).toEqual([])
     expect(c[3]).toContain('sheet-1')
     expect(c[6]).toBe(true)
   })
@@ -667,8 +697,9 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     generateSceneImage.mockRejectedValueOnce(new Error('Image identity/action-quality review failed'))
     fireEvent.click(screen.getAllByText('Regenerate')[0])
 
-    await waitFor(() => expect(screen.getAllByText(/Image identity\/action-quality review failed/i)).toHaveLength(1))
-    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST')
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST'))
+    expect(screen.queryByText(/Image identity\/action-quality review failed/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
   })
 
   it('Approve passes the frozen snapshot identity (url + name) from the generation run', async () => {
