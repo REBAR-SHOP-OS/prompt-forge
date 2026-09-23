@@ -416,7 +416,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
       if (!sceneText.includes('Plan two')) return 'data:image/png;base64,OTHER'
       shotTwoAttempts += 1
       if (shotTwoAttempts === 2) {
-        throw new Error('Could not preserve every selected identity in the edited image.')
+        throw new Error('Image identity/action-quality review failed')
       }
       return shotTwoAttempts === 1
         ? 'data:image/png;base64,IDENTITY-SAFE'
@@ -430,7 +430,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
 
-    await waitFor(() => expect(screen.getByText(/Could not preserve every selected identity/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Image identity\/action-quality review failed/i)).toBeInTheDocument())
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,IDENTITY-SAFE')
     expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
 
@@ -438,13 +438,13 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     fireEvent.click(screen.getAllByText('Regenerate')[1])
 
     await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,RECOVERED'))
-    expect(screen.queryByText(/Could not preserve every selected identity/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Image identity\/action-quality review failed/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
   }, 15_000)
 
   it('keeps a first-attempt identity-validation rejection blank until controlled regeneration succeeds', async () => {
     generateSceneImage
-      .mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
+      .mockRejectedValueOnce(new Error('Image identity/action-quality review failed'))
       .mockResolvedValue('data:image/png;base64,SAFE')
     renderWizard()
 
@@ -454,7 +454,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
 
-    await waitFor(() => expect(screen.getByText(/Could not preserve every selected identity/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Image identity\/action-quality review failed/i)).toBeInTheDocument())
     expect(screen.queryByAltText('Preview for scene 1')).not.toBeInTheDocument()
     expect(screen.getByText('No image — regenerate')).toBeInTheDocument()
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SAFE')
@@ -463,7 +463,7 @@ describe('MakeFilmWizardDialog preview action quality (integration)', () => {
     fireEvent.click(screen.getAllByText('Regenerate')[0])
 
     await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SAFE'))
-    expect(screen.queryByText(/Could not preserve every selected identity/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Image identity\/action-quality review failed/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
   }, 15_000)
 })
@@ -664,10 +664,10 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST'))
     await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SECOND'))
 
-    generateSceneImage.mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
+    generateSceneImage.mockRejectedValueOnce(new Error('Image identity/action-quality review failed'))
     fireEvent.click(screen.getAllByText('Regenerate')[0])
 
-    await waitFor(() => expect(screen.getAllByText(/Could not preserve every selected identity/i)).toHaveLength(1))
+    await waitFor(() => expect(screen.getAllByText(/Image identity\/action-quality review failed/i)).toHaveLength(1))
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST')
   })
 
