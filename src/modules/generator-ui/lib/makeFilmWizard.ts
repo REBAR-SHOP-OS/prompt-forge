@@ -203,6 +203,41 @@ export interface FilmSelections {
   theme?: string
 }
 
+export type StoryboardShotMode = 'product' | 'character' | 'environment' | 'interaction'
+
+const STORYBOARD_SHOT_MARKER = /^\s*\[SHOT:\s*(PRODUCT_ONLY|CHARACTER_ONLY|ENVIRONMENT_ONLY|INTERACTION)\]\s*/i
+
+/**
+ * Parse the scenario writer's shot-mode marker and remove it before display.
+ * A missing/unknown marker falls back to product-only so a malformed model
+ * response can never silently force both references into the same shot.
+ */
+export function parseStoryboardShot(value: string): { scenarioText: string; shotMode: StoryboardShotMode } {
+  const match = value.match(STORYBOARD_SHOT_MARKER)
+  const marker = match?.[1]?.toUpperCase()
+  const shotMode: StoryboardShotMode =
+    marker === 'CHARACTER_ONLY' ? 'character'
+      : marker === 'ENVIRONMENT_ONLY' ? 'environment'
+        : marker === 'INTERACTION' ? 'interaction'
+          : 'product'
+  return {
+    scenarioText: match ? value.slice(match[0].length).trim() : value.trim(),
+    shotMode,
+  }
+}
+
+/** Select only the visual references allowed for this storyboard shot. */
+export function storyboardReferencesForShot(
+  shotMode: StoryboardShotMode,
+  productUrl?: string,
+  characterUrl?: string,
+): { productUrl?: string; characterUrl?: string } {
+  if (shotMode === 'interaction') return { productUrl, characterUrl }
+  if (shotMode === 'character') return { characterUrl }
+  if (shotMode === 'environment') return {}
+  return { productUrl }
+}
+
 /**
  * Decide whether a character reference is a multi-view character sheet (a
  * single image with several turnaround views + facial expressions of ONE
@@ -326,9 +361,9 @@ export function buildScenarioPrompt(
   let out = basePrompt
   const { product, character, cameraAngle, theme } = selections
   if (product && character) {
-    out += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${product.title || 'Selected Product'}" (image: ${product.url}) AND the character "${character.title || 'Selected Character'}" (image: ${character.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
+    out += `\n\nPRODUCT AND CHARACTER TO FEATURE: The product "${product.title || 'Selected Product'}" (image: ${product.url}) and character "${character.title || 'Selected Character'}" (image: ${character.url}) may appear in separate shots. Product-focused shots must show the product by itself. Character-only and environment-only shots may be separate. Never put character and product together by default or make the character hold, touch, present, or interact with the product unless the user's concept explicitly requires it. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects.`
   } else if (product) {
-    out += `\n\nPRODUCT TO FEATURE: ${product.title || 'Selected Product'}. The product image URL is: ${product.url}. This product MUST appear prominently in every scene of the film.`
+    out += `\n\nPRODUCT TO FEATURE: ${product.title || 'Selected Product'}. The product image URL is: ${product.url}. Product-focused shots must show the product by itself, never beside, against, attached to, touching, or interacting with unrelated structures or objects.`
   } else if (character) {
     out += `\n\nCHARACTER TO FEATURE: ${character.title || 'Selected Character'}. The character image URL is: ${character.url}. This character MUST appear prominently in every scene of the film.`
   }
@@ -356,10 +391,8 @@ export function buildSceneImagePrompt(
 ): string {
   let out = sceneText
   const { product, character, cameraAngle, theme } = selections
-  if (product && character) {
-    out += `\n\nREFERENCE IMAGES (use BOTH in this scene):\n- PRODUCT image: ${product.url}\n- CHARACTER image: ${character.url}\nThe product and the character MUST appear together prominently in the same shot. Show the character interacting with or holding the product.`
-  } else if (product) {
-    out += `\n\nREFERENCE PRODUCT image: ${product.url}\nThis product MUST appear prominently in this scene.`
+  if (product) {
+    out += `\n\nREFERENCE PRODUCT image: ${product.url}\nFeature the product by itself as the visual subject. Do not add the character or place the product beside, against, attached to, touching, or interacting with unrelated structures or objects.`
   } else if (character) {
     out += `\n\nREFERENCE CHARACTER image: ${character.url}\nThis character MUST appear prominently in this scene.`
   }
@@ -425,6 +458,8 @@ export function buildClipPrompt(
 export interface FilmPlan {
   /** Zero-based plan index within the film. */
   planIndex: number
+  /** Which selected references are allowed in this shot. */
+  shotMode?: StoryboardShotMode
   /** Total number of plans in the film. */
   totalPlans: number
   /** "SHOT i OF n" label for UI and job metadata. */
@@ -521,12 +556,13 @@ export function buildPlanImagePrompt(
 ): string {
   let out = plan.scenarioText
   const { product, character, cameraAngle, theme } = selections
-  if (product && character) {
-    out += `\n\nREFERENCE IMAGES (use BOTH in this shot):\n- PRODUCT image: ${product.url}\n- CHARACTER image: ${character.url}\nThe product and the character MUST appear together prominently in the same shot. Show the character interacting with or holding the product.`
-  } else if (product) {
-    out += `\n\nREFERENCE PRODUCT image: ${product.url}\nThis product MUST appear prominently in this shot.`
-  } else if (character) {
-    out += `\n\nREFERENCE CHARACTER image: ${character.url}\nThis character MUST appear prominently in this shot.`
+  const references = storyboardReferencesForShot(plan.shotMode ?? 'product', product?.url, character?.url)
+  if (references.productUrl && references.characterUrl) {
+    out += `\n\nREFERENCE IMAGES (interaction explicitly requested in the user's concept):\n- PRODUCT image: ${references.productUrl}\n- CHARACTER image: ${references.characterUrl}\nInclude both only for the interaction described by this shot; do not invent holding, touching, or contact.`
+  } else if (references.productUrl) {
+    out += `\n\nREFERENCE PRODUCT image: ${references.productUrl}\nFeature the product by itself as the visual subject. Do not place it beside, against, attached to, touching, or interacting with unrelated structures or objects.`
+  } else if (references.characterUrl) {
+    out += `\n\nREFERENCE CHARACTER image: ${references.characterUrl}\nThis is a character-only shot. Do not add the product.`
   }
   const cameraPrompt = cameraAngle ? cameraPrompts[cameraAngle] : undefined
   if (cameraPrompt) out += `\n\nCAMERA ANGLE: ${cameraPrompt}`
@@ -597,15 +633,19 @@ function assemblePlans(
   const coverage = computePlanCoverage(totalDurationSeconds)
   const narrationParts = splitNarrationAcrossPlans(fullNarration, planCount)
 
-  return Array.from({ length: planCount }, (_, i) => ({
-    planIndex: i,
-    totalPlans: planCount,
-    label: `SHOT ${i + 1} OF ${planCount}`,
-    coverage: coverage[i] ?? 'medium',
-    durationSeconds: 5 as const,
-    scenarioText: scenarioParts[i] ?? '',
-    narrationText: narrationParts[i],
-  }))
+  return Array.from({ length: planCount }, (_, i) => {
+    const parsed = parseStoryboardShot(scenarioParts[i] ?? '')
+    return {
+      planIndex: i,
+      shotMode: parsed.shotMode,
+      totalPlans: planCount,
+      label: `SHOT ${i + 1} OF ${planCount}`,
+      coverage: coverage[i] ?? 'medium',
+      durationSeconds: 5 as const,
+      scenarioText: parsed.scenarioText,
+      narrationText: narrationParts[i],
+    }
+  })
 }
 
 export function buildFilmPlans(

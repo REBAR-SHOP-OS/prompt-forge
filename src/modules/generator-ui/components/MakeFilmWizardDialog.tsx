@@ -48,7 +48,7 @@ import {
   type PreviewShotQualityEvaluation,
 } from '@/modules/generator-ui/lib/previewShotQuality'
 
-import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed, storyboardReferencesForShot } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { inFlightSigns } from '@/modules/generator-ui/lib/makeFilmSigning'
@@ -518,11 +518,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     const resolvedCharacterName = safeTitle(selectedCharacter?.title)
     if (selectedProduct && selectedCharacter) {
       const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
-      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''} (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
+      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) and the ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''} (image: ${selectedCharacter.url}) may appear in separate shots across the film. Never put them together by default or force the character to hold, touch, present, or interact with the product. Character-product interaction is allowed only when the user's concept explicitly requires that interaction. Product-focused shots must promote the product by itself as the visual subject; character-only and environment-only shots may be separate. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects (for example, never put a loose stirrup beside or against a completed reinforcement cage).`
     } else if (selectedProduct) {
-      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. Feature the product by itself as the visual subject in product-focused shots. Environment-only shots may be separate. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects (for example, never put a loose stirrup beside or against a completed reinforcement cage).`
     } else if (resolvedProductName) {
-      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. Feature the product by itself as the visual subject in product-focused shots. Environment-only shots may be separate. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects (for example, never put a loose stirrup beside or against a completed reinforcement cage).`
     } else if (selectedCharacter) {
       const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
       enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
@@ -848,6 +848,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     index: number,
     snapshot: IdentitySnapshot,
     creative: FilmCreative,
+    noTextOnImages: boolean
   ): Promise<string> {
     const characterSheet = snapshot.character?.characterSheet ?? false
     const productUrls = snapshot.product?.urls?.length
@@ -888,7 +889,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     for (let i = 0; i < plans.length; i++) {
       setProgress(`Designing and checking preview image ${i + 1} of ${plans.length}…`)
       try {
-        next[i] = await generateCheckedPreviewShot(i, snapshot, creative)
+        next[i] = await generateCheckedPreviewShot(i, snapshot, creative, noTextOnImages)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -916,7 +917,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     try {
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
-      const url = await generateCheckedPreviewShot(index, snapshot, currentCreative())
+      const url = await generateCheckedPreviewShot(index, snapshot, currentCreative(), noTextOnImages)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url

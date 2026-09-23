@@ -34,6 +34,8 @@ import {
   FILM_TYPE_VALUES,
   FILM_TYPE_TONES,
   buildAutoPromptSeed,
+  parseStoryboardShot,
+  storyboardReferencesForShot,
 } from './makeFilmWizard'
 
 const CAMERA: Record<string, string> = {
@@ -192,6 +194,11 @@ describe('buildScenarioPrompt', () => {
     expect(out).toContain('https://x/c.png')
     expect(out).toContain('Close-up shot')
     expect(out).toContain('Cinematic film look')
+    expect(out).toContain('Product-focused shots must show the product by itself')
+    expect(out).toContain('Character-only and environment-only shots may be separate')
+    expect(out).toContain("unless the user's concept explicitly requires it")
+    expect(out).not.toContain('MUST BOTH appear together')
+    expect(out).not.toContain('interacting with or holding the product')
   })
 
   it('handles product-only and character-only selections', () => {
@@ -205,7 +212,7 @@ describe('buildScenarioPrompt', () => {
 })
 
 describe('buildSceneImagePrompt', () => {
-  it('uses a fixed identity block + per-scene continuity block', () => {
+  it('uses a product-only identity block + per-scene continuity block', () => {
     const out = buildSceneImagePrompt(
       'Scene text',
       {
@@ -221,7 +228,8 @@ describe('buildSceneImagePrompt', () => {
       true,
     )
     expect(out).toContain('https://x/p.png')
-    expect(out).toContain('https://x/c.png')
+    expect(out).not.toContain('https://x/c.png')
+    expect(out).toContain('Feature the product by itself')
     expect(out).toContain('Wide shot')
     expect(out).toContain('Bright, clean')
     expect(out).toContain('SCENE 2 OF 3')
@@ -593,6 +601,24 @@ describe('buildFilmPlansFromScenes', () => {
     expect(plans.map((p) => p.coverage)).toEqual(['wide', 'medium', 'close', 'wide', 'medium', 'close'])
   })
 
+  it('parses and removes explicit shot-mode markers while preserving per-shot reference policy', () => {
+    const scenes = [
+      '[SHOT: PRODUCT_ONLY]\nProduct hero shot.',
+      '[SHOT: CHARACTER_ONLY]\nCharacter speaks to camera.',
+      '[SHOT: ENVIRONMENT_ONLY]\nEmpty workshop establishing shot.',
+      '[SHOT: INTERACTION]\nThe explicitly requested demonstration occurs.',
+      '[SHOT: PRODUCT_ONLY]\nProduct detail shot.',
+      '[SHOT: CHARACTER_ONLY]\nCharacter closes the story.',
+    ]
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+
+    expect(plans.map((plan) => plan.shotMode)).toEqual([
+      'product', 'character', 'environment', 'interaction', 'product', 'character',
+    ])
+    expect(plans[0].scenarioText).toBe('Product hero shot.')
+    expect(plans[0].scenarioText).not.toContain('[SHOT:')
+  })
+
   it('preserves a plan whose text contains its own newlines (embedded narration line)', () => {
     // A plan with an embedded narration line would collapse under paragraph
     // parsing; the array path must keep it intact.
@@ -709,6 +735,29 @@ describe('splitScenarioIntoPlans', () => {
   })
 })
 
+describe('storyboard shot reference isolation', () => {
+  it('never supplies both references unless the shot is explicitly marked interaction', () => {
+    expect(storyboardReferencesForShot('product', 'product-url', 'character-url')).toEqual({ productUrl: 'product-url' })
+    expect(storyboardReferencesForShot('character', 'product-url', 'character-url')).toEqual({ characterUrl: 'character-url' })
+    expect(storyboardReferencesForShot('environment', 'product-url', 'character-url')).toEqual({})
+    expect(storyboardReferencesForShot('interaction', 'product-url', 'character-url')).toEqual({
+      productUrl: 'product-url',
+      characterUrl: 'character-url',
+    })
+  })
+
+  it('falls back to product-only when the model omits or invents a marker', () => {
+    expect(parseStoryboardShot('Unmarked product shot.')).toEqual({
+      scenarioText: 'Unmarked product shot.',
+      shotMode: 'product',
+    })
+    expect(parseStoryboardShot('[SHOT: SOMETHING_ELSE]\nUntrusted marker.')).toEqual({
+      scenarioText: '[SHOT: SOMETHING_ELSE]\nUntrusted marker.',
+      shotMode: 'product',
+    })
+  })
+})
+
 describe('buildPlanImagePrompt', () => {
   it('includes plan label and coverage in the prompt', () => {
     const plan: FilmPlan = {
@@ -723,6 +772,31 @@ describe('buildPlanImagePrompt', () => {
     expect(out).toContain('SHOT 1 OF 3')
     expect(out).toContain('Coverage: wide shot')
     expect(out).toContain('A wide establishing shot')
+  })
+
+  it('isolates product shots from the character and unrelated objects', () => {
+    const plan: FilmPlan = {
+      planIndex: 0,
+      shotMode: 'product',
+      totalPlans: 1,
+      label: 'SHOT 1 OF 1',
+      coverage: 'medium',
+      durationSeconds: 5,
+      scenarioText: 'Product hero shot.',
+    }
+    const out = buildPlanImagePrompt(
+      plan,
+      {
+        product: { id: 'p', title: 'Stirrup', url: 'product-url' },
+        character: { id: 'c', title: 'Presenter', url: 'character-url' },
+      },
+      {},
+      {},
+    )
+    expect(out).toContain('product-url')
+    expect(out).not.toContain('character-url')
+    expect(out).toContain('Feature the product by itself')
+    expect(out).toContain('beside, against, attached to, touching, or interacting with unrelated structures')
   })
 
   it('adds no-text directive when requested', () => {

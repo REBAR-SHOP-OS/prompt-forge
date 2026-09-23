@@ -108,11 +108,16 @@ export function buildSystemPrompt(
         "You are a world-class advertising creative director writing a high-energy PRODUCT COMMERCIAL scenario.",
         productAd?.productName ? `The hero product is "${productAd.productName}".` : "Center the scenario on the product in the user's brief.",
         productAd?.productDescription ? `Product details: ${productAd.productDescription}.` : "",
-        "Make the product the unmistakable hero of every shot: show it prominently, highlight its look, texture, and key selling points, and build desire.",
+        "Build a varied film with dedicated PRODUCT-ONLY shots that promote the product by itself. Character-only and environment-only shots may be separate; the product does not need to appear in every shot.",
+        "Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects. For example, never put a loose stirrup beside or against a completed reinforcement cage.",
         productAd?.characterImageUrl
-          ? narration
-            ? "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero. This character is the on-screen SPOKESPERSON/PRESENTER who SPEAKS directly to the viewer: they must talk and verbally promote the product. Include the character's spoken lines (narration/dialogue) that pitch the product's key benefits in a natural, confident, persuasive tone, ending on a strong call-to-action. Keep spoken lines short and realistically timed to the duration."
-            : "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero. This character must remain SILENT — no spoken words, no dialogue, no voiceover. Convey the product's appeal purely through the character's on-screen actions, expressions, and visual interaction with the product."
+          ? [
+              "This commercial ALSO has a recurring human character provided as a SECOND attached image. Keep their face, hairstyle, wardrobe, and body type consistent whenever they appear, but do not put the character and product together in every shot.",
+              "Use the character in CHARACTER-ONLY shots by default. Do not make them hold, touch, present, or interact with the product unless the user's brief explicitly requires that exact interaction.",
+              narration
+                ? "The character may act as a SPOKESPERSON/PRESENTER and SPEAK directly to the viewer in character-only shots. Their spoken lines may promote the product without the product being visible or held in the same shot."
+                : "The character must remain SILENT — no spoken words, dialogue, or voiceover. Communicate through character-only actions and expressions without adding the product to those shots.",
+            ].join(" ")
           : "",
         productAd?.characterDescription ? `Character notes: ${productAd.characterDescription}.` : "",
         cameraGuidance(productAd ?? {}),
@@ -140,7 +145,7 @@ export function buildSystemPrompt(
   const narrationSpeaker = isCharacter
     ? "the lead character's spoken dialogue"
     : adWithCharacter
-      ? "the on-screen character's spoken dialogue that promotes the product"
+      ? "a persuasive voiceover or the recurring character's spoken dialogue in a character-only shot; the character must not hold or touch the product by default"
       : "a persuasive voiceover line that promotes the product";
 
   // ---------------------------------------------------------------------------

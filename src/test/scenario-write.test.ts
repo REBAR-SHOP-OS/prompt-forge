@@ -11,25 +11,40 @@ describe("buildSystemPrompt - narration control", () => {
 
   it("product-ad with character + narration=true includes speaking instruction", () => {
     const prompt = buildSystemPrompt(15, productAdWithCharacter, false, undefined, undefined, "en", true);
-    expect(prompt).toContain("SPOKESPERSON/PRESENTER who SPEAKS");
-    expect(prompt).toContain("must talk and verbally promote");
-    expect(prompt).toContain("Include the character's spoken lines");
+    expect(prompt).toContain("SPOKESPERSON/PRESENTER");
+    expect(prompt).toContain("SPEAK directly");
+    expect(prompt).toContain("character-only shots");
+    expect(prompt).toContain("without the product being visible or held");
   });
 
   it("product-ad with character + narration=false keeps character SILENT", () => {
     const prompt = buildSystemPrompt(15, productAdWithCharacter, false, undefined, undefined, "en", false);
     // Character should still be featured
     expect(prompt).toContain("recurring human character");
-    expect(prompt).toContain("feature this exact character on screen");
+    expect(prompt).toContain("Use the character in CHARACTER-ONLY shots by default");
     // But must NOT speak
     expect(prompt).toContain("must remain SILENT");
     expect(prompt).toContain("no spoken words");
-    expect(prompt).toContain("no dialogue");
-    expect(prompt).toContain("no voiceover");
+    expect(prompt).toContain("dialogue");
+    expect(prompt).toContain("voiceover");
+    expect(prompt).toContain("without adding the product to those shots");
     // Should NOT contain speaking instructions
     expect(prompt).not.toContain("SPOKESPERSON/PRESENTER who SPEAKS");
     expect(prompt).not.toContain("must talk and verbally promote");
     expect(prompt).not.toContain("Include the character's spoken lines");
+  });
+
+  it("separates product and character by default and bans unrelated object contact", () => {
+    const prompt = buildSystemPrompt(15, productAdWithCharacter, false, undefined, undefined, "en", true);
+
+    expect(prompt).toContain("dedicated PRODUCT-ONLY shots");
+    expect(prompt).toContain("Character-only and environment-only shots may be separate");
+    expect(prompt).toContain("do not put the character and product together in every shot");
+    expect(prompt).toContain("unless the user's brief explicitly requires that exact interaction");
+    expect(prompt).toContain("beside, against, attached to, touching, or interacting with unrelated structures or objects");
+    expect(prompt).toContain("never put a loose stirrup beside or against a completed reinforcement cage");
+    expect(prompt).not.toContain("interacting with the product");
+    expect(prompt).not.toContain("recognizable across every shot");
   });
 
   it("narration=false includes no-narration format instruction", () => {

@@ -8,11 +8,9 @@ import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import { buildSystemPrompt, type ProductAdOpts, type CharacterSheetOpts } from "./prompt.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
 import {
-  getScenarioDurationPolicy,
   getPlanDurationPolicy,
   runScenarioQualityPass,
   runPlanQualityPass,
-  SCENE_DELIMITER,
 } from "./scenario-policy.ts";
 import {
   buildScenarioFingerprint,
@@ -47,9 +45,9 @@ async function callGateway(
   unit: "scene" | "plan" = "scene",
 ): Promise<Response> {
   const refText = characterSheet
-    ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
+    ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look whenever they appear, and keep them consistent across the film.`
     : productAd
-      ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
+      ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every product-focused shot. Product-only shots must isolate it from unrelated structures or objects.`
       : autoFromImage
         ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
         : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
@@ -61,7 +59,7 @@ async function callGateway(
       ]
     : [];
   if (imageUrl && characterImageUrl) {
-    contentBlocks.push({ type: "text", text: "The image below is the recurring human character to feature in the commercial — match their exact face, hair, wardrobe, and body in every shot." });
+    contentBlocks.push({ type: "text", text: "The image below is the recurring human character. Match their exact face, hair, wardrobe, and body whenever they appear, but use character-only shots by default and never force them together with the product." });
     contentBlocks.push({ type: "image_url", image_url: { url: characterImageUrl } });
   }
   const baseUserContent: unknown = imageUrl

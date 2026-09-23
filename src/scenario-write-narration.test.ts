@@ -36,22 +36,34 @@ describe("scenario-write narration policy", () => {
   it("keeps a product-ad character silent when narration is disabled", () => {
     const prompt = buildSystemPrompt(15, productWithCharacter, false, undefined, undefined, "en", false);
 
-    // Wording is the surviving copy's. The deleted copy said "interacting
-    // silently with the product" / "visible actions, expressions, staging";
-    // the two had drifted, which is the collision this PR removes.
     expect(prompt).toContain("must remain SILENT");
-    expect(prompt).toContain("no spoken words, no dialogue, no voiceover");
-    expect(prompt).toContain("on-screen actions, expressions, and visual interaction with the product");
+    expect(prompt).toContain("no spoken words");
+    expect(prompt).toContain("dialogue");
+    expect(prompt).toContain("voiceover");
+    expect(prompt).toContain("Use the character in CHARACTER-ONLY shots by default");
+    expect(prompt).toContain("without adding the product to those shots");
     expect(prompt).toContain("Do NOT include any narration");
     expect(prompt).not.toMatch(/SPOKESPERSON|SPEAKS directly|must talk|spoken lines/i);
   });
 
-  it("preserves the spokesperson instruction when narration is enabled", () => {
+  it("preserves the spokesperson instruction without forcing product contact when narration is enabled", () => {
     const prompt = buildSystemPrompt(15, productWithCharacter, false, undefined, undefined, "en", true);
 
     expect(prompt).toContain("SPOKESPERSON/PRESENTER");
-    expect(prompt).toContain("SPEAKS directly");
+    expect(prompt).toContain("SPEAK directly");
+    expect(prompt).toContain("character-only shots");
+    expect(prompt).toContain("without the product being visible or held");
     expect(prompt).toContain("Narration:");
+  });
+
+  it("keeps the plan-mode product guidance and timing contract", () => {
+    const prompt = buildSystemPrompt(30, productWithCharacter, false, undefined, undefined, "en", true, "plan");
+
+    expect(prompt).toContain("dedicated PRODUCT-ONLY shots");
+    expect(prompt).toContain("unless the user's brief explicitly requires that exact interaction");
+    expect(prompt).toContain('Output EXACTLY 6 plan blocks separated by the literal delimiter "===SCENE==="');
+    expect(prompt).toContain("Camera coverage cycles across the film: wide → medium → close → wide → medium → close.");
+    expect(prompt).toContain('Start each plan\'s narration on a NEW line with the exact label "Narration:"');
   });
 });
 
