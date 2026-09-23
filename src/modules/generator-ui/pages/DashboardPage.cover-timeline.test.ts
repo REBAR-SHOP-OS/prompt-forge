@@ -41,6 +41,20 @@ describe('Dashboard cover lifecycle and soundtrack contract', () => {
       .toBeLessThan(dashboardSource.indexOf('const coverFilmFrameUrl'))
   })
 
+  it('renders selected-project clips in their saved snapshot order without changing merge order', () => {
+    const display = section('const displayedClips = useMemo', 'type PreviewItem')
+    const selectedProjectGuard = display.indexOf('if (selectedProjectId)')
+    const chronologicalSort = display.indexOf('const chronoAsc = items.sort')
+
+    expect(selectedProjectGuard).toBeGreaterThan(-1)
+    expect(display.slice(selectedProjectGuard, chronologicalSort)).toContain('return items')
+    expect(selectedProjectGuard).toBeLessThan(chronologicalSort)
+
+    const merge = section('async function handleMergeAllVideos()', 'function resetWorkspace')
+    expect(merge).not.toContain('if (selectedProjectId) {\n      eligibleClips = [...baseClips]')
+    expect(merge).toContain('let eligibleClips: UnifiedClip[] = chronoAsc')
+  })
+
   it('keeps a finalized project cover when Start Over leaves a read-only Final view', () => {
     const reset = section('function resetWorkspace', 'async function handleStartOver')
     expect(reset).toContain('if (scopeKey && !isReadOnlyProject) {')

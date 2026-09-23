@@ -8407,33 +8407,24 @@ export default function DashboardPage() {
         image,
       })),
     ]
-    let eligibleClips: UnifiedClip[] = []
-    
-    // When merging a snapshot (final film or draft), we pull the array directly
-    // from the snapshot without re-sorting. This preserves the manual order exactly
-    // as the user saved it, and passes it into the backend correctly.
-    if (selectedProjectId) {
-      eligibleClips = [...baseClips]
-    } else {
-      // Apply the same ordering rule as displayedClips: manualOrder first,
-      // then chronological ASC for anything not in the manual list.
-      const chronoAsc = [...baseClips].sort(
-        (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
-      )
-      eligibleClips = chronoAsc
-      if (manualOrder) {
-        const byId = new Map(chronoAsc.map((c) => [c.id, c]))
-        const ordered: UnifiedClip[] = []
-        for (const id of manualOrder) {
-          const c = byId.get(id)
-          if (c) {
-            ordered.push(c)
-            byId.delete(id)
-          }
+    // Apply the same ordering rule as displayedClips: manualOrder first,
+    // then chronological ASC for anything not in the manual list.
+    const chronoAsc = [...baseClips].sort(
+      (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
+    )
+    let eligibleClips: UnifiedClip[] = chronoAsc
+    if (manualOrder) {
+      const byId = new Map(chronoAsc.map((c) => [c.id, c]))
+      const ordered: UnifiedClip[] = []
+      for (const id of manualOrder) {
+        const c = byId.get(id)
+        if (c) {
+          ordered.push(c)
+          byId.delete(id)
         }
-        for (const c of chronoAsc) if (byId.has(c.id)) ordered.push(c)
-        eligibleClips = ordered
       }
+      for (const c of chronoAsc) if (byId.has(c.id)) ordered.push(c)
+      eligibleClips = ordered
     }
 
     if (eligibleClips.length < 1) {
