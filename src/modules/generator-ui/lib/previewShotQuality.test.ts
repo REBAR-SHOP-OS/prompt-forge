@@ -86,7 +86,7 @@ describe('generateQualityCheckedPreviewShot', () => {
   })
 
   it('retains the previous identity-safe image when a correction generation fails identity validation', async () => {
-    const identityError = new Error('Could not preserve every selected identity in the edited image.')
+    const identityError = new Error('Image identity/action-quality review failed in the edited image.')
     const generate = vi.fn()
       .mockResolvedValueOnce('https://preview/identity-safe.png')
       .mockRejectedValueOnce(identityError)
@@ -103,7 +103,7 @@ describe('generateQualityCheckedPreviewShot', () => {
   })
 
   it('keeps a first-attempt identity failure explicit without inventing a retained image', async () => {
-    const identityError = new Error('Could not preserve every selected identity in the edited image.')
+    const identityError = new Error('Image identity/action-quality review failed in the edited image.')
     const generate = vi.fn(async () => { throw identityError })
     const evaluate = vi.fn(async () => evaluation(true))
 
