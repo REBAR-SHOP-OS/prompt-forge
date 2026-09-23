@@ -2,10 +2,13 @@ import { describe, it, expect } from 'vitest'
 import {
   validateReferenceSpecs,
   buildIdentityEvalPrompt,
+  buildEvaluationRetryFeedback,
+  buildTechnicalInteractionGuidance,
   parseIdentityEvalResponse,
   classifyEvalVerdict,
   ALLOWED_ROLES,
   MAX_REFERENCE_IMAGES,
+  ACTION_QUALITY_NOT_REPORTED,
 } from '../../../../supabase/functions/_shared/identity-eval'
 
 describe('validateReferenceSpecs', () => {
@@ -45,22 +48,32 @@ describe('validateReferenceSpecs', () => {
   it('rejects mismatched lengths', () => {
     const r = validateReferenceSpecs(['https://x/p.png'], ['product', 'character'])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('same length')
+    if (r.ok === false) expect(r.error).toContain('same length')
   })
 
   it('rejects an invalid role', () => {
     const r = validateReferenceSpecs(['https://x/p.png'], ['banana'])
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Invalid reference role')
+    if (r.ok === false) expect(r.error).toContain('Invalid reference role')
   })
 
-  it('rejects a duplicate product role', () => {
+  // A real product photo folder can hold several angles of the same product,
+  // and every angle should reach generation together — so multiple "product"
+  // entries are now accepted. Only "character" stays capped at one (see the
+  // next test). This is an intentional relaxation, not the duplicate-role
+  // rejection this test used to pin.
+  it('accepts multiple product roles (every grouped angle of one product), in original relative order', () => {
     const r = validateReferenceSpecs(
       ['https://x/p1.png', 'https://x/p2.png'],
       ['product', 'product'],
     )
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Duplicate reference role')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.specs).toEqual([
+        { url: 'https://x/p1.png', role: 'product', characterSheet: false },
+        { url: 'https://x/p2.png', role: 'product', characterSheet: false },
+      ])
+    }
   })
 
   it('rejects a duplicate character role', () => {
@@ -69,15 +82,15 @@ describe('validateReferenceSpecs', () => {
       ['character', 'character'],
     )
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('Duplicate reference role')
+    if (r.ok === false) expect(r.error).toContain('Duplicate reference role')
   })
 
-  it('rejects more than the max reference count (one product + one character)', () => {
+  it('rejects more than the max reference count (a bounded number of product angles plus one character)', () => {
     const urls = Array.from({ length: MAX_REFERENCE_IMAGES + 1 }, (_, i) => `https://x/${i}.png`)
     const roles = Array.from({ length: MAX_REFERENCE_IMAGES + 1 }, () => 'product')
     const r = validateReferenceSpecs(urls, roles)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('At most')
+    if (r.ok === false) expect(r.error).toContain('At most')
   })
 
   it('exposes only product and character as allowed roles', () => {
@@ -177,6 +190,16 @@ describe('buildIdentityEvalPrompt', () => {
     ])
     expect(prompt).not.toContain('(a multi-view character sheet: every view shows the SAME one person)')
   })
+
+  it('adds a scoped action-quality contract for technical interactions', () => {
+    const guidance = buildTechnicalInteractionGuidance()
+    const prompt = buildIdentityEvalPrompt([{ url: 'https://x/p.png', role: 'product' }])
+    expect(guidance).toContain('handled, assembled, installed, or touching another object')
+    expect(guidance).toContain('rebar, stirrups, and wire mesh')
+    expect(guidance).toContain('standalone display')
+    expect(prompt).toContain('ACTION QUALITY')
+    expect(prompt).toContain('"actionQuality":{"passed":boolean,"reason":string}')
+  })
 })
 
 describe('parseIdentityEvalResponse', () => {
@@ -186,6 +209,7 @@ describe('parseIdentityEvalResponse', () => {
         { present: true, match: true, reason: 'same product' },
         { present: true, match: true, reason: 'same character' },
       ],
+      actionQuality: { passed: true, reason: 'interactions are plausible' },
     })
     const out = parseIdentityEvalResponse(raw, 2)
     expect(out).not.toBeNull()
@@ -199,6 +223,7 @@ describe('parseIdentityEvalResponse', () => {
         { present: true, match: true, reason: 'same product' },
         { present: false, match: false, reason: 'character absent' },
       ],
+      actionQuality: { passed: true, reason: 'interactions are plausible' },
     })
     const out = parseIdentityEvalResponse(raw, 2)
     expect(out?.passed).toBe(false)
@@ -211,6 +236,7 @@ describe('parseIdentityEvalResponse', () => {
         { present: false, match: false, reason: 'product absent' },
         { present: true, match: true, reason: 'same character' },
       ],
+      actionQuality: { passed: true, reason: 'interactions are plausible' },
     })
     const out = parseIdentityEvalResponse(raw, 2)
     expect(out?.passed).toBe(false)
@@ -223,6 +249,7 @@ describe('parseIdentityEvalResponse', () => {
         { present: true, match: false, reason: 'different product' },
         { present: true, match: true, reason: 'same character' },
       ],
+      actionQuality: { passed: true, reason: 'interactions are plausible' },
     })
     const out = parseIdentityEvalResponse(raw, 2)
     expect(out?.passed).toBe(false)
@@ -231,6 +258,7 @@ describe('parseIdentityEvalResponse', () => {
   it('returns null when the response has the wrong number of entries', () => {
     const raw = JSON.stringify({
       perReference: [{ present: true, match: true, reason: 'x' }],
+      actionQuality: { passed: true, reason: 'not applicable' },
     })
     expect(parseIdentityEvalResponse(raw, 2)).toBeNull()
   })
@@ -242,21 +270,62 @@ describe('parseIdentityEvalResponse', () => {
   it('strips code fences before parsing', () => {
     const raw = '```json\n' + JSON.stringify({
       perReference: [{ present: true, match: true, reason: 'ok' }],
+      actionQuality: { passed: true, reason: 'not applicable' },
     }) + '\n```'
     const out = parseIdentityEvalResponse(raw, 1)
     expect(out?.passed).toBe(true)
+  })
+
+  it('keeps the identity verdict when the reviewer omits actionQuality (no technical error)', () => {
+    const raw = JSON.stringify({ perReference: [{ present: true, match: true, reason: 'same product' }] })
+    const out = parseIdentityEvalResponse(raw, 1)
+    expect(out).not.toBeNull()
+    expect(out!.actionQuality).toEqual({ passed: true, reason: ACTION_QUALITY_NOT_REPORTED })
+    expect(out!.passed).toBe(true)
+    expect(classifyEvalVerdict(out)).toBe('pass')
+  })
+
+  it('still fails a missing identity when actionQuality is omitted', () => {
+    const raw = JSON.stringify({ perReference: [{ present: false, match: false, reason: 'product missing' }] })
+    const out = parseIdentityEvalResponse(raw, 1)
+    expect(out).not.toBeNull()
+    expect(out!.passed).toBe(false)
+    expect(classifyEvalVerdict(out)).toBe('identity-fail')
+  })
+
+  it('treats a non-boolean actionQuality verdict (e.g. "n/a") as not reported', () => {
+    const raw = JSON.stringify({
+      perReference: [{ present: true, match: true, reason: 'ok' }],
+      actionQuality: { passed: 'n/a', reason: 'standalone product shot' },
+    })
+    const out = parseIdentityEvalResponse(raw, 1)
+    expect(out!.actionQuality).toEqual({ passed: true, reason: ACTION_QUALITY_NOT_REPORTED })
+    expect(classifyEvalVerdict(out)).toBe('pass')
+  })
+
+  it('still enforces an explicit failed actionQuality verdict', () => {
+    const raw = JSON.stringify({
+      perReference: [{ present: true, match: true, reason: 'ok' }],
+      actionQuality: { passed: false, reason: 'stirrup floats beside the bars' },
+    })
+    expect(classifyEvalVerdict(parseIdentityEvalResponse(raw, 1))).toBe('identity-fail')
   })
 })
 
 describe('classifyEvalVerdict', () => {
   it('classifies a passing outcome as "pass"', () => {
-    const out = { perReference: [{ present: true, match: true, reason: 'ok' }], passed: true }
+    const out = {
+      perReference: [{ present: true, match: true, reason: 'ok' }],
+      actionQuality: { passed: true, reason: 'plausible' },
+      passed: true,
+    }
     expect(classifyEvalVerdict(out)).toBe('pass')
   })
 
   it('classifies a dropped identity as "identity-fail"', () => {
     const out = {
       perReference: [{ present: false, match: false, reason: 'absent' }],
+      actionQuality: { passed: true, reason: 'plausible' },
       passed: false,
     }
     expect(classifyEvalVerdict(out)).toBe('identity-fail')
@@ -265,9 +334,29 @@ describe('classifyEvalVerdict', () => {
   it('classifies a present-but-not-matching identity as "identity-fail"', () => {
     const out = {
       perReference: [{ present: true, match: false, reason: 'different' }],
+      actionQuality: { passed: true, reason: 'plausible' },
       passed: false,
     }
     expect(classifyEvalVerdict(out)).toBe('identity-fail')
+  })
+
+  it('classifies failed action quality as a retryable review failure', () => {
+    const out = {
+      perReference: [{ present: true, match: true, reason: 'same product' }],
+      actionQuality: { passed: false, reason: 'stirrup intersects the reinforcing bars incorrectly' },
+      passed: false,
+    }
+    expect(classifyEvalVerdict(out)).toBe('identity-fail')
+  })
+
+  it('includes present-but-mismatched identity and action reasons in retry feedback', () => {
+    const feedback = buildEvaluationRetryFeedback({
+      perReference: [{ present: true, match: false, reason: 'different product geometry' }],
+      actionQuality: { passed: false, reason: 'wire mesh floats above its supports' },
+      passed: false,
+    })
+    expect(feedback).toContain('different product geometry')
+    expect(feedback).toContain('wire mesh floats above its supports')
   })
 
   it('classifies a null outcome (unparseable / technical) as "error"', () => {

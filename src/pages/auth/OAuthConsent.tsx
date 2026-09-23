@@ -3,7 +3,7 @@
 // directly when window.location.pathname matches, bypassing the normal Gate.
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/core/auth/AuthProvider";
+import { useAuth } from "@/core/auth/auth-context";
 import AuthForm from "@/components/auth/AuthForm";
 import LoadingScreen from "@/core/ui/LoadingScreen";
 

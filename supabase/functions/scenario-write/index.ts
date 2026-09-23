@@ -1,11 +1,11 @@
 // scenario-write edge function: turns an idea + target duration into a single
 // cohesive English video scenario/treatment via Lovable AI Gateway.
 // For 45s, returns three sequential 15s scene prompts.
-import { corsHeaders } from "../_shared/core/http.ts";
+import { corsHeaders as baseCorsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
-import { buildSystemPrompt, expectedSceneCount, type ProductAdOpts, type CharacterSheetOpts } from "./prompt.ts";
+import { buildSystemPrompt, type ProductAdOpts, type CharacterSheetOpts } from "./prompt.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
 import {
   getScenarioDurationPolicy,
@@ -17,78 +17,21 @@ import {
 import {
   buildScenarioFingerprint,
   buildSemanticJudgePrompt,
+  hydrateScenarioHistoryEntry,
   parseSemanticJudgeResult,
   runAntiDuplicatePass,
   type ScenarioHistoryEntry,
 } from "./scenario-fingerprint.ts";
 import { releaseScenarioLease } from "./scenario-lease.ts";
+import { readScenarioAssistantText, requestScenarioGateway } from "./scenario-gateway.ts";
 
-interface ProductAdOpts {
-  productName?: string;
-  productDescription?: string;
-  cameraStyle?: string;
-  cameraMovement?: string;
-  genre?: string;
-  scene?: string;
-  characterImageUrl?: string;
-  characterDescription?: string;
-}
-
-interface CharacterSheetOpts {
-  characterName?: string;
-  characterDescription?: string;
-  cameraStyle?: string;
-  cameraMovement?: string;
-  genre?: string;
-  scene?: string;
-}
-
-function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts, heroLabel = "product"): string {
-  const bits: string[] = [];
-  if (opts.cameraStyle) {
-    bits.push(`Use a "${opts.cameraStyle}" camera style as the dominant cinematic technique throughout, and explicitly name this camera move in the shot descriptions.`);
-  }
-  if (opts.cameraMovement) {
-    bits.push(`Honor these specific camera-movement notes from the user: ${opts.cameraMovement}.`);
-  }
-  if (opts.genre) {
-    bits.push(`Use this genre/atmosphere ONLY as creative INSPIRATION: ${opts.genre}. Borrow its mood, energy, lighting feel, and color sensibility, then reinterpret and adapt it tastefully so it fits THIS specific ${heroLabel} and a believable advertising context. Do NOT literally recreate that genre's world, setting, or clichés — the ${heroLabel} and its real selling points stay the clear focus.`);
-  }
-  if (opts.scene) {
-    bits.push(`Draw INSPIRATION from this environment/location: ${opts.scene}. Adapt its setting, lighting, textures, and atmosphere to suit the ${heroLabel} and the ad, rather than copying the location exactly, while keeping the ${heroLabel} the clear hero of the film.`);
-  }
-
-  return bits.join(" ");
-}
-
-const LANGUAGE_NAMES: Record<string, string> = {
-  en: "English",
-  fa: "Persian (Farsi)",
-  ar: "Arabic",
-  tr: "Turkish",
-  es: "Spanish",
-  fr: "French",
+export const SCENARIO_WRITE_RUNTIME_REVISION = "2026-09-15-safe-postgrest-release";
+const corsHeaders = {
+  ...baseCorsHeaders,
+  "Access-Control-Expose-Headers": "X-Scenario-Write-Revision",
+  "X-Scenario-Write-Revision": SCENARIO_WRITE_RUNTIME_REVISION,
 };
 
-const NARRATION_LABELS: Record<string, string> = {
-  en: "Narration",
-  fa: "نریشن",
-  ar: "التعليق الصوتي",
-  tr: "Anlatım",
-  es: "Narración",
-  fr: "Narration",
-};
-
-/**
- * Build the system prompt for scenario generation.
- *
- * When unit === "plan", the scenario is written as a sequence of 5-second
- * plans/shots instead of 15-second scenes/cards. The key changes:
- * - duration maps to duration/5 plans
- * - each plan is one 5-second beat
- * - narration is written for the whole film and divided across plans
- * - camera coverage cycles wide/medium/close per card
- */
 export function buildSystemPrompt(
   duration: number,
   productAd?: ProductAdOpts,
@@ -329,20 +272,27 @@ async function callGateway(
     ? `${baseUserContent}\n\n${correctiveInstruction}`
     : baseUserContent;
 
-  return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration, unit) },
-        { role: "user", content: userContent },
-      ],
+  return await requestScenarioGateway(
+    () => fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration, unit) },
+          { role: "user", content: userContent },
+        ],
+      }),
     }),
-  });
+    {
+      durationSeconds: duration,
+      unit,
+      stage: correctiveInstruction ? "retry" : "initial",
+    },
+  );
 }
 
 // The AI gateway fetches image URLs itself, but our storage buckets (e.g.
@@ -552,13 +502,13 @@ Deno.serve(async (req) => {
       const text = await resp.text().catch(() => "");
       console.error("scenario-write gateway error", resp.status, text);
       return new Response(JSON.stringify({ error: "AI gateway error" }), {
-        status: 500,
+        status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await readJsonLoose(resp, "scenario-write");
-    const raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
+    const raw = readScenarioAssistantText(data, "scenario-write");
 
     // Use plan-based quality pass when unit === "plan".
     const quality = unit === "plan"
@@ -582,7 +532,7 @@ Deno.serve(async (req) => {
           return null;
         }
         const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
-        return (retryData?.choices?.[0]?.message?.content ?? "").trim();
+        return readScenarioAssistantText(retryData, "scenario-write corrective retry");
       })
       : await runScenarioQualityPass(duration, raw, async (correctiveInstruction) => {
         const retryResp = await callGateway(
@@ -604,7 +554,7 @@ Deno.serve(async (req) => {
           return null;
         }
         const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
-        return (retryData?.choices?.[0]?.message?.content ?? "").trim();
+        return readScenarioAssistantText(retryData, "scenario-write corrective retry");
       });
 
     const scenes = quality.scenes;
@@ -697,11 +647,9 @@ Deno.serve(async (req) => {
         }
         const rows = pageRows ?? [];
         for (const r of rows) {
-          const fp = r?.fingerprint;
           const text = typeof r?.scenario_text === "string" ? r.scenario_text : "";
-          if (fp && typeof fp === "object" && text) {
-            historyEntries.push({ fingerprint: fp as ScenarioHistoryEntry["fingerprint"], scenarioText: text });
-          }
+          const entry = hydrateScenarioHistoryEntry(r?.fingerprint, text);
+          if (entry) historyEntries.push(entry);
         }
         if (rows.length < PAGE) break;
         from += PAGE;
@@ -715,25 +663,28 @@ Deno.serve(async (req) => {
 
       // Stage-2 semantic judge via the existing Lovable gateway.
       const judge = async (candidateText: string, historyText: string): Promise<boolean> => {
-        const judgeResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
-            messages: [
-              { role: "user", content: buildSemanticJudgePrompt(candidateText, historyText) },
-            ],
+        const judgeResp = await requestScenarioGateway(
+          () => fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-3-flash-preview",
+              messages: [
+                { role: "user", content: buildSemanticJudgePrompt(candidateText, historyText) },
+              ],
+            }),
           }),
-        });
+          { durationSeconds: duration, unit, stage: "semantic-judge" },
+        );
         if (!judgeResp.ok) {
           // Fail closed: an unreadable judge result must not let a duplicate through.
           throw new Error(`semantic judge error ${judgeResp.status}`);
         }
         const judgeData = await readJsonLoose(judgeResp, "scenario-write semantic judge");
-        const judgeRaw = (judgeData?.choices?.[0]?.message?.content ?? "").trim();
+        const judgeRaw = readScenarioAssistantText(judgeData, "scenario-write semantic judge");
         const verdict = parseSemanticJudgeResult(judgeRaw);
         if (verdict === null) {
           throw new Error("semantic judge returned an unparseable verdict");
@@ -764,7 +715,7 @@ Deno.serve(async (req) => {
             return null;
           }
           const retryData = await readJsonLoose(retryResp, "scenario-write anti-duplicate retry");
-          const retryRaw = (retryData?.choices?.[0]?.message?.content ?? "").trim();
+          const retryRaw = readScenarioAssistantText(retryData, "scenario-write anti-duplicate retry");
           if (!retryRaw) return null;
           const retryQuality = unit === "plan"
             ? await runPlanQualityPass(duration, retryRaw, async () => null)
@@ -819,7 +770,10 @@ Deno.serve(async (req) => {
       }
     }
   } catch (e) {
-    console.error("scenario-write unhandled error", e);
+    console.error("scenario-write unhandled error", {
+      revision: SCENARIO_WRITE_RUNTIME_REVISION,
+      error: e,
+    });
     return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

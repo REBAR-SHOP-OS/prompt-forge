@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import MakeFilmWizardDialog, {
   type IdentityRef,
   type IdentitySnapshot,
@@ -30,16 +29,54 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }))
 
+vi.mock('./AiImageDialog', () => ({
+  default: ({
+    open,
+    initialImageUrl,
+    onSaved,
+  }: {
+    open: boolean
+    initialImageUrl?: string | null
+    onSaved: (row: { id: string; storage_path: string; created_at: string; still_duration_seconds: number }) => void
+  }) => open ? (
+    <div data-testid="mock-image-editor">
+      <span>{initialImageUrl}</span>
+      <button
+        type="button"
+        onClick={() => onSaved({
+          id: 'edited-image',
+          storage_path: 'https://x/edited-shot.png',
+          created_at: '2026-09-18T00:00:00Z',
+          still_duration_seconds: 5,
+        })}
+      >
+        Save edited image
+      </button>
+    </div>
+  ) : null,
+}))
+
 // A controllable generateSceneImage spy that records the exact payload the
 // wizard passes (urls + characterSheet flag) for both initial and Regenerate.
-const generateSceneImage = vi.fn(async () => 'data:image/png;base64,SCENE')
+type WizardProps = Parameters<typeof MakeFilmWizardDialog>[0]
+const generateSceneImage = vi.fn<WizardProps['generateSceneImage']>(async () => 'data:image/png;base64,SCENE')
 
 // For a 30s film, expectedPlanCount returns 6 plans.
-const writeScenario = vi.fn(async () => [
+const writeScenario = vi.fn<WizardProps['writeScenario']>(async () => [
   'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
 ])
 
 const onApprove = vi.fn()
+
+const passingPreviewEvaluation = {
+  physicalPlausibility: { passed: true, reason: 'Credible staging.' },
+  productRelevance: { passed: true, reason: 'The product is central.' },
+  surroundingContinuity: { passed: true, reason: 'The sequence advances.' },
+  plannedActionFaithfulness: { passed: true, reason: 'The planned action is visible.' },
+  contradiction: null,
+  summary: 'Preview matches the plan.',
+  passed: true,
+}
 
 function renderWizard(overrides: Partial<Parameters<typeof MakeFilmWizardDialog>[0]> = {}) {
   return render(
@@ -160,11 +197,17 @@ beforeEach(() => {
   ])
   onApprove.mockClear()
   mockInvoke.mockReset()
+  mockInvoke.mockImplementation(async (functionName: string) => {
+    if (functionName === 'film-preview-quality') {
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    }
+    return { data: null, error: null }
+  })
   mockImageRows()
 })
 
 describe('MakeFilmWizardDialog scenario product requirement (integration)', () => {
-  it('shows a per-shot duration that matches the real plan structure for every duration', () => {
+  it('shows a per-shot duration that matches the real plan structure for every duration', { timeout: 20_000 }, () => {
     // The summary must read "N shots × ~5s each" where N = duration/5, so the
     // per-shot figure always agrees with the total film duration.
     const cases: Array<[number, string]> = [
@@ -184,6 +227,29 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
     }
   })
 
+  it('exposes selected semantics for duration/aspect controls and labels icon-only removal', async () => {
+    mockCharacterRows([{ id: 'plain-1', title: 'Sarah', image_type: 'character' }])
+    renderWizard()
+
+    const durationGroup = screen.getByRole('radiogroup', { name: 'Film duration' })
+    expect(durationGroup).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '30s' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('radio', { name: '10s' }))
+    expect(screen.getByRole('radio', { name: '10s' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: '30s' })).toHaveAttribute('aria-checked', 'false')
+
+    const aspectGroup = screen.getByRole('radiogroup', { name: 'Aspect ratio' })
+    expect(aspectGroup).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Landscape \(16:9\)/ })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('radio', { name: /Portrait\/Story \(9:16\)/ }))
+    expect(screen.getByRole('radio', { name: /Portrait\/Story \(9:16\)/ })).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Sarah'))
+    expect(screen.getByRole('button', { name: 'Remove selected character' })).toBeInTheDocument()
+  })
+
   it('requires a product, enables after selection, and disables immediately after removal', async () => {
     renderWizard()
     const writeButton = screen.getByRole('button', { name: 'Write scenario' })
@@ -192,7 +258,7 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
     await chooseProduct()
     expect(writeButton).toBeEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove product' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
     expect(writeButton).toBeDisabled()
   }, 10_000)
 
@@ -204,6 +270,202 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
 
     expect(writeScenario).not.toHaveBeenCalled()
   })
+})
+
+describe('MakeFilmWizardDialog preview action quality (integration)', () => {
+  it('keeps the last identity-safe image when one shot exhausts action-quality review, then regenerates only that shot', async () => {
+    let allowShotTwo = false
+    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
+      if (functionName !== 'film-preview-quality') return { data: null, error: null }
+      const shotIndex = options?.body?.shotIndex
+      if (shotIndex === 1 && !allowShotTwo) {
+        return {
+          data: {
+            evaluation: {
+              ...passingPreviewEvaluation,
+              physicalPlausibility: { passed: false, reason: 'The hands do not contact the product.' },
+              summary: 'The fastening action is not physically depicted.',
+              passed: false,
+            },
+          },
+          error: null,
+        }
+      }
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    })
+    let generated = 0
+    generateSceneImage.mockImplementation(async () => `data:image/png;base64,SCENE-${++generated}`)
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toBeInTheDocument())
+    expect(screen.getAllByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toHaveLength(1)
+    expect(generateSceneImage).toHaveBeenCalledTimes(8)
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-4')
+    expect(screen.queryByText('No image — regenerate')).not.toBeInTheDocument()
+
+    const qualityCalls = mockInvoke.mock.calls.filter(([name]) => name === 'film-preview-quality')
+    const shotTwoCalls = qualityCalls.filter(([, options]) => options?.body?.shotIndex === 1)
+    expect(shotTwoCalls).toHaveLength(3)
+    expect(shotTwoCalls[0][1].body).toMatchObject({
+      shotIndex: 1,
+      totalShots: 6,
+      productName: 'Test product',
+      previousPlannedAction: expect.stringContaining('Plan one'),
+      plannedAction: expect.stringContaining('Plan two'),
+      nextPlannedAction: expect.stringContaining('Plan three'),
+    })
+
+    const beforeFailedRegenerate = generateSceneImage.mock.calls.length
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+    await waitFor(() => expect(generateSceneImage.mock.calls.length).toBe(beforeFailedRegenerate + 3))
+    expect(screen.getAllByText(/Preview shot 2 still failed action-quality review after 3 attempts/i)).toHaveLength(1)
+
+    allowShotTwo = true
+    const beforeRegenerate = generateSceneImage.mock.calls.length
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toBeInTheDocument())
+
+    expect(generateSceneImage.mock.calls.length).toBe(beforeRegenerate + 1)
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
+    expect(screen.queryByText(/Preview shot 2 still failed action-quality review/i)).not.toBeInTheDocument()
+  }, 15_000)
+
+  it('opens each preview card in the existing image editor and applies the saved edit only to that shot', async () => {
+    let generated = 0
+    generateSceneImage.mockImplementation(async () => `data:image/png;base64,SCENE-${++generated}`)
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Edit image for shot/ })).toHaveLength(6))
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-2')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit image for shot 2' }))
+    expect(screen.getByTestId('mock-image-editor')).toHaveTextContent('data:image/png;base64,SCENE-2')
+    fireEvent.click(screen.getByTestId('mock-image-editor').querySelector('button')!)
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'https://x/edited-shot.png'))
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SCENE-1')
+  }, 15_000)
+
+  it('keeps an image visible but blocks approval when the evaluator returns an invalid-response 502, then recovers on regeneration', async () => {
+    let allowShotTwo = false
+    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
+      if (functionName !== 'film-preview-quality') return { data: null, error: null }
+      if (options?.body?.shotIndex === 1 && !allowShotTwo) {
+        return { data: null, error: new Error('Preview quality evaluator returned an invalid response') }
+      }
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    })
+    let generated = 0
+    generateSceneImage.mockImplementation(async () => `data:image/png;base64,SCENE-${++generated}`)
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Could not verify preview shot 2/i)).toBeInTheDocument())
+    expect(generateSceneImage).toHaveBeenCalledTimes(6)
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-2')
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+
+    allowShotTwo = true
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE-7'))
+    expect(screen.queryByText(/Could not verify preview shot 2/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
+  }, 15_000)
+
+  it('keeps the previous identity-safe candidate when a corrected generation gets a 422, then allows controlled regeneration', async () => {
+    let allowShotTwo = false
+    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: Record<string, unknown> }) => {
+      if (functionName !== 'film-preview-quality') return { data: null, error: null }
+      if (options?.body?.shotIndex === 1 && !allowShotTwo) {
+        return {
+          data: {
+            evaluation: {
+              ...passingPreviewEvaluation,
+              plannedActionFaithfulness: { passed: false, reason: 'The fastening action is missing.' },
+              summary: 'The planned action is not visible.',
+              passed: false,
+            },
+          },
+          error: null,
+        }
+      }
+      return { data: { evaluation: passingPreviewEvaluation }, error: null }
+    })
+    let shotTwoAttempts = 0
+    generateSceneImage.mockImplementation(async (sceneText: string) => {
+      if (!sceneText.includes('Plan two')) return 'data:image/png;base64,OTHER'
+      shotTwoAttempts += 1
+      if (shotTwoAttempts === 2) {
+        throw new Error('Could not preserve every selected identity in the edited image.')
+      }
+      return shotTwoAttempts === 1
+        ? 'data:image/png;base64,IDENTITY-SAFE'
+        : 'data:image/png;base64,RECOVERED'
+    })
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Could not preserve every selected identity/i)).toBeInTheDocument())
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,IDENTITY-SAFE')
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+
+    allowShotTwo = true
+    fireEvent.click(screen.getAllByText('Regenerate')[1])
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,RECOVERED'))
+    expect(screen.queryByText(/Could not preserve every selected identity/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
+  }, 15_000)
+
+  it('keeps a first-attempt identity-validation rejection blank until controlled regeneration succeeds', async () => {
+    generateSceneImage
+      .mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
+      .mockResolvedValue('data:image/png;base64,SAFE')
+    renderWizard()
+
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+
+    await waitFor(() => expect(screen.getByText(/Could not preserve every selected identity/i)).toBeInTheDocument())
+    expect(screen.queryByAltText('Preview for scene 1')).not.toBeInTheDocument()
+    expect(screen.getByText('No image — regenerate')).toBeInTheDocument()
+    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SAFE')
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeDisabled()
+
+    fireEvent.click(screen.getAllByText('Regenerate')[0])
+
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,SAFE'))
+    expect(screen.queryByText(/Could not preserve every selected identity/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
+  }, 15_000)
 })
 
 describe('MakeFilmWizardDialog identity data path (integration)', () => {
@@ -340,17 +602,18 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
     // The initial generation must receive the required product plus the sheet
-    // URL and characterSheet=true.
+    // URL and characterSheet=true. Product is now the FULL grouped array (one
+    // photo here, so a single-element array), not a single rotated string.
     const calls = generateSceneImage.mock.calls
     expect(calls.length).toBeGreaterThan(0)
     for (const c of calls) {
-      expect(c[2]).toContain('product-1')
+      expect(c[2]).toEqual(expect.arrayContaining([expect.stringContaining('product-1')]))
       expect(c[3]).toContain('sheet-1') // character url from snapshot
       expect(c[6]).toBe(true) // characterSheet flag from snapshot
     }
   })
 
-  it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', async () => {
+  it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', { timeout: 15_000 }, async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
       { id: 'plain-1', title: 'Sarah', image_type: 'character' },
@@ -404,7 +667,7 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     generateSceneImage.mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
     fireEvent.click(screen.getAllByText('Regenerate')[0])
 
-    await waitFor(() => expect(screen.getAllByText(/Could not preserve every selected identity/i)).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText(/Could not preserve every selected identity/i)).toHaveLength(1))
     expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST')
   })
 
@@ -613,7 +876,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     expect(options.productName).not.toContain('001')
   })
 
-  it('selects one canonical product folder and rotates its saved angles across scenes', async () => {
+  it('selects one canonical product folder and sends every saved angle to every scene', async () => {
     mockImageRows([
       { id: 'stirrup-008', title: 'Rebar Stirrup 008', image_type: null },
       { id: 'stirrup-007', title: 'Rebar Stirrup 007', image_type: null },
@@ -639,17 +902,23 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
 
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
-    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual([
-      'https://x/user/stirrup-008.png',
-      'https://x/user/stirrup-007.png',
-      'https://x/user/stirrup-008.png',
-      'https://x/user/stirrup-007.png',
-      'https://x/user/stirrup-008.png',
-      'https://x/user/stirrup-007.png',
-    ])
+    // A single generated shot can only show one angle, but every scene must
+    // still be grounded by the FULL saved group — not one angle rotated by
+    // scene index. Every one of the 6 calls receives both angles, in order.
+    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual(
+      Array.from({ length: 6 }, () => ['https://x/user/stirrup-008.png', 'https://x/user/stirrup-007.png']),
+    )
+
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+    expect(onApprove.mock.calls[0][2].identity).toMatchObject({
+      productUrl: 'https://x/user/stirrup-008.png',
+      productUrls: ['https://x/user/stirrup-008.png', 'https://x/user/stirrup-007.png'],
+      productName: 'Rebar Stirrup',
+    })
   }, 15_000)
 
-  it('uses an explicit product-folder id to keep differently labelled views together', async () => {
+  it('uses an explicit product-folder id to keep differently labelled views together, all reaching every scene', async () => {
     mockImageRows([
       { id: 'front', title: 'Rebar Stirrup', image_type: null, storage_path: 'user-1/products/folder-7/front.png' },
       { id: 'side', title: 'Side view', image_type: null, storage_path: 'user-1/products/folder-7/side.png' },
@@ -670,15 +939,33 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     await waitFor(() => expect(writeScenario).toHaveBeenCalled())
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
-    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual([
-      'https://signed/front.png',
-      'https://signed/side.png',
-      'https://signed/front.png',
-      'https://signed/side.png',
-      'https://signed/front.png',
-      'https://signed/side.png',
-    ])
+    expect(generateSceneImage.mock.calls.map((call) => call[2])).toEqual(
+      Array.from({ length: 6 }, () => ['https://signed/front.png', 'https://signed/side.png']),
+    )
   }, 15_000)
+
+  it('switches compact categories without splitting product identities into angle cards', async () => {
+    mockImageRows([
+      { id: 'front', title: 'Folder Product', image_type: null, storage_path: 'user-1/products/folder-9/front.png' },
+      { id: 'side', title: 'Side view', image_type: null, storage_path: 'user-1/products/folder-9/side.png' },
+      { id: 'legacy', title: 'Legacy Mesh', image_type: null, storage_path: 'user-1/legacy.png' },
+    ])
+    mockStorage.from.mockImplementation(() => ({
+      createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
+    }))
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Products' })).toBeInTheDocument())
+    expect(screen.getByText('Folder Product')).toBeInTheDocument()
+    expect(screen.getByText('2 angles')).toBeInTheDocument()
+    expect(screen.queryByText('Side view')).not.toBeInTheDocument()
+    expect(screen.queryByText('Legacy Mesh')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Legacy' }))
+    expect(screen.getByText('Legacy Mesh')).toBeInTheDocument()
+    expect(screen.queryByText('Folder Product')).not.toBeInTheDocument()
+  })
 
   // Grouping put up to four <img> tiles behind one card. The card's onError
   // path was written when there was exactly one image per card, where "this
@@ -709,12 +996,13 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     fireEvent.click(screen.getByText('Write scenario'))
     await waitFor(() => expect(writeScenario).toHaveBeenCalled())
 
-    // The dropped angle is gone from the rotation, not merely hidden in the UI.
+    // The dropped angle is gone from the group entirely, not merely hidden in
+    // the UI — every remaining scene call must carry only the surviving angle.
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
     const used = generateSceneImage.mock.calls.map((call) => call[2])
-    expect(used).toEqual(Array.from({ length: 6 }, () => 'https://x/user/stirrup-008.png'))
-    expect(used).not.toContain('https://x/user/stirrup-007.png')
+    expect(used).toEqual(Array.from({ length: 6 }, () => ['https://x/user/stirrup-008.png']))
+    for (const urls of used) expect(urls).not.toContain('https://x/user/stirrup-007.png')
   }, 15_000)
 
   it('uses a saved user product to prefill Product Name and preserves a manual override through prompt and film identity', async () => {

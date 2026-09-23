@@ -5,8 +5,12 @@ import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import {
   validateReferenceSpecs,
   buildIdentityEvalPrompt,
+  buildEvaluationRetryFeedback,
+  buildTechnicalInteractionGuidance,
   parseIdentityEvalResponse,
   classifyEvalVerdict,
+  selectEvaluatedSpecs,
+  MAX_REFERENCE_IMAGES,
   type ReferenceSpec,
   type IdentityEvalOutcome,
   type EvalVerdict,
@@ -140,8 +144,10 @@ Deno.serve(async (req) => {
     const refSpecs: ReferenceSpec[] = refValidation.specs;
     // Cap the number of reference images and validate each against the same
     // security rules as the job orchestrator (own storage under user folder or
-    // allowlisted host). Never accept arbitrary insecure URLs server-side.
-    const MAX_REFERENCE_IMAGES = 3;
+    // allowlisted host). Never accept arbitrary insecure URLs server-side. The
+    // cap is identity-eval's own MAX_REFERENCE_IMAGES — a local, smaller cap
+    // here would silently truncate a multi-angle product folder that
+    // validateReferenceSpecs would otherwise accept.
     const safeReferenceUrls = refSpecs
       .slice(0, MAX_REFERENCE_IMAGES)
       .filter((s) => s.url.length <= 2048 && isAllowedReferenceUrl(s.url, auth.userId));
@@ -185,7 +191,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    const fullPrompt = `Create a single high-quality photographic image that visually depicts the following subject. Do NOT respond with text, explanations, captions, or descriptions — output ONLY the rendered image. The user's subject may be in any language (including Persian/Farsi/Arabic); interpret it as the visual subject of the image.\n\nSubject: ${prompt}\n\n${ratioGuidance(aspectRatio)}`;
+    // Identity and action-quality review run only for the evaluated identities
+    // (first product angle + character). The physical-interaction guidance —
+    // including its rebar/stirrup/mesh rules — belongs only to those
+    // reference-backed generations, where the reviewer enforces it. Plain
+    // text-to-image prompts stay unchanged.
+    const evaluatedSpecs = selectEvaluatedSpecs(safeReferenceUrls);
+    const interactionGuidance = evaluatedSpecs.length > 0
+      ? `\n\nPHYSICAL INTERACTION GUIDANCE: ${buildTechnicalInteractionGuidance()}`
+      : "";
+    const fullPrompt = `Create a single high-quality photographic image that visually depicts the following subject. Do NOT respond with text, explanations, captions, or descriptions — output ONLY the rendered image. The user's subject may be in any language (including Persian/Farsi/Arabic); interpret it as the visual subject of the image.\n\nSubject: ${prompt}${interactionGuidance}\n\n${ratioGuidance(aspectRatio)}`;
 
     // Build the multimodal user content. Reference images (product, character,
     // and optionally the previous scene for continuity) are attached as real
@@ -226,16 +241,27 @@ Deno.serve(async (req) => {
     //   - error: the evaluator itself failed (technical error, invalid response,
     //     429/402/5xx) -> return immediately, do NOT start a fresh generation.
     const evalModel = "google/gemini-3-flash-preview";
-    const evalPrompt = buildIdentityEvalPrompt(safeReferenceUrls);
+    // Judge only the first product angle plus the character, never every
+    // grouped angle — a single generated image can only visually show one
+    // product angle, so evaluating the rest would fail spuriously. The extra
+    // product specs above are generation-only grounding.
+    const evalPrompt = buildIdentityEvalPrompt(evaluatedSpecs);
 
     // Returns { verdict, outcome }. verdict is "pass" | "identity-fail" | "error".
     async function evaluateIdentity(dataUrl: string): Promise<{
       verdict: EvalVerdict;
       outcome: IdentityEvalOutcome | null;
     }> {
-      if (safeReferenceUrls.length === 0) {
+      if (evaluatedSpecs.length === 0) {
         // No references to preserve — nothing to evaluate.
-        return { verdict: "pass", outcome: { perReference: [], passed: true } };
+        return {
+          verdict: "pass",
+          outcome: {
+            perReference: [],
+            actionQuality: { passed: true, reason: "No reference-backed interaction to review." },
+            passed: true,
+          },
+        };
       }
       // Build the evaluator input: GENERATED_OUTPUT first, then each reference
       // with its role label immediately beside its image.
@@ -244,8 +270,8 @@ Deno.serve(async (req) => {
         { type: "text", text: "GENERATED_OUTPUT:" },
         { type: "image_url", image_url: { url: dataUrl } },
       ];
-      for (let i = 0; i < safeReferenceUrls.length; i++) {
-        const spec = safeReferenceUrls[i];
+      for (let i = 0; i < evaluatedSpecs.length; i++) {
+        const spec = evaluatedSpecs[i];
         evalContent.push({
           type: "text",
           text: `REF_${i + 1} (${spec.role.toUpperCase()}):`,
@@ -278,7 +304,7 @@ Deno.serve(async (req) => {
       const evalData = await readJsonLoose(evalResp, "ai-image-generate-identity-eval");
       const raw: string = (evalData?.choices?.[0]?.message?.content ?? "").trim();
       if (!raw) return { verdict: "error", outcome: null };
-      const outcome = parseIdentityEvalResponse(raw, safeReferenceUrls.length);
+      const outcome = parseIdentityEvalResponse(raw, evaluatedSpecs.length);
       return { verdict: classifyEvalVerdict(outcome), outcome };
     }
 
@@ -295,7 +321,7 @@ Deno.serve(async (req) => {
             ...userContent.slice(1),
             {
               type: "text",
-              text: "IMPORTANT: The previous attempt did not preserve the required identities. The output MUST contain the SAME product and the SAME character from the reference images, together in the same shot. If the character reference is a multi-view character sheet, the output MUST show the exact same person (same face, hair, skin tone, body type, and outfit) — never a different person.",
+              text: `IMPORTANT: The previous output failed review. Reviewer feedback: ${buildEvaluationRetryFeedback(lastEval)} Correct every listed issue. The output MUST contain the SAME product and the SAME character from the reference images, together in the same shot. If the character reference is a multi-view character sheet, the output MUST show the exact same person (same face, hair, skin tone, body type, and outfit) — never a different person.`,
             },
           ]
         : userContent;
@@ -371,14 +397,10 @@ Deno.serve(async (req) => {
     }
 
     if (safeReferenceUrls.length > 0 && lastVerdict !== "pass") {
-      const missing = lastEval?.perReference
-        ?.filter((r) => !r.present)
-        .map((r) => r.reason)
-        .filter(Boolean)
-        .join(" ") || "The generated image did not preserve the selected product and/or character.";
-      console.error("ai-image-generate identity not preserved after retries", JSON.stringify(lastEval));
+      const reviewFeedback = buildEvaluationRetryFeedback(lastEval);
+      console.error("ai-image-generate review failed after retries", JSON.stringify(lastEval));
       return new Response(JSON.stringify({
-        error: `Could not preserve the selected product and character in the image. ${missing} Try re-selecting them or rephrasing the scene.`,
+        error: `Image identity/action-quality review failed after ${MAX_ATTEMPTS} attempts: ${reviewFeedback} Edit the shot prompt or regenerate it.`,
       }), {
         status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

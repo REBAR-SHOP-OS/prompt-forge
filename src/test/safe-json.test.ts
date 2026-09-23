@@ -30,7 +30,7 @@ describe("readJsonSafe", () => {
   it("does NOT throw on an HTML body returned with status 200", async () => {
     const r = await readJsonSafe(res(htmlPage, { contentType: "text/html" }));
     expect(r.ok).toBe(false);
-    if (!r.ok) {
+    if (r.ok === false) {
       expect(r.raw).toContain("<html>");
       expect(r.contentType).toContain("text/html");
     }

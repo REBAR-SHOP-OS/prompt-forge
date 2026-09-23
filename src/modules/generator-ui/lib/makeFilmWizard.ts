@@ -315,7 +315,7 @@ export function isMissingImageTypeColumnError(message: string | null | undefined
  * result shape ({ data, error }).
  */
 export async function loadCharacterRows(
-  query: (columns: string) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message: string } | null }>,
+  query: (columns: string) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
 ): Promise<{ rows: CharacterImageRow[]; fellBack: boolean }> {
   const primary = await query('id, storage_path, title, category, image_type')
   if (!primary.error) {
@@ -333,10 +333,12 @@ export async function loadCharacterRows(
 }
 
 function normalizeCharacterRows(
-  data: Array<Record<string, unknown>> | null | undefined,
+  data: unknown[] | null | undefined,
   legacy = false,
 ): CharacterImageRow[] {
-  return (data ?? []).map((r) => ({
+  return (data ?? []).filter((row): row is Record<string, unknown> =>
+    row !== null && typeof row === 'object' && !Array.isArray(row),
+  ).map((r) => ({
     id: String(r.id ?? ''),
     storage_path: (r.storage_path as string | null) ?? null,
     title: (r.title as string | null) ?? null,
@@ -768,8 +770,12 @@ export function resolveSceneNarration(
  * scene image is ready. A single missing image (or a failed image) blocks
  * approval so the user cannot render a film with incomplete scenes.
  */
-export function canApproveFilm(images: Array<string | undefined>): boolean {
-  return images.length > 0 && images.every((u) => typeof u === 'string' && u.length > 0)
+export function canApproveFilm(images: Array<string | undefined>, imageErrors?: Array<string | undefined>): boolean {
+  if (images.length === 0) return false
+  if (!images.every((url) => typeof url === 'string' && url.length > 0)) return false
+  if (!imageErrors) return true
+  if (imageErrors.length !== images.length) return false
+  return imageErrors.every((error) => typeof error !== 'string' || error.trim().length === 0)
 }
 
 /**

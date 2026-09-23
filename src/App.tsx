@@ -1,5 +1,6 @@
 import { HashRouter } from 'react-router-dom'
-import { AuthProvider, useAuth } from '@/core/auth/AuthProvider'
+import { AuthProvider } from '@/core/auth/AuthProvider'
+import { useAuth } from '@/core/auth/auth-context'
 import { ThemeProvider } from '@/core/ui/ThemeProvider'
 import DashboardPage from './modules/generator-ui/pages/DashboardPage'
 import LoginPage from './pages/auth/LoginPage'

@@ -82,9 +82,8 @@ jobs:
         run: |
           set -e
           BRANCH="${{ github.event.pull_request.head.ref }}"
-          read BEHIND AHEAD <<EOF
-          $(git rev-list --left-right --count origin/main...HEAD)
-          EOF
+          COUNTS=$(git rev-list --left-right --count origin/main...HEAD)
+          read -r BEHIND AHEAD <<< "$COUNTS"
           echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
           echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
 
@@ -148,9 +147,8 @@ jobs:
             git fetch origin "$BRANCH" || { echo "Could not fetch $BRANCH; skipping."; continue; }
             git checkout -B "$BRANCH" "origin/$BRANCH" 2>/dev/null || git checkout "$BRANCH"
             git fetch origin main
-            read BEHIND AHEAD <<EOF
-            $(git rev-list --left-right --count origin/main...HEAD)
-            EOF
+            COUNTS=$(git rev-list --left-right --count origin/main...HEAD)
+            read -r BEHIND AHEAD <<< "$COUNTS"
             if [ "$BEHIND" -eq 0 ]; then
               echo "PR #$PR_NUM already up to date with main."
               continue

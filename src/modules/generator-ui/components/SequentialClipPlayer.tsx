@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, Pause, Play, X, AlertCircle } from 'lucide-react'
 import { usePlayableVideoUrl, usePlayableVideoUrls } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
@@ -62,6 +62,10 @@ type Props = {
   voiceoverTimeline?: [number, number]
   /** Volume of the clip's own audio track in preview (0..1). */
   clipVolume?: number
+  /** Editable layers rendered over every clip in the sequence preview. */
+  overlay?: ReactNode
+  /** Gives the parent the exact video-frame bounds for draggable overlays. */
+  frameRef?: (element: HTMLDivElement | null) => void
 }
 
 export function SequentialClipPlayer({
@@ -84,6 +88,8 @@ export function SequentialClipPlayer({
   voiceoverRange,
   voiceoverTimeline,
   clipVolume = 1,
+  overlay,
+  frameRef,
 }: Props) {
   const [index, setIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(true)
@@ -154,7 +160,6 @@ export function SequentialClipPlayer({
   // metadata loads and filmTotal becomes accurate).
   useEffect(() => {
     renderPlayhead(globalTimeRef.current)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filmTotal, index])
 
   // Maybe flip the prefetch flag on while the active clip nears its end.
@@ -213,6 +218,9 @@ export function SequentialClipPlayer({
   }, [clips.length, index])
 
   const current = clips[index] ?? null
+  const currentId = current?.id
+  const currentKind = current?.kind
+  const currentImageDuration = current?.kind === 'image' ? current.durationSec : null
 
   const { url: resolvedVideoSrc, loading: srcLoading, error: resolveError, reload } = usePlayableVideoUrl(
     current && current.kind === 'video' ? current.src : null,
@@ -290,11 +298,11 @@ export function SequentialClipPlayer({
   useEffect(() => {
     erroredOnceRef.current = null
     setPrefetchNext(false)
-  }, [current?.id])
+  }, [currentId])
 
   useEffect(() => {
-    if (current) onActiveClipChange?.(current.id)
-  }, [current?.id, onActiveClipChange])
+    if (currentId) onActiveClipChange?.(currentId)
+  }, [currentId, onActiveClipChange])
 
   // Drive image clips with a timer; videos drive themselves via onEnded.
   // The film-wide playhead is advanced with rAF (DOM-only, no setState) so the
@@ -304,26 +312,25 @@ export function SequentialClipPlayer({
       window.clearTimeout(imageTimerRef.current)
       imageTimerRef.current = null
     }
-    if (!current) return
-    if (current.kind !== 'image') return
+    if (!currentId || currentKind !== 'image' || currentImageDuration == null) return
 
-    const startLocal = Math.min(pendingLocalRef.current || 0, current.durationSec)
+    const startLocal = Math.min(pendingLocalRef.current || 0, currentImageDuration)
     pendingLocalRef.current = 0
     const base = offsetBeforeIndex(index)
     if (!scrubbingRef.current) renderPlayhead(base + startLocal)
 
     if (!isPlaying) return
 
-    const remainingMs = Math.max(200, Math.round((current.durationSec - startLocal) * 1000))
+    const remainingMs = Math.max(200, Math.round((currentImageDuration - startLocal) * 1000))
     const startTs = performance.now()
     let raf = 0
     const tick = (now: number) => {
       if (scrubbingRef.current) { raf = requestAnimationFrame(tick); return }
       const elapsed = (now - startTs) / 1000
-      const local = Math.min(current.durationSec, startLocal + elapsed)
+      const local = Math.min(currentImageDuration, startLocal + elapsed)
       renderPlayhead(base + local)
       soundtrackRef.current?.syncTime(base + local)
-      maybeArmPrefetch(local, current.durationSec)
+      maybeArmPrefetch(local, currentImageDuration)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -336,7 +343,7 @@ export function SequentialClipPlayer({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id, current?.kind, isPlaying])
+  }, [currentId, currentKind, currentImageDuration, isPlaying])
 
   // Load / seek the active video clip. Runs only when the active clip or its
   // resolved (proxied) source changes — NOT on play/pause toggles — so pausing
@@ -375,7 +382,7 @@ export function SequentialClipPlayer({
   // currentTime, so clicking the icon stops exactly at the current frame.
   useEffect(() => {
     const v = videoRef.current
-    if (!v || !current || current.kind !== 'video') return
+    if (!v || currentKind !== 'video') return
     if (!resolvedVideoSrc) return
     if (autoPlayAttemptId) {
       if (!isPlaying) v.pause()
@@ -386,7 +393,7 @@ export function SequentialClipPlayer({
     } else {
       v.pause()
     }
-  }, [isPlaying, current?.id, current?.kind, resolvedVideoSrc, autoPlayAttemptId])
+  }, [isPlaying, currentId, currentKind, resolvedVideoSrc, autoPlayAttemptId])
 
   // Apply clip volume to the active video element.
   useEffect(() => {
@@ -458,6 +465,7 @@ export function SequentialClipPlayer({
         }}
       >
         <div
+          ref={frameRef}
           className="relative overflow-hidden bg-black"
           style={{
             aspectRatio: ratioToCss(frameRatio),
@@ -565,6 +573,8 @@ export function SequentialClipPlayer({
               className="h-full w-full bg-black object-contain"
             />
           )}
+
+          {overlay}
 
           {/* Hidden double-buffer: pre-download the next clip's bytes so the
               swap at the clip boundary is instant (no black/loading gap). It is
