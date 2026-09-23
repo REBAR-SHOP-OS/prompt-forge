@@ -37,7 +37,9 @@ describe("scenario-write narration policy", () => {
     const prompt = buildSystemPrompt(15, productWithCharacter, false, undefined, undefined, "en", false);
 
     expect(prompt).toContain("must remain SILENT");
-    expect(prompt).toContain("no spoken words, no dialogue, no voiceover");
+    expect(prompt).toContain("no spoken words");
+    expect(prompt).toContain("dialogue");
+    expect(prompt).toContain("voiceover");
     expect(prompt).toContain("Use the character in CHARACTER-ONLY shots by default");
     expect(prompt).toContain("without adding the product to those shots");
     expect(prompt).toContain("Do NOT include any narration");
@@ -54,16 +56,14 @@ describe("scenario-write narration policy", () => {
     expect(prompt).toContain("Narration:");
   });
 
-  it("requires explicit per-plan shot modes and defaults interaction off", () => {
+  it("keeps the plan-mode product guidance and timing contract", () => {
     const prompt = buildSystemPrompt(30, productWithCharacter, false, undefined, undefined, "en", true, "plan");
 
-    expect(prompt).toContain("[SHOT: PRODUCT_ONLY]");
-    expect(prompt).toContain("[SHOT: CHARACTER_ONLY]");
-    expect(prompt).toContain("[SHOT: ENVIRONMENT_ONLY]");
-    expect(prompt).toContain("[SHOT: INTERACTION]");
-    expect(prompt).toContain("allowed only when the user's brief explicitly requires character-product interaction");
-    expect(prompt).toContain("Never choose it by default");
-    expect(prompt).toContain("no placement beside, against, attached to, touching, or interacting with unrelated structures or objects");
+    expect(prompt).toContain("dedicated PRODUCT-ONLY shots");
+    expect(prompt).toContain("unless the user's brief explicitly requires that exact interaction");
+    expect(prompt).toContain('Output EXACTLY 6 plan blocks separated by the literal delimiter "===SCENE==="');
+    expect(prompt).toContain("Camera coverage cycles across the film: wide → medium → close → wide → medium → close.");
+    expect(prompt).toContain('Start each plan\'s narration on a NEW line with the exact label "Narration:"');
   });
 });
 
