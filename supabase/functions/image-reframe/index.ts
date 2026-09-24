@@ -214,20 +214,8 @@ async function callNanoBanana(apiKey: string, srcDataUrl: string, target: { labe
     body: JSON.stringify({
       model: "google/gemini-3.1-flash-image-preview",
       modalities: ["image", "text"],
-      // Gemini-native image config (passed through by the AI gateway).
-      responseFormat: {
-        image: {
-          aspectRatio: ratio,
-          imageSize: "1K",
-        },
-      },
-      // OpenAI-compatible alias, just in case the gateway prefers snake_case.
-      response_format: {
-        image: {
-          aspect_ratio: ratio,
-          image_size: "1K",
-        },
-      },
+      // Same aspect-ratio contract as ai-image-generate.
+      image_config: { aspect_ratio: ratio },
       messages: [
         {
           role: "user",
@@ -343,7 +331,7 @@ Deno.serve(async (req) => {
     if (!/^image\/(png|jpe?g|webp)$/i.test(srcMime)) srcMime = "image/png";
     const srcDataUrl = `data:${srcMime};base64,${bytesToBase64(srcBytes)}`;
 
-    // 2) Call Nano Banana 2 with explicit aspect ratio in responseFormat,
+    // 2) Call Nano Banana 2 with explicit aspect ratio in image_config,
     //    with one retry if the returned image's pixel ratio is wrong.
     const tolerance = 0.06;
     const targetRatio = target.w / target.h;
