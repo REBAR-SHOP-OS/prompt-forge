@@ -16,6 +16,7 @@ export type PreviewShotQualityEvaluation = {
 export type PreviewShotContext = {
   shotIndex: number
   totalShots: number
+  shotMode?: 'product' | 'character' | 'environment' | 'interaction'
   plannedAction: string
   previousPlannedAction?: string
   nextPlannedAction?: string
@@ -42,7 +43,20 @@ export class PreviewShotVerificationError extends Error {
   }
 }
 
-function retryInstruction(evaluation: PreviewShotQualityEvaluation): string {
+function shotFocusInstruction(context: PreviewShotContext): string {
+  switch (context.shotMode ?? 'product') {
+    case 'character':
+      return 'Keep this character-only shot centered on the selected character and do not add the product.'
+    case 'environment':
+      return 'Keep this environment-only shot focused on the planned setting and do not add the product or character.'
+    case 'interaction':
+      return 'Show only the explicitly planned product-character interaction, with credible contact and no invented handling.'
+    default:
+      return 'Keep this product-only shot centered on the selected product and do not add the character.'
+  }
+}
+
+function retryInstruction(context: PreviewShotContext, evaluation: PreviewShotQualityEvaluation): string {
   const reasons = [
     evaluation.physicalPlausibility,
     evaluation.productRelevance,
@@ -56,7 +70,8 @@ function retryInstruction(evaluation: PreviewShotQualityEvaluation): string {
 
   return [
     'QUALITY CORRECTION: regenerate this same planned shot, not a new story.',
-    'Make the visible instant physically plausible, clearly centered on the selected product, coherent with the neighboring plans, and unmistakably faithful to the planned action.',
+    shotFocusInstruction(context),
+    'Make the visible instant physically plausible, coherent with the neighboring plans, and unmistakably faithful to the planned action.',
     reasons.length > 0 ? `Correct these observed problems: ${reasons.join(' ')}` : '',
   ].filter(Boolean).join(' ')
 }
@@ -101,7 +116,7 @@ export async function generateQualityCheckedPreviewShot(
     }
     lastEvaluation = evaluation
     if (evaluation.passed) return { imageUrl, evaluation, attempts: attempt }
-    if (attempt < attemptsLimit) correction = retryInstruction(evaluation)
+    if (attempt < attemptsLimit) correction = retryInstruction(context, evaluation)
   }
 
   const detail = lastEvaluation?.summary.trim() || lastEvaluation?.contradiction?.trim() || 'The image did not match its planned action.'

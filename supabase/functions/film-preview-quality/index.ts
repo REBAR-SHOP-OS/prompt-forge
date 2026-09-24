@@ -9,6 +9,12 @@ import {
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_CONTEXT_CHARS = 8_000;
 const FETCH_TIMEOUT_MS = 30_000;
+const SHOT_MODES = ["product", "character", "environment", "interaction"] as const;
+type ShotMode = typeof SHOT_MODES[number];
+
+function isShotMode(value: string): value is ShotMode {
+  return SHOT_MODES.some((mode) => mode === value);
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -59,6 +65,8 @@ Deno.serve(async (req) => {
     const previousPlannedAction = boundedString(body?.previousPlannedAction);
     const nextPlannedAction = boundedString(body?.nextPlannedAction);
     const productName = boundedString(body?.productName, 300);
+    const shotModeRaw = boundedString(body?.shotMode, 30);
+    const shotMode: ShotMode = isShotMode(shotModeRaw) ? shotModeRaw : "product";
     const shotIndex = Number.isInteger(body?.shotIndex) ? body.shotIndex : -1;
     const totalShots = Number.isInteger(body?.totalShots) ? body.totalShots : 0;
     const projectUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -98,6 +106,7 @@ Deno.serve(async (req) => {
     const prompt = buildPreviewShotQualityPrompt({
       shotIndex,
       totalShots,
+      shotMode,
       plannedAction,
       previousPlannedAction: previousPlannedAction || undefined,
       nextPlannedAction: nextPlannedAction || undefined,

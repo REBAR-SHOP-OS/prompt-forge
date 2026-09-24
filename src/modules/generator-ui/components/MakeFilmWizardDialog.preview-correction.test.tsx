@@ -158,13 +158,13 @@ describe('Make Full Film Step 3 independent preview quality retries', () => {
     expect(retriedShotCalls[1][7]).toContain('hands float away from the stirrup')
   })
 
-  it('keeps the last identity-safe candidate after three bounded action-quality attempts and requires regeneration', async () => {
+  it('keeps the last identity-safe candidate without exposing review diagnostics or blocking approval', async () => {
     setEvaluator((shotIndex) => shotIndex !== 1)
     renderWizard()
     await reachPreviewGeneration()
 
     await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(8))
-    await waitFor(() => expect(screen.getByText(/failed action-quality review after 3 attempts/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByAltText(/Preview for scene/)).toHaveLength(6))
 
     const invalidCalls = generateSceneImage.mock.calls.filter((call) => call[0] === SIX_PLANS[1])
     expect(invalidCalls).toHaveLength(3)
@@ -174,6 +174,8 @@ describe('Make Full Film Step 3 independent preview quality retries', () => {
       expect(screen.getByAltText(`Preview for scene ${index + 1}`)).toBeInTheDocument()
     }
     expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE')
+    expect(screen.queryByText(/failed action-quality review after 3 attempts/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
     expect(screen.getAllByRole('button', { name: /Regenerate$/ }).length).toBeGreaterThan(0)
   })
 })
