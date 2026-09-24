@@ -4825,6 +4825,14 @@ export default function DashboardPage() {
         image,
       })),
     ]
+
+    // Selected projects and drafts have their sources exactly ordered already in
+    // `projectSourceJobs` / `projectSourceImages`. Re-sorting them ruins the saved
+    // drag-and-drop order from when the project was created.
+    if (selectedProjectId) {
+      return items
+    }
+
     const chronoAsc = items.sort(
       (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
     )
