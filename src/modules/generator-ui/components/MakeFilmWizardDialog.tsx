@@ -56,6 +56,7 @@ import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLan
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
+import { StoryboardSheet } from './StoryboardSheet'
 import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import { groupProductPhotos, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
@@ -194,7 +195,7 @@ export interface MakeFilmWizardDialogProps {
   userId: string | null
   writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
   generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrls?: string[], characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean, correction?: string) => Promise<string>
-  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
+  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative; revision?: number }) => void
 }
 
 export function MakeFilmWizardDialog({
@@ -215,6 +216,7 @@ export function MakeFilmWizardDialog({
   const [images, setImages] = useState<(string | undefined)[]>([])
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
+  const [sheetRevision, setSheetRevision] = useState(1)
   const [error, setError] = useState<string | null>(null)
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeError, setOptimizeError] = useState<string | null>(null)
@@ -274,6 +276,7 @@ export function MakeFilmWizardDialog({
       setImages([])
       setBusy('idle')
       setRegenIndex(null)
+      setSheetRevision(1)
       setError(null)
       setOptimizing(false)
       setOptimizeError(null)
@@ -928,6 +931,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         copy[index] = url
         return copy
       })
+      setSheetRevision((r) => r + 1)
     } catch (err) {
       console.error(`Make-film wizard: preview image ${index + 1} regeneration failed`, err)
       if (err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError) {
@@ -950,6 +954,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       copy[index] = row.storage_path
       return copy
     })
+    setSheetRevision((r) => r + 1)
     setEditImageIndex(null)
   }
 
@@ -979,6 +984,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           characterName: characterIdentity?.name ?? null,
         },
         creative: currentCreative(),
+          revision: sheetRevision,
       })
       onOpenChange(false)
     } catch (err) {
@@ -1581,82 +1587,16 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 <p className="text-sm text-foreground/80">
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
-                <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]">
-                  {plans.map((plan, i) => {
-                    const url = safeMediaUrl(images[i])
-                    const isRegen = regenIndex === i
-                    return (
-                      <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-3">
-                        <div className="flex items-center justify-between">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                            Shot {i + 1}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {url && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                disabled={working}
-                                aria-label={`Edit image for shot ${i + 1}`}
-                                title={`Edit image for shot ${i + 1}`}
-                                onClick={() => setEditImageIndex(i)}
-                                className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
-                              >
-                                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                                Edit
-                              </Button>
-                            )}
-                            {url && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openLightbox(url, plan.scenarioText)}
-                                className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
-                              >
-                                <ZoomIn className="h-3.5 w-3.5" />
-                                Zoom
-                              </Button>
-                            )}
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              disabled={working}
-                              onClick={() => handleRegenerate(i)}
-                              className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
-                            >
-                              {isRegen ? (
-                                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                              ) : (
-                                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                              )}
-                              Regenerate
-                            </Button>
-                          </div>
-                        </div>
-                        <div 
-                          className="grid w-full place-items-center overflow-hidden rounded bg-surface-2/60 cursor-pointer"
-                          style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
-                          onClick={() => url && openLightbox(url, plan.scenarioText)}
-                        >
-                          {isRegen ? (
-                            <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
-                          ) : url ? (
-                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-contain" />
-                          ) : (
-                            <div className="flex flex-col items-center gap-1 text-muted-foreground">
-                              <ImageIcon className="h-6 w-6" aria-hidden="true" />
-                              <span className="text-[11px]">No image — regenerate</span>
-                            </div>
-                          )}
-                        </div>
-                        <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">{plan.scenarioText}</p>
-                      </div>
-                    )
-                  })}
-                </div>
+                <StoryboardSheet
+                  plans={plans}
+                  images={images}
+                  regenIndex={regenIndex}
+                  onRegenerate={handleRegenerate}
+                  onEdit={setEditImageIndex}
+                  onZoom={openLightbox}
+                  working={working}
+                  aspect={aspect}
+                />
               </div>
             )}
 

@@ -43,6 +43,7 @@ export interface JobDetail extends JobSummary {
 export type AspectRatio = "9:16" | "1:1" | "16:9";
 
 export interface CreateJobInput {
+  storyboardRevision?: number;
   providerKey: "wan" | "flow" | "local";
   requestedModel?: string;
   /** Stable idempotency key for safe timeout recovery; generated client-side per submit. */
