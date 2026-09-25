@@ -9,8 +9,8 @@ describe('StoryboardSheet', () => {
   ] as unknown as import("@/modules/generator-ui/lib/makeFilmWizard").FilmPlan[]
 
   it('renders a grid with shot overlays, not baked into images', () => {
-    render(<StoryboardSheet 
-      plans={plans} 
+    render(<StoryboardSheet
+      plans={plans}
       images={['img1.png', 'img2.png']}
       regenIndex={null}
       onRegenerate={vi.fn()}
@@ -21,15 +21,15 @@ describe('StoryboardSheet', () => {
     />)
 
     // The shot labels are in the DOM over the images
-    expect(screen.getByText('Shot 1')).toBeInTheDocument()
-    expect(screen.getByText('Shot 2')).toBeInTheDocument()
+    expect(screen.getByText('Shot 1')).toBeTruthy()
+    expect(screen.getByText('Shot 2')).toBeTruthy()
   })
 
   it('calls onRegenerate for a specific panel', async () => {
     const onRegenerate = vi.fn()
-    
-    render(<StoryboardSheet 
-      plans={plans} 
+
+    render(<StoryboardSheet
+      plans={plans}
       images={['img1.png', 'img2.png']}
       regenIndex={null}
       onRegenerate={onRegenerate}

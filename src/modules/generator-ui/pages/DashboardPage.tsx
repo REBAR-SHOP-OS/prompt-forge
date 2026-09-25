@@ -170,6 +170,11 @@ import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDi
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import MakeFilmWizardDialog, { type FilmAspect, type FilmIdentity, type FilmCreative } from '@/modules/generator-ui/components/MakeFilmWizardDialog'
+import {
+  storyboardFramesForShot,
+  storyboardShotInstruction,
+  type ApprovedStoryboardSnapshot,
+} from '@/modules/generator-ui/lib/storyboardSheet'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
@@ -7196,7 +7201,7 @@ export default function DashboardPage() {
       suppressPreviewUntilBatchSettles?: boolean
       /** Explicit flag: true when the wizard produced plan-based 5s shots. */
       isPlanBased?: boolean
-      storyboardRevision?: number
+      storyboard?: ApprovedStoryboardSnapshot
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7309,6 +7314,9 @@ export default function DashboardPage() {
         if (cameraStyle) prompt += `\n\nCAMERA ANGLE: ${cameraStyle}`
         if (theme) prompt += `\n\nVISUAL STYLE: ${theme}`
         prompt += `\n\nSCENE ${i + 1} OF ${scenes.length}: This clip is one shot in a continuous sequence. Keep the same subject, setting and lighting as the surrounding clips so the film flows seamlessly.`
+        if (opts?.storyboard) {
+          prompt += `\n\n${storyboardShotInstruction(opts.storyboard, i)}`
+        }
 
         let startFrameUrl: string | undefined
         let startFrameIsProductPhoto = false
@@ -7318,7 +7326,19 @@ export default function DashboardPage() {
         // completed previous card and can still converge on the approved shot.
         let endFrameUrl: string | undefined
         const perSceneImageUrl = opts?.perSceneImageUrls?.[i]
-        if (previousLastFrameUrl) {
+        const storyboardFrames = storyboardFramesForShot({
+          storyboard: opts?.storyboard,
+          shotIndex: i,
+          previousLastFrameUrl,
+          approvedShotUrl: perSceneImageUrl,
+        })
+        if (storyboardFrames) {
+          // Radin's proven WAN workflow: clip 1 starts from the approved full
+          // sheet, then every later clip continues from the prior last frame
+          // toward its approved panel image.
+          startFrameUrl = storyboardFrames.startFrameUrl
+          endFrameUrl = storyboardFrames.endFrameUrl
+        } else if (previousLastFrameUrl) {
           startFrameUrl = previousLastFrameUrl
           endFrameUrl = perSceneImageUrl
         } else if (perSceneImageUrl) {
@@ -7418,7 +7438,6 @@ export default function DashboardPage() {
           referenceImageUrls,
           draftGroupId,
           narrationText,
-                    storyboardRevision: opts?.storyboardRevision,
         })
         const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
@@ -7750,7 +7769,7 @@ export default function DashboardPage() {
       isPlanBased?: boolean
       identity?: FilmIdentity
       creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string }
-      revision?: number
+      storyboard?: ApprovedStoryboardSnapshot
     },
   ): Promise<void> {
     if (isAutoFilming || isSubmitting || isMerging) return
@@ -7781,12 +7800,12 @@ export default function DashboardPage() {
       // the aspect the wizard chose (falls back to the composer's ratio). The
       // wizard's product/character identity is carried through so every job
       // anchors the same subject the user picked in the wizard.
-      const createdJobIds = await submitScenesAsJobs(scenes, perSceneImageUrls[0], {
+      const createdJobIds = await submitScenesAsJobs(scenes, options?.storyboard?.sheetUrl ?? perSceneImageUrls[0], {
         perSceneImageUrls,
         aspect: options?.aspect,
         durationSeconds: options?.duration,
         product: approvedProduct,
-                storyboardRevision: options?.revision,
+        storyboard: options?.storyboard,
         character: options?.identity?.characterUrl
           ? {
               id: 'wizard-character',
@@ -10850,7 +10869,7 @@ export default function DashboardPage() {
           generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
-          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true, revision: options.revision })
+          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
         }}
       />
 

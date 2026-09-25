@@ -81,7 +81,7 @@ export function StoryboardSheet({
                 </Button>
               </div>
             </div>
-            <div 
+            <div
               className="grid w-full place-items-center overflow-hidden rounded bg-surface-2/60 cursor-pointer"
               style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
               onClick={() => url && onZoom(url, plan.scenarioText)}
