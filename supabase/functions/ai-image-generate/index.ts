@@ -15,6 +15,7 @@ import {
   type IdentityEvalOutcome,
   type EvalVerdict,
 } from "../_shared/identity-eval.ts";
+import { decideFinalImage, isIdentitySafe } from "./candidate.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 
@@ -312,6 +313,7 @@ Deno.serve(async (req) => {
     let dataUrl: string | undefined;
     let lastEval: IdentityEvalOutcome | null = null;
     let lastVerdict: EvalVerdict = "error";
+    let identitySafeCandidate: { dataUrl: string; outcome: IdentityEvalOutcome } | null = null;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       const model = attempt === 0 ? PRIMARY : FALLBACK;
@@ -370,6 +372,13 @@ Deno.serve(async (req) => {
       lastEval = evalResult.outcome;
       lastVerdict = evalResult.verdict;
       if (evalResult.verdict === "pass") break;
+      if (
+        evalResult.verdict === "identity-fail" && evalResult.outcome &&
+        isIdentitySafe(evalResult.outcome, evaluatedSpecs.length)
+      ) {
+        // Latest identity-safe candidate (action quality still failing).
+        identitySafeCandidate = { dataUrl, outcome: evalResult.outcome };
+      }
       if (evalResult.verdict === "error") {
         // Technical error from the evaluator: return immediately, do NOT start
         // a fresh generation.
@@ -397,10 +406,17 @@ Deno.serve(async (req) => {
     }
 
     if (safeReferenceUrls.length > 0 && lastVerdict !== "pass") {
+      const decision = decideFinalImage({ passedDataUrl: null, identitySafeCandidate });
+      if (decision.kind === "accept-with-warning") {
+        console.warn("ai-image-generate returning identity-safe candidate; action quality unresolved", JSON.stringify(lastEval));
+        return new Response(JSON.stringify({ dataUrl: decision.dataUrl, review: decision.review }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const reviewFeedback = buildEvaluationRetryFeedback(lastEval);
       console.error("ai-image-generate review failed after retries", JSON.stringify(lastEval));
       return new Response(JSON.stringify({
-        error: `Image identity/action-quality review failed after ${MAX_ATTEMPTS} attempts: ${reviewFeedback} Edit the shot prompt or regenerate it.`,
+        error: `Could not preserve the selected product/character identity after ${MAX_ATTEMPTS} attempts: ${reviewFeedback} Edit the shot prompt or regenerate it.`,
       }), {
         status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
