@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!dataUrl) {
+    if (!dataUrl && !identitySafeCandidate) {
       console.error("ai-image-generate empty image after retries", JSON.stringify(data).slice(0, 500));
       return new Response(JSON.stringify({
         error: "The AI returned text instead of an image. Try a more visual prompt — describe the scene, subject, lighting, and style.",
