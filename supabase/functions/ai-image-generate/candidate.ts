@@ -49,3 +49,34 @@ export function decideFinalImage(input: {
   }
   return { kind: "reject" };
 }
+
+export type AttemptDecision =
+  | { kind: "accept"; review: null }
+  | ReturnType<typeof acceptWithWarning>
+  | { kind: "retry" }
+  | { kind: "error" };
+
+function acceptWithWarning(dataUrl: string, outcome: IdentityEvalOutcome) {
+  const d = decideFinalImage({ passedDataUrl: null, identitySafeCandidate: { dataUrl, outcome } });
+  return d as Extract<FinalDecision, { kind: "accept-with-warning" }>;
+}
+
+/**
+ * Per-attempt decision. An identity-safe but action-failing image is returned
+ * IMMEDIATELY (no further inner retries) so the outer film-preview-quality
+ * correction loop can handle action fidelity and a later CPU-heavy attempt
+ * cannot lose it. Identity mismatch retries; evaluator errors stop with error.
+ */
+export function decideAttempt(input: {
+  verdict: "pass" | "identity-fail" | "error";
+  outcome: IdentityEvalOutcome | null;
+  dataUrl: string;
+  referenceCount: number;
+}): AttemptDecision {
+  if (input.verdict === "error") return { kind: "error" };
+  if (input.verdict === "pass") return { kind: "accept", review: null };
+  if (input.outcome && isIdentitySafe(input.outcome, input.referenceCount)) {
+    return acceptWithWarning(input.dataUrl, input.outcome);
+  }
+  return { kind: "retry" };
+}

@@ -15,7 +15,8 @@ import {
   type IdentityEvalOutcome,
   type EvalVerdict,
 } from "../_shared/identity-eval.ts";
-import { decideFinalImage, isIdentitySafe } from "./candidate.ts";
+import { decideAttempt } from "./candidate.ts";
+import { bytesToBase64, createReferenceResolver } from "./references.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 
@@ -73,10 +74,7 @@ async function resolveImageForGateway(url: string): Promise<string> {
       return url;
     }
     const contentType = res.headers.get("content-type") || "image/png";
-    const buf = new Uint8Array(await res.arrayBuffer());
-    let binary = "";
-    for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
-    const b64 = btoa(binary);
+    const b64 = bytesToBase64(new Uint8Array(await res.arrayBuffer()));
     return `data:${contentType};base64,${b64}`;
   } catch (e) {
     console.error("resolveImageForGateway error", e);
@@ -209,6 +207,9 @@ Deno.serve(async (req) => {
     // URLs as text. Private-bucket URLs are inlined as data URLs first. Each
     // image is preceded by an explicit role label so the model knows which
     // reference is the product vs the character.
+    // Request-scoped cache: every reference is downloaded/encoded once and
+    // reused by all generation and evaluation attempts.
+    const resolveRef = createReferenceResolver(resolveImageForGateway);
     const userContent: unknown[] = [{ type: "text", text: fullPrompt }];
     for (const spec of safeReferenceUrls) {
       const sheetNote = spec.role === "character" && spec.characterSheet
@@ -218,7 +219,7 @@ Deno.serve(async (req) => {
         type: "text",
         text: `${spec.role.toUpperCase()} reference image (preserve this exact ${spec.role} in the output):${sheetNote}`,
       });
-      const resolved = await resolveImageForGateway(spec.url);
+      const resolved = await resolveRef(spec.url);
       userContent.push({ type: "image_url", image_url: { url: resolved } });
     }
 
@@ -277,7 +278,7 @@ Deno.serve(async (req) => {
           type: "text",
           text: `REF_${i + 1} (${spec.role.toUpperCase()}):`,
         });
-        const resolved = await resolveImageForGateway(spec.url);
+        const resolved = await resolveRef(spec.url);
         evalContent.push({ type: "image_url", image_url: { url: resolved } });
       }
       const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -313,7 +314,6 @@ Deno.serve(async (req) => {
     let dataUrl: string | undefined;
     let lastEval: IdentityEvalOutcome | null = null;
     let lastVerdict: EvalVerdict = "error";
-    let identitySafeCandidate: { dataUrl: string; outcome: IdentityEvalOutcome } | null = null;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       const model = attempt === 0 ? PRIMARY : FALLBACK;
@@ -366,22 +366,30 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Evaluate the output against the references. Only accept when every
-      // reference is present AND matches. A dataUrl alone is not success.
       const evalResult = await evaluateIdentity(dataUrl);
       lastEval = evalResult.outcome;
       lastVerdict = evalResult.verdict;
-      if (evalResult.verdict === "pass") break;
-      if (
-        evalResult.verdict === "identity-fail" && evalResult.outcome &&
-        isIdentitySafe(evalResult.outcome, evaluatedSpecs.length)
-      ) {
-        // Latest identity-safe candidate (action quality still failing).
-        identitySafeCandidate = { dataUrl, outcome: evalResult.outcome };
+      const decision = decideAttempt({
+        verdict: evalResult.verdict,
+        outcome: evalResult.outcome,
+        dataUrl,
+        referenceCount: evaluatedSpecs.length,
+      });
+      if (decision.kind === "accept") {
+        return new Response(JSON.stringify({ dataUrl }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      if (evalResult.verdict === "error") {
-        // Technical error from the evaluator: return immediately, do NOT start
-        // a fresh generation.
+      if (decision.kind === "accept-with-warning") {
+        console.warn(
+          `ai-image-generate attempt ${attempt + 1} identity-safe; returning for outer action review`,
+          JSON.stringify(lastEval),
+        );
+        return new Response(JSON.stringify({ dataUrl: decision.dataUrl, review: decision.review }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (decision.kind === "error") {
         console.error("ai-image-generate identity-eval technical error");
         return new Response(JSON.stringify({
           error: "Could not verify the generated image. Please try again in a moment.",
@@ -389,14 +397,13 @@ Deno.serve(async (req) => {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      // identity-fail: retry (bounded).
       console.warn(
         `ai-image-generate attempt ${attempt + 1} failed identity evaluation`,
         JSON.stringify(lastEval),
       );
     }
 
-    if (!dataUrl && !identitySafeCandidate) {
+    if (!dataUrl) {
       console.error("ai-image-generate empty image after retries", JSON.stringify(data).slice(0, 500));
       return new Response(JSON.stringify({
         error: "The AI returned text instead of an image. Try a more visual prompt — describe the scene, subject, lighting, and style.",
@@ -405,14 +412,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (safeReferenceUrls.length > 0 && lastVerdict !== "pass") {
-      const decision = decideFinalImage({ passedDataUrl: null, identitySafeCandidate });
-      if (decision.kind === "accept-with-warning") {
-        console.warn("ai-image-generate returning identity-safe candidate; action quality unresolved", JSON.stringify(lastEval));
-        return new Response(JSON.stringify({ dataUrl: decision.dataUrl, review: decision.review }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    if (lastVerdict !== "pass") {
       const reviewFeedback = buildEvaluationRetryFeedback(lastEval);
       console.error("ai-image-generate review failed after retries", JSON.stringify(lastEval));
       return new Response(JSON.stringify({
