@@ -8213,6 +8213,15 @@ export default function DashboardPage() {
         return next
       })
       setPreviewVideoId((cur) => (cur === job.id ? seededJob.id : cur))
+      setManualOrder((currentOrder) => {
+        if (!currentOrder) return null
+        const nextOrder = [...currentOrder]
+        const oldIdx = nextOrder.indexOf(job.id)
+        if (oldIdx >= 0) {
+          nextOrder.splice(oldIdx, 1, seededJob.id)
+        }
+        return nextOrder
+      })
       // Move the regenerating spinner from the old id to the new id so the
       // same slot keeps showing a loading state until polling resolves.
       setRegeneratingIds((current) => {
