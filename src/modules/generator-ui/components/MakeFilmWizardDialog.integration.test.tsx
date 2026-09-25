@@ -13,6 +13,7 @@ const { mockFrom, mockStorage, mockInvoke } = vi.hoisted(() => {
   const mockFrom = vi.fn()
   const mockStorage = {
     from: vi.fn(() => ({
+      upload: vi.fn(async () => ({ data: { path: 'user-1/storyboards/test-r1.jpg' }, error: null })),
       createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
     })),
   }
@@ -28,6 +29,14 @@ vi.mock('@/integrations/supabase/client', () => ({
     },
   },
 }))
+
+vi.mock('@/modules/generator-ui/lib/storyboardSheet', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/modules/generator-ui/lib/storyboardSheet')>()
+  return {
+    ...actual,
+    buildStoryboardSheetBlob: vi.fn(async () => new Blob(['storyboard'], { type: 'image/jpeg' })),
+  }
+})
 
 vi.mock('./AiImageDialog', () => ({
   default: ({
@@ -189,6 +198,7 @@ function mockRefreshableCharacterRows(
 beforeEach(() => {
   vi.clearAllMocks()
   mockStorage.from.mockImplementation(() => ({
+    upload: vi.fn(async () => ({ data: { path: 'user-1/storyboards/test-r1.jpg' }, error: null })),
     createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
   }))
   generateSceneImage.mockResolvedValue('data:image/png;base64,SCENE')
@@ -724,9 +734,16 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     fireEvent.click(screen.getByText(/Approve & Make Film/i))
     await waitFor(() => expect(onApprove).toHaveBeenCalled())
 
-    const identity = onApprove.mock.calls[0][2].identity
+    const approval = onApprove.mock.calls[0][2]
+    const identity = approval.identity
     expect(identity.characterUrl).toContain('sheet-1')
     expect(identity.characterName).toBe('My custom sheet')
+    expect(approval.storyboard).toMatchObject({
+      revision: 1,
+      sheetUrl: 'https://signed/1.png',
+    })
+    expect(approval.storyboard.scenes).toHaveLength(6)
+    expect(approval.storyboard.shotImageUrls).toHaveLength(6)
   })
 
   it('a plain character (image_type=character) is never treated as a sheet', async () => {
@@ -850,9 +867,11 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     // Approve — the creative must be preserved in the approval payload.
     fireEvent.click(screen.getByText(/Approve & Make Film/i))
     await waitFor(() => expect(onApprove).toHaveBeenCalled())
-    const approveCreative = onApprove.mock.calls[0][2].creative
+    const approval = onApprove.mock.calls[0][2]
+    const approveCreative = approval.creative
     expect(approveCreative.cameraStyle).toContain('Orbit shot')
     expect(approveCreative.theme).toContain('Heavy industry factory')
+    expect(approval.storyboard.revision).toBe(2)
   })
 })
 
@@ -913,6 +932,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
       { id: 'stirrup-007', title: 'Rebar Stirrup 007', image_type: null },
     ])
     mockStorage.from.mockImplementation(() => ({
+      upload: vi.fn(async () => ({ data: { path: 'user-1/storyboards/test-r1.jpg' }, error: null })),
       createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
     }))
     renderWizard()
@@ -955,6 +975,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
       { id: 'side', title: 'Side view', image_type: null, storage_path: 'user-1/products/folder-7/side.png' },
     ])
     mockStorage.from.mockImplementation(() => ({
+      upload: vi.fn(async () => ({ data: { path: 'user-1/storyboards/test-r1.jpg' }, error: null })),
       createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
     }))
     renderWizard()
@@ -982,6 +1003,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
       { id: 'legacy', title: 'Legacy Mesh', image_type: null, storage_path: 'user-1/legacy.png' },
     ])
     mockStorage.from.mockImplementation(() => ({
+      upload: vi.fn(async () => ({ data: { path: 'user-1/storyboards/test-r1.jpg' }, error: null })),
       createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
     }))
     renderWizard()

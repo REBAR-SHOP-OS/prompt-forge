@@ -26,7 +26,6 @@ import {
   HardHat,
   Scale,
   Award,
-  Pencil,
 } from 'lucide-react'
 import {
   Dialog,
@@ -52,6 +51,12 @@ import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type Film
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { inFlightSigns } from '@/modules/generator-ui/lib/makeFilmSigning'
+import {
+  buildStoryboardSheetBlob,
+  createApprovedStoryboardSnapshot,
+  replaceStoryboardPanel,
+  type ApprovedStoryboardSnapshot,
+} from '@/modules/generator-ui/lib/storyboardSheet'
 import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -195,7 +200,7 @@ export interface MakeFilmWizardDialogProps {
   userId: string | null
   writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
   generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrls?: string[], characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean, correction?: string) => Promise<string>
-  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative; revision?: number }) => void
+  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative; storyboard?: ApprovedStoryboardSnapshot }) => void
 }
 
 export function MakeFilmWizardDialog({
@@ -217,6 +222,7 @@ export function MakeFilmWizardDialog({
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [sheetRevision, setSheetRevision] = useState(1)
+  const [approving, setApproving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeError, setOptimizeError] = useState<string | null>(null)
@@ -277,6 +283,7 @@ export function MakeFilmWizardDialog({
       setBusy('idle')
       setRegenIndex(null)
       setSheetRevision(1)
+      setApproving(false)
       setError(null)
       setOptimizing(false)
       setOptimizeError(null)
@@ -311,7 +318,7 @@ export function MakeFilmWizardDialog({
     }
   }, [open, initialPrompt, defaultDuration, defaultAspect, initialFilmType])
 
-  const working = busy !== 'idle' || regenIndex !== null
+  const working = busy !== 'idle' || regenIndex !== null || approving
   const canWriteScenario = prompt.trim().length > 0 && selectedProduct !== null && !working
   // Step 1 requires a product (same gate as canWriteScenario / handleWriteScenario).
   // Everything else — character, film type, camera angle, visual theme, narration and
@@ -926,20 +933,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const url = await generateCheckedPreviewShot(index, snapshot, currentCreative(), noTextOnImages)
-      setImages((cur) => {
-        const copy = [...cur]
-        copy[index] = url
-        return copy
-      })
+      setImages((cur) => replaceStoryboardPanel(cur, index, url))
       setSheetRevision((r) => r + 1)
     } catch (err) {
       console.error(`Make-film wizard: preview image ${index + 1} regeneration failed`, err)
       if (err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError) {
-        setImages((cur) => {
-          const copy = [...cur]
-          copy[index] = err.imageUrl
-          return copy
-        })
+        setImages((cur) => replaceStoryboardPanel(cur, index, err.imageUrl))
+        setSheetRevision((r) => r + 1)
       }
     } finally {
       setRegenIndex(null)
@@ -949,11 +949,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   function handleEditedImageSaved(row: AiImageSavedRow) {
     if (editImageIndex === null) return
     const index = editImageIndex
-    setImages((cur) => {
-      const copy = [...cur]
-      copy[index] = row.storage_path
-      return copy
-    })
+    setImages((cur) => replaceStoryboardPanel(cur, index, row.storage_path))
     setSheetRevision((r) => r + 1)
     setEditImageIndex(null)
   }
@@ -964,11 +960,54 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setLightboxOpen(true)
   }
 
-  function handleApprove() {
+  async function uploadApprovedStoryboardSheet(
+    shotImageUrls: readonly string[],
+    revision: number,
+  ): Promise<string> {
+    if (!userId) throw new Error('Sign in before creating the storyboard sheet.')
+    const downloadableUrls = await Promise.all(shotImageUrls.map((url) => {
+      const bucket = url.includes(`/${PRODUCTS_BUCKET}/`) ? PRODUCTS_BUCKET : FRAMES_BUCKET
+      return signStorageUrl(url, bucket)
+    }))
+    const blob = await buildStoryboardSheetBlob(downloadableUrls, aspect)
+    const storyboardId = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const objectPath = `${userId}/storyboards/${storyboardId}-r${revision}.jpg`
+    const { error: uploadError } = await supabase.storage
+      .from(FRAMES_BUCKET)
+      .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: false })
+    if (uploadError) throw new Error(`Could not upload storyboard sheet (${uploadError.message})`)
+    const { data, error: signError } = await supabase.storage
+      .from(FRAMES_BUCKET)
+      .createSignedUrl(objectPath, 60 * 60 * 24 * 7)
+    if (signError || !data?.signedUrl) {
+      throw new Error(`Could not prepare storyboard sheet (${signError?.message ?? 'missing signed URL'})`)
+    }
+    return data.signedUrl
+  }
+
+  async function handleApprove() {
+    if (working) return
+    setApproving(true)
+    setError(null)
     try {
+      const scenes = plans.map((p) => p.scenarioText)
+      const shotImageUrls = images.filter((url): url is string => Boolean(url))
+      if (shotImageUrls.length !== scenes.length) {
+        throw new Error('Every storyboard panel needs an approved image before film generation.')
+      }
+      const approvedRevision = sheetRevision
+      const sheetUrl = await uploadApprovedStoryboardSheet(shotImageUrls, approvedRevision)
+      const storyboard = createApprovedStoryboardSnapshot({
+        revision: approvedRevision,
+        sheetUrl,
+        scenes,
+        shotImageUrls,
+      })
       const productIdentity = identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product')
       const characterIdentity = identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character')
-      onApprove(plans.map((p) => p.scenarioText), images, {
+      onApprove([...storyboard.scenes], [...storyboard.shotImageUrls], {
         duration,
         aspect,
         withNarration,
@@ -984,11 +1023,14 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           characterName: characterIdentity?.name ?? null,
         },
         creative: currentCreative(),
-          revision: sheetRevision,
+        storyboard,
       })
       onOpenChange(false)
     } catch (err) {
+      console.error('Make-film wizard: storyboard approval failed', err)
       setError(err instanceof Error ? err.message : 'Failed to start film render.')
+    } finally {
+      setApproving(false)
     }
   }
 
