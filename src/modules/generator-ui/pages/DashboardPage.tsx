@@ -256,6 +256,7 @@ import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl, parseStorageRef } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
+import { spliceRegeneratedCard } from '@/modules/generator-ui/lib/regenerationOrder'
 import {
   moveCoverBetweenScopes,
   moveCoverDurationBetweenScopes,
@@ -8214,6 +8215,14 @@ export default function DashboardPage() {
         return next
       })
       setPreviewVideoId((cur) => (cur === job.id ? seededJob.id : cur))
+      setManualOrder((currentOrder) => {
+        return spliceRegeneratedCard(
+          currentOrder,
+          displayedClips.map((c) => c.id),
+          job.id,
+          seededJob.id
+        )
+      })
       // Move the regenerating spinner from the old id to the new id so the
       // same slot keeps showing a loading state until polling resolves.
       setRegeneratingIds((current) => {
