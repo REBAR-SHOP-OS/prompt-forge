@@ -117,38 +117,50 @@ Deno.serve(async (req) => {
       nextPlannedAction: nextPlannedAction || undefined,
       productName: productName || undefined,
     });
-    const geminiResponse = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+    // A malformed/empty model answer is re-asked once (bounded), then fails
+    // closed with 502. Gateway HTTP errors are never retried here.
+    const MAX_EVALUATOR_ATTEMPTS = 2;
+    for (let attempt = 1; attempt <= MAX_EVALUATOR_ATTEMPTS; attempt++) {
+      const geminiResponse = await fetch(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-3-flash-preview",
+            response_format: { type: "json_object" },
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: imageDataUrl } },
+                { type: "text", text: prompt },
+              ],
+            }],
+          }),
         },
-        body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: imageDataUrl } },
-              { type: "text", text: prompt },
-            ],
-          }],
-        }),
-      },
-    );
+      );
 
-    if (!geminiResponse.ok) {
-      console.error("film-preview-quality evaluator error", geminiResponse.status);
-      return json({ error: `Preview quality evaluator failed (${geminiResponse.status})` }, 502);
+      if (!geminiResponse.ok) {
+        console.error("film-preview-quality evaluator error", geminiResponse.status);
+        await geminiResponse.body?.cancel().catch(() => {});
+        return json({ error: `Preview quality evaluator failed (${geminiResponse.status})` }, 502);
+      }
+
+      const modelResponse = await readJsonLoose(geminiResponse, "film-preview-quality");
+      const raw = modelResponse?.choices?.[0]?.message?.content;
+      const evaluation = typeof raw === "string" ? parsePreviewShotQualityResponse(raw.trim()) : null;
+      if (evaluation) return json({ evaluation });
+      console.warn("film-preview-quality invalid evaluator output", {
+        attempt,
+        type: typeof raw,
+        length: typeof raw === "string" ? raw.length : 0,
+        finish: modelResponse?.choices?.[0]?.finish_reason ?? null,
+      });
     }
-
-    const modelResponse = await readJsonLoose(geminiResponse, "film-preview-quality");
-    const raw = modelResponse?.choices?.[0]?.message?.content;
-    const evaluation = typeof raw === "string" ? parsePreviewShotQualityResponse(raw.trim()) : null;
-    if (!evaluation) return json({ error: "Preview quality evaluator returned an invalid response" }, 502);
-
-    return json({ evaluation });
+    return json({ error: "Preview quality evaluator returned an invalid response" }, 502);
   } catch (error) {
     console.error("film-preview-quality unhandled", error instanceof Error ? error.message : "unknown error");
     return json({ error: "Internal error" }, 500);
