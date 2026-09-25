@@ -7284,8 +7284,8 @@ export default function DashboardPage() {
         ? toImageToVideoModel(selectedModel)
         : selectedModel
     if (continuityCharacterRef || activeProduct || hasPerSceneImages) setGenerationMode('image-to-video')
-    // Job ids created in this batch, returned so the caller can report each
-    // clip's terminal state. Final Film assembly remains a manual action.
+    // Job ids created in this batch, returned in scenario order so the approved
+    // Make Full Film path can assemble exactly this batch after quality review.
     const createdJobIds: string[] = []
     const queueScene = async (
       sourcePrompt: string,
@@ -7413,10 +7413,20 @@ export default function DashboardPage() {
             )
           }
         }
+        const startFrameIsStoryboardSheet = Boolean(
+          opts?.storyboard && i === 0 && startFrameUrl === opts.storyboard.sheetUrl,
+        )
         // Bake the pinned product into this scene's start frame so Wan reproduces
         // the exact product (it only conditions on the start frame). Skip when the
-        // start frame already IS the real product photo — no redraw needed.
-        if (sceneProduct && startFrameUrl && !startFrameIsProductPhoto && !startFrameIsContinuity) {
+        // frame is already the real product photo, a continuity handoff, or the
+        // exact approved storyboard sheet — those inputs must remain untouched.
+        if (
+          sceneProduct &&
+          startFrameUrl &&
+          !startFrameIsProductPhoto &&
+          !startFrameIsContinuity &&
+          !startFrameIsStoryboardSheet
+        ) {
           setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
           startFrameUrl = await bakeProductIntoFrame(startFrameUrl, sceneProduct, effectiveRatio)
         }
@@ -7756,9 +7766,8 @@ export default function DashboardPage() {
     return await stageImageIntoFramesBucket(dataUrl)
   }
 
-  // Step 3 (ONLY after the explicit Approve click) — seed one independent video
-  // job per approved scene and report the batch. Final Film assembly remains a
-  // separate manual action through the existing Final Film button.
+  // Step 3 (ONLY after the explicit Approve click) — render the approved shots,
+  // verify them, then assemble that exact ordered batch into one Final Film.
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
@@ -7892,24 +7901,22 @@ export default function DashboardPage() {
       }
 
       statusParts.push(`${qualityBatch.passedJobIds.length} passed action quality`)
-      setVideoColumnMessage(`${statusParts.join('; ')}. Use Final Film when you are ready to assemble them.`)
-      // Auto-open the full sequence ONLY when every expected card completed and
-      // every actual shot passed behavioral quality. Technical completion alone
-      // can never open or imply a quality-approved film.
+      // Assemble automatically only when every expected card completed and
+      // every actual shot passed behavioral quality. Use the settled jobs in
+      // scenario order so unrelated workspace clips can never enter the film.
       if (
         batch.failed.length === 0 &&
         batch.pending.length === 0 &&
         qualityBatch.allPassed
       ) {
-        const summary = summarizeAutoFilmBatch(createdJobIds, settled, new Set(batch.pending))
-        setLastMergedPreview(null)
-        setPreviewVideoId(null)
-        setPreviewDismissed(false)
-        dispatchAutoFilmPreview({
-          type: 'batch-settled',
-          batchId: summary.batchId,
-          clips: summary.completed,
-        })
+        const approvedJobs = createdJobIds
+          .map((jobId) => settled.get(jobId))
+          .filter((job): job is JobDetail => Boolean(job?.video?.storage_path))
+        if (approvedJobs.length !== createdJobIds.length) {
+          throw new Error('Could not assemble the film because an approved shot is missing its video file.')
+        }
+        setVideoColumnMessage(`${statusParts.join('; ')}. Assembling your Final Film…`)
+        await handleMergeAllVideos(approvedJobs)
       }
     } catch (err) {
       const rootError = err instanceof GlobalSceneBatchError ? err.cause : err
@@ -8372,7 +8379,7 @@ export default function DashboardPage() {
     musicWaveformRef.current?.playRange(musicRange[0], musicRange[1])
   }
 
-  async function handleMergeAllVideos() {
+  async function handleMergeAllVideos(approvedJobs?: readonly JobDetail[]) {
     if (isMerging) return
     // Capture snapshots before resume (resume's setState won't reflect synchronously).
     const videoSnapshotForMerge = selectedProjectId
@@ -8381,7 +8388,7 @@ export default function DashboardPage() {
     const imageSnapshotForMerge = selectedProjectId
       ? (projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? [])
       : []
-    resumeSelectedProject()
+    if (!approvedJobs) resumeSelectedProject()
 
     // Build the merge set strictly from the ACTIVE scope so clips/images
     // belonging to other drafts or finalized projects can never leak in.
@@ -8396,7 +8403,13 @@ export default function DashboardPage() {
     const liveImageById = new Map(userImages.map((i) => [i.id, i]))
     let imageList: UserImageItem[] = []
 
-    if (selectedProjectId) {
+    if (approvedJobs) {
+      for (const job of approvedJobs) {
+        if (normalizeStatus(job.status) === 'completed' && job.video?.storage_path) {
+          videoJobsById.set(job.id, job)
+        }
+      }
+    } else if (selectedProjectId) {
       for (const j of videoSnapshotForMerge) {
         const live = liveVideoById.get(j.id) ?? j
         if (normalizeStatus(live.status) === 'completed' && live.video?.storage_path) {
@@ -8438,11 +8451,13 @@ export default function DashboardPage() {
     ]
     // Apply the same ordering rule as displayedClips: manualOrder first,
     // then chronological ASC for anything not in the manual list.
-    const chronoAsc = [...baseClips].sort(
-      (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
-    )
+    const chronoAsc = approvedJobs
+      ? [...baseClips]
+      : [...baseClips].sort(
+          (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
+        )
     let eligibleClips: UnifiedClip[] = chronoAsc
-    if (manualOrder) {
+    if (!approvedJobs && manualOrder) {
       const byId = new Map(chronoAsc.map((c) => [c.id, c]))
       const ordered: UnifiedClip[] = []
       for (const id of manualOrder) {
@@ -10723,7 +10738,7 @@ export default function DashboardPage() {
       ) : (
         <button
           type="button"
-          onClick={handleMergeAllVideos}
+          onClick={() => { void handleMergeAllVideos() }}
           disabled={(Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
           className="flex h-9 items-center gap-1.5 rounded-md border border-action-emerald/40 bg-action-emerald/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-action-emerald transition hover:border-action-emerald-strong/60 hover:bg-action-emerald/[0.15] hover:text-action-emerald-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-emerald/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:bg-action-emerald/20 disabled:cursor-not-allowed disabled:border-action-emerald/15 disabled:bg-action-emerald/[0.03] disabled:text-action-emerald/45 disabled:opacity-100 disabled:hover:border-action-emerald/15 disabled:hover:bg-action-emerald/[0.03] disabled:hover:text-action-emerald/45"
           aria-label="Save cards as a final film"

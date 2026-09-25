@@ -15,16 +15,26 @@ function functionSource(name: string, nextName: string): string {
 }
 
 describe('Final Film flow contract', () => {
-  it('does not invoke Final Film merge after the approved scene batch', () => {
+  it('automatically assembles the exact approved scene batch after quality passes', () => {
     const approvedFilmFlow = functionSource('renderApprovedFilm', 'captureLastFrameAsBlob')
 
-    expect(approvedFilmFlow).not.toContain('handleMergeAllVideos')
-    expect(approvedFilmFlow).toContain('Use Final Film when you are ready to assemble them.')
+    expect(approvedFilmFlow).toContain('const approvedJobs = createdJobIds')
+    expect(approvedFilmFlow).toContain('await handleMergeAllVideos(approvedJobs)')
+    expect(approvedFilmFlow).toContain('qualityBatch.allPassed')
   })
 
   it('keeps the existing manual Final Film handler wired to its button', () => {
-    expect(dashboardSource).toContain('async function handleMergeAllVideos()')
-    expect(dashboardSource).toContain('onClick={handleMergeAllVideos}')
+    expect(dashboardSource).toContain('async function handleMergeAllVideos(approvedJobs?: readonly JobDetail[])')
+    expect(dashboardSource).toContain('onClick={() => { void handleMergeAllVideos() }}')
+  })
+
+  it('keeps automatic assembly isolated and ordered without redrawing the approved sheet', () => {
+    const mergeFlow = functionSource('handleMergeAllVideos', 'handleStartOver')
+
+    expect(mergeFlow).toContain('if (approvedJobs) {')
+    expect(mergeFlow).toContain('const chronoAsc = approvedJobs')
+    expect(mergeFlow).toContain('if (!approvedJobs && manualOrder)')
+    expect(dashboardSource).toContain('!startFrameIsStoryboardSheet')
   })
 
   it('chains 30s+ wizard cards while preserving independent short-film queueing', () => {
