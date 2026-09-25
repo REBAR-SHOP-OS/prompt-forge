@@ -64,8 +64,14 @@ export function buildPreviewShotQualityPrompt(input: PreviewShotQualityInput): s
 function criterion(value: unknown): PreviewShotCriterion | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
-  if (typeof item.passed !== "boolean" || typeof item.reason !== "string") return null;
-  return { passed: item.passed, reason: item.reason.trim() };
+  // Tolerate common model drift ("true"/"false" strings, missing reason)
+  // without ever turning an unknown verdict into a pass.
+  let passed: boolean;
+  if (typeof item.passed === "boolean") passed = item.passed;
+  else if (item.passed === "true" || item.passed === "false") passed = item.passed === "true";
+  else return null;
+  const reason = typeof item.reason === "string" ? item.reason.trim() : "";
+  return { passed, reason };
 }
 
 export function parsePreviewShotQualityResponse(raw: string): PreviewShotQualityEvaluation | null {
@@ -84,8 +90,9 @@ export function parsePreviewShotQualityResponse(raw: string): PreviewShotQuality
   const surroundingContinuity = criterion(parsed.surroundingContinuity);
   const plannedActionFaithfulness = criterion(parsed.plannedActionFaithfulness);
   if (!physicalPlausibility || !productRelevance || !surroundingContinuity || !plannedActionFaithfulness) return null;
+  if (parsed.contradiction === undefined) parsed.contradiction = null;
   if (parsed.contradiction !== null && typeof parsed.contradiction !== "string") return null;
-  if (typeof parsed.summary !== "string") return null;
+  const summaryText = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
 
   const contradiction = typeof parsed.contradiction === "string" && parsed.contradiction.trim()
     ? parsed.contradiction.trim()
@@ -103,7 +110,10 @@ export function parsePreviewShotQualityResponse(raw: string): PreviewShotQuality
     surroundingContinuity,
     plannedActionFaithfulness,
     contradiction,
-    summary: parsed.summary.trim(),
+    summary: summaryText ||
+      [physicalPlausibility, productRelevance, surroundingContinuity, plannedActionFaithfulness]
+        .filter((c) => !c.passed).map((c) => c.reason).filter(Boolean).join(" ") ||
+      (passed ? "Preview matches the plan." : "Preview did not match the plan."),
     passed,
   };
 }
