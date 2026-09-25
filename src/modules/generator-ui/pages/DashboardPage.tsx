@@ -8379,7 +8379,9 @@ export default function DashboardPage() {
     musicWaveformRef.current?.playRange(musicRange[0], musicRange[1])
   }
 
-  async function handleMergeAllVideos(approvedJobs?: readonly JobDetail[]) {
+  async function handleMergeAllVideos(): Promise<void>
+  async function handleMergeAllVideos(approvedJobs: readonly JobDetail[]): Promise<void>
+  async function handleMergeAllVideos(approvedJobs?: readonly JobDetail[]): Promise<void> {
     if (isMerging) return
     // Capture snapshots before resume (resume's setState won't reflect synchronously).
     const videoSnapshotForMerge = selectedProjectId

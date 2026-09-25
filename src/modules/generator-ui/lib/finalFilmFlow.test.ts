@@ -24,7 +24,8 @@ describe('Final Film flow contract', () => {
   })
 
   it('keeps the existing manual Final Film handler wired to its button', () => {
-    expect(dashboardSource).toContain('async function handleMergeAllVideos(approvedJobs?: readonly JobDetail[])')
+    expect(dashboardSource).toContain('async function handleMergeAllVideos(): Promise<void>')
+    expect(dashboardSource).toContain('async function handleMergeAllVideos(approvedJobs: readonly JobDetail[]): Promise<void>')
     expect(dashboardSource).toContain('onClick={() => { void handleMergeAllVideos() }}')
   })
 
