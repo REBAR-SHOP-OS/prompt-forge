@@ -256,6 +256,7 @@ import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl, parseStorageRef } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
+import { spliceRegeneratedCard } from '@/modules/generator-ui/lib/regenerationOrder'
 import {
   moveCoverBetweenScopes,
   moveCoverDurationBetweenScopes,
@@ -8214,13 +8215,12 @@ export default function DashboardPage() {
       })
       setPreviewVideoId((cur) => (cur === job.id ? seededJob.id : cur))
       setManualOrder((currentOrder) => {
-        if (!currentOrder) return null
-        const nextOrder = [...currentOrder]
-        const oldIdx = nextOrder.indexOf(job.id)
-        if (oldIdx >= 0) {
-          nextOrder.splice(oldIdx, 1, seededJob.id)
-        }
-        return nextOrder
+        return spliceRegeneratedCard(
+          currentOrder,
+          displayedClips.map((c) => c.id),
+          job.id,
+          seededJob.id
+        )
       })
       // Move the regenerating spinner from the old id to the new id so the
       // same slot keeps showing a loading state until polling resolves.
