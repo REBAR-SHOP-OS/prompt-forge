@@ -7196,6 +7196,7 @@ export default function DashboardPage() {
       suppressPreviewUntilBatchSettles?: boolean
       /** Explicit flag: true when the wizard produced plan-based 5s shots. */
       isPlanBased?: boolean
+      storyboardRevision?: number
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7417,6 +7418,7 @@ export default function DashboardPage() {
           referenceImageUrls,
           draftGroupId,
           narrationText,
+                    storyboardRevision: opts?.storyboardRevision,
         })
         const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
@@ -7748,6 +7750,7 @@ export default function DashboardPage() {
       isPlanBased?: boolean
       identity?: FilmIdentity
       creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string }
+      revision?: number
     },
   ): Promise<void> {
     if (isAutoFilming || isSubmitting || isMerging) return
@@ -7781,11 +7784,9 @@ export default function DashboardPage() {
       const createdJobIds = await submitScenesAsJobs(scenes, perSceneImageUrls[0], {
         perSceneImageUrls,
         aspect: options?.aspect,
-        // Convert the wizard's identity/creative into the fields submitScenesAsJobs
-        // consumes so the wizard's product/character/camera/theme actually reach
-        // every job (the wizard's selections win over the composer's pinned ones).
         durationSeconds: options?.duration,
         product: approvedProduct,
+                storyboardRevision: options?.revision,
         character: options?.identity?.characterUrl
           ? {
               id: 'wizard-character',
@@ -10849,7 +10850,7 @@ export default function DashboardPage() {
           generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
-          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
+          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true, revision: options.revision })
         }}
       />
 

@@ -5,6 +5,7 @@ import {
   buildPreviewShotQualityPrompt,
   parsePreviewShotQualityResponse,
 } from "../_shared/preview-shot-quality.ts";
+import { bytesToBase64, ImageTooLargeError, readBoundedBytes } from "./image.ts";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_CONTEXT_CHARS = 8_000;
@@ -42,14 +43,6 @@ export function isAllowedOwnedPreviewUrl(value: string, projectUrl: string, user
   }
 }
 
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...Array.from(bytes.subarray(offset, offset + chunkSize)));
-  }
-  return btoa(binary);
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -82,26 +75,38 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) return json({ error: "AI gateway not configured" }, 500);
 
+    // The timeout covers headers AND body so a stalled storage read cannot
+    // hold the worker; the body is read with a hard byte cap.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let imageResponse: Response;
+    let bytes: Uint8Array;
+    let mimeType: string;
     try {
-      imageResponse = await fetch(imageUrl, { signal: controller.signal });
+      const imageResponse = await fetch(imageUrl, { signal: controller.signal });
+      if (!imageResponse.ok) {
+        await imageResponse.body?.cancel().catch(() => {});
+        return json({ error: `Could not fetch preview image (${imageResponse.status})` }, 502);
+      }
+      const declaredBytes = Number(imageResponse.headers.get("content-length") ?? 0);
+      if (declaredBytes > MAX_IMAGE_BYTES) {
+        await imageResponse.body?.cancel().catch(() => {});
+        return json({ error: "Preview image is too large to evaluate" }, 413);
+      }
+      mimeType = imageResponse.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+      if (!mimeType.startsWith("image/")) {
+        await imageResponse.body?.cancel().catch(() => {});
+        return json({ error: "Preview URL did not return an image" }, 415);
+      }
+      bytes = await readBoundedBytes(imageResponse, MAX_IMAGE_BYTES);
     } catch (error) {
+      if (error instanceof ImageTooLargeError) return json({ error: error.message }, 413);
       const timedOut = error instanceof DOMException && error.name === "AbortError";
       return json({ error: timedOut ? "Preview image fetch timed out" : "Could not fetch preview image" }, 502);
     } finally {
       clearTimeout(timeout);
     }
-
-    if (!imageResponse.ok) return json({ error: `Could not fetch preview image (${imageResponse.status})` }, 502);
-    const declaredBytes = Number(imageResponse.headers.get("content-length") ?? 0);
-    if (declaredBytes > MAX_IMAGE_BYTES) return json({ error: "Preview image is too large to evaluate" }, 413);
-    const mimeType = imageResponse.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
-    if (!mimeType.startsWith("image/")) return json({ error: "Preview URL did not return an image" }, 415);
-    const bytes = new Uint8Array(await imageResponse.arrayBuffer());
-    if (bytes.byteLength > MAX_IMAGE_BYTES) return json({ error: "Preview image is too large to evaluate" }, 413);
-    const imageDataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
+    if (bytes.byteLength === 0) return json({ error: "Preview image was empty" }, 502);
+    const imageDataUrl = `data:${mimeType};base64,${bytesToBase64(bytes)}`;
 
     const prompt = buildPreviewShotQualityPrompt({
       shotIndex,
@@ -112,38 +117,50 @@ Deno.serve(async (req) => {
       nextPlannedAction: nextPlannedAction || undefined,
       productName: productName || undefined,
     });
-    const geminiResponse = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+    // A malformed/empty model answer is re-asked once (bounded), then fails
+    // closed with 502. Gateway HTTP errors are never retried here.
+    const MAX_EVALUATOR_ATTEMPTS = 2;
+    for (let attempt = 1; attempt <= MAX_EVALUATOR_ATTEMPTS; attempt++) {
+      const geminiResponse = await fetch(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-3-flash-preview",
+            response_format: { type: "json_object" },
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: imageDataUrl } },
+                { type: "text", text: prompt },
+              ],
+            }],
+          }),
         },
-        body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: imageDataUrl } },
-              { type: "text", text: prompt },
-            ],
-          }],
-        }),
-      },
-    );
+      );
 
-    if (!geminiResponse.ok) {
-      console.error("film-preview-quality evaluator error", geminiResponse.status);
-      return json({ error: `Preview quality evaluator failed (${geminiResponse.status})` }, 502);
+      if (!geminiResponse.ok) {
+        console.error("film-preview-quality evaluator error", geminiResponse.status);
+        await geminiResponse.body?.cancel().catch(() => {});
+        return json({ error: `Preview quality evaluator failed (${geminiResponse.status})` }, 502);
+      }
+
+      const modelResponse = await readJsonLoose(geminiResponse, "film-preview-quality");
+      const raw = modelResponse?.choices?.[0]?.message?.content;
+      const evaluation = typeof raw === "string" ? parsePreviewShotQualityResponse(raw.trim()) : null;
+      if (evaluation) return json({ evaluation });
+      console.warn("film-preview-quality invalid evaluator output", {
+        attempt,
+        type: typeof raw,
+        length: typeof raw === "string" ? raw.length : 0,
+        finish: modelResponse?.choices?.[0]?.finish_reason ?? null,
+      });
     }
-
-    const modelResponse = await readJsonLoose(geminiResponse, "film-preview-quality");
-    const raw = modelResponse?.choices?.[0]?.message?.content;
-    const evaluation = typeof raw === "string" ? parsePreviewShotQualityResponse(raw.trim()) : null;
-    if (!evaluation) return json({ error: "Preview quality evaluator returned an invalid response" }, 502);
-
-    return json({ evaluation });
+    return json({ error: "Preview quality evaluator returned an invalid response" }, 502);
   } catch (error) {
     console.error("film-preview-quality unhandled", error instanceof Error ? error.message : "unknown error");
     return json({ error: "Internal error" }, 500);
