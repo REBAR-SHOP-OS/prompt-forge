@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -251,6 +251,79 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      generator_ai_image_daily_usage: {
+        Row: {
+          reserved_provider_calls: number
+          updated_at: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          reserved_provider_calls?: number
+          updated_at?: string
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          reserved_provider_calls?: number
+          updated_at?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generator_ai_image_daily_usage_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      generator_ai_image_requests: {
+        Row: {
+          consumed_provider_calls: number
+          created_at: string
+          credit_cost: number
+          id: string
+          reserved_provider_calls: number
+          settled_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          consumed_provider_calls?: number
+          created_at?: string
+          credit_cost: number
+          id: string
+          reserved_provider_calls: number
+          settled_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          consumed_provider_calls?: number
+          created_at?: string
+          credit_cost?: number
+          id?: string
+          reserved_provider_calls?: number
+          settled_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generator_ai_image_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       generator_business_profiles: {
         Row: {
@@ -550,6 +623,48 @@ export type Database = {
         }
         Relationships: []
       }
+      generator_scenario_history: {
+        Row: {
+          created_at: string
+          fingerprint: Json
+          id: string
+          scenario_text: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          fingerprint: Json
+          id?: string
+          scenario_text: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          fingerprint?: Json
+          id?: string
+          scenario_text?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      generator_scenario_reservation: {
+        Row: {
+          lease_until: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          lease_until: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          lease_until?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generator_user_audio: {
         Row: {
           created_at: string
@@ -703,6 +818,35 @@ export type Database = {
           },
         ]
       }
+      generator_video_transcript_daily_usage: {
+        Row: {
+          request_count: number
+          updated_at: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          request_count?: number
+          updated_at?: string
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          request_count?: number
+          updated_at?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generator_video_transcript_daily_usage_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mp4_export_jobs: {
         Row: {
           created_at: string
@@ -836,11 +980,38 @@ export type Database = {
         Args: { _daily: number; _monthly: number; _user_id: string }
         Returns: undefined
       }
+      claim_ai_image_request: {
+        Args: {
+          _credit_cost?: number
+          _daily_provider_call_limit?: number
+          _request_id: string
+          _reserved_provider_calls?: number
+          _user_id: string
+        }
+        Returns: string
+      }
+      claim_video_transcript_quota: {
+        Args: { _daily_limit?: number; _user_id: string }
+        Returns: boolean
+      }
       fail_stale_exports: { Args: never; Returns: number }
+      generator_acquire_scenario_lease: {
+        Args: { _ttl_seconds?: number; _user_id: string }
+        Returns: string
+      }
       generator_claim_provider_start: {
         Args: {
           _job_id: string
           _stale_after_seconds?: number
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      generator_claim_veo_extension: {
+        Args: {
+          _claimed_provider_job_id: string
+          _expected_provider_job_id: string
+          _job_id: string
           _user_id: string
         }
         Returns: boolean
@@ -894,6 +1065,10 @@ export type Database = {
         Args: { _job_id: string; _reason: string; _user_id: string }
         Returns: undefined
       }
+      generator_release_scenario_lease: {
+        Args: { _token: string; _user_id: string }
+        Returns: undefined
+      }
       generator_set_draft_group: {
         Args: {
           _group_id: string
@@ -902,6 +1077,16 @@ export type Database = {
           _user_id: string
         }
         Returns: undefined
+      }
+      generator_settle_veo_extension: {
+        Args: {
+          _claimed_provider_job_id: string
+          _job_id: string
+          _last_error?: string
+          _next_provider_job_id: string
+          _user_id: string
+        }
+        Returns: boolean
       }
       generator_start_job: {
         Args: {
@@ -938,6 +1123,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_shared_library_object: { Args: { _name: string }; Returns: boolean }
+      settle_ai_image_request: {
+        Args: {
+          _consumed_provider_calls: number
+          _request_id: string
+          _succeeded: boolean
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "user" | "admin"
@@ -964,12 +1159,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -993,11 +1188,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1018,11 +1213,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1043,11 +1238,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1060,11 +1255,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
