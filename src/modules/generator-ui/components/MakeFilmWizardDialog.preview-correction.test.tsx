@@ -178,4 +178,19 @@ describe('Make Full Film Step 3 independent preview quality retries', () => {
     expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
     expect(screen.getAllByRole('button', { name: /Regenerate$/ }).length).toBeGreaterThan(0)
   })
+
+  it('keeps the generated image and stays usable when the evaluator function fails at runtime', async () => {
+    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: { shotIndex?: number } }) => {
+      if (functionName !== 'film-preview-quality') return { data: null, error: null }
+      if (options?.body?.shotIndex === 3) return { data: null, error: new Error('Edge function returned 546: RUNTIME_ERROR') }
+      return { data: { evaluation: evaluation(true) }, error: null }
+    })
+    renderWizard()
+    await reachPreviewGeneration()
+
+    await waitFor(() => expect(screen.getAllByAltText(/Preview for scene/)).toHaveLength(6))
+    expect(generateSceneImage.mock.calls.filter((call) => call[0] === SIX_PLANS[3])).toHaveLength(1)
+    expect(screen.getByAltText('Preview for scene 4')).toHaveAttribute('src', 'data:image/png;base64,SCENE')
+    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
+  })
 })
