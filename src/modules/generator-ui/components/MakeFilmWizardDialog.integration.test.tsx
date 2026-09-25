@@ -975,6 +975,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
       { id: 'side', title: 'Side view', image_type: null, storage_path: 'user-1/products/folder-7/side.png' },
     ])
     mockStorage.from.mockImplementation(() => ({
+      upload: vi.fn(async () => ({ data: { path: 'user-1/storyboards/test-r1.jpg' }, error: null })),
       createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
     }))
     renderWizard()
@@ -1002,6 +1003,7 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
       { id: 'legacy', title: 'Legacy Mesh', image_type: null, storage_path: 'user-1/legacy.png' },
     ])
     mockStorage.from.mockImplementation(() => ({
+      upload: vi.fn(async () => ({ data: { path: 'user-1/storyboards/test-r1.jpg' }, error: null })),
       createSignedUrl: vi.fn(async (path: string) => ({ data: { signedUrl: `https://signed/${path.split('/').pop()}` }, error: null })),
     }))
     renderWizard()
