@@ -16,7 +16,9 @@ describe("film-preview-quality endpoint safeguards", () => {
     expect(source).toContain("MAX_IMAGE_BYTES = 10 * 1024 * 1024");
     expect(source).toContain("FETCH_TIMEOUT_MS = 30_000");
     expect(source).toContain('mimeType.startsWith("image/")');
-    expect(source).toContain("imageDataUrl = `data:${mimeType};base64,${toBase64(bytes)}`");
+    expect(source).toContain("imageDataUrl = `data:${mimeType};base64,${bytesToBase64(bytes)}`");
+    expect(source).toContain("readBoundedBytes(imageResponse, MAX_IMAGE_BYTES)");
+    expect(source).not.toContain("Array.from(");
     expect(source).toContain('"https://ai.gateway.lovable.dev/v1/chat/completions"');
     expect(source).toContain('"google/gemini-3-flash-preview"');
   });
