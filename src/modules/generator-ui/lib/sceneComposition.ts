@@ -86,12 +86,13 @@ export function buildSceneCompositionPrompt(input: SceneCompositionInput): strin
     'Compose a single photorealistic scene image only for the character-product interaction explicitly described by the user-approved scene below.',
     `The scene and its events are: ${sceneText.trim()}`,
     `Keep the character's face, hair, wardrobe and body identical to image ${characterImageIndex}, and keep the product's exact shape, colors and label from ${productImageLabel}.`,
+    `If the character is a robot, mascot, creature, or stylized figure, preserve its exact head/face geometry, silhouette, proportions, materials, colors, markings, clothing, and accessories — never replace it with a merely similar design.`,
     'Show only the exact interaction stated in the scene. Do not invent holding, touching, presenting, leaning, attachment, or contact. Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects.',
   ]
 
   if (input.characterSheet) {
     lines.push(
-      `The character reference (image ${characterImageIndex}) is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) — never substitute a different person.`,
+      `The character reference (image ${characterImageIndex}) is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME identity. Preserve that exact character design from the sheet — never redesign, recolor, or substitute a different or merely similar character.`,
     )
   }
   if (input.cameraStyle) {

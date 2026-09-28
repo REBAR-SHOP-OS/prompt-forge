@@ -684,6 +684,21 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     expect(c[6]).toBe(true)
   })
 
+  it('opens a complete storyboard overview from the Step 3 icon', async () => {
+    renderWizard()
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
+
+    fireEvent.click(screen.getByRole('button', { name: 'View storyboard' }))
+
+    expect(await screen.findByRole('heading', { name: 'Storyboard' })).toBeInTheDocument()
+    expect(screen.getAllByAltText(/Storyboard shot \d+/)).toHaveLength(6)
+  })
+
   it('keeps the previous image when Regenerate fails identity validation', async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
