@@ -7739,8 +7739,9 @@ export default function DashboardPage() {
       imagePrompt += `\n\nREFERENCE PRODUCT image: ${productUrlList[0]}\nThis product MUST appear prominently in this scene.`
     } else if (characterUrl) {
       imagePrompt += `\n\nREFERENCE CHARACTER image: ${characterUrl}\nThis character MUST appear prominently in this scene.`
+      imagePrompt += `\nPreserve the exact character identity and design from the reference: face/head geometry, silhouette, proportions, materials, colors, markings, wardrobe, and accessories. A merely similar human, creature, mascot, android, or robot is not acceptable.`
       if (characterSheet) {
-        imagePrompt += `\nThe character reference is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) — never substitute a different person.`
+        imagePrompt += `\nThe character reference is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME identity. Preserve that exact design — never redesign, recolor, or substitute a different or merely similar character.`
       }
     }
     // The wizard's "clean images" toggle: the model only avoids lettering when

@@ -72,7 +72,7 @@ describe('buildSceneCompositionPrompt', () => {
       characterSheet: true,
     })
     expect(out).toContain('MULTI-VIEW CHARACTER SHEET')
-    expect(out).toContain('never substitute a different person')
+    expect(out).toContain('never redesign, recolor, or substitute a different or merely similar character')
   })
 
   it('does not add the character-sheet note for a plain character', () => {
@@ -107,6 +107,8 @@ describe('buildSceneCompositionPrompt', () => {
     expect(out).toContain('Images 1-3 are different angles of the SAME PRODUCT. Image 4 is the on-screen CHARACTER / presenter.')
     expect(out).toContain('identical to image 4')
     expect(out).toContain('from images 1-3')
+    expect(out).toContain('robot, mascot, creature, or stylized figure')
+    expect(out).toContain('never replace it with a merely similar design')
   })
 })
 

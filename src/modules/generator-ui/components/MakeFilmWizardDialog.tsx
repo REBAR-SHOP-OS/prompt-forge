@@ -26,6 +26,7 @@ import {
   HardHat,
   Scale,
   Award,
+  PanelsTopLeft,
 } from 'lucide-react'
 import {
   Dialog,
@@ -257,6 +258,7 @@ export function MakeFilmWizardDialog({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
+  const [storyboardOverviewOpen, setStoryboardOverviewOpen] = useState(false)
   const [editImageIndex, setEditImageIndex] = useState<number | null>(null)
   const [scenarioReviewOpen, setScenarioReviewOpen] = useState(false)
   const [reviewLang, setReviewLang] = useState('en')
@@ -310,6 +312,7 @@ export function MakeFilmWizardDialog({
       setCharacterPickerOpen(false)
       setCharacterSheetSource(null)
       setLightboxOpen(false)
+      setStoryboardOverviewOpen(false)
       setEditImageIndex(null)
     }
     if (!open) {
@@ -1626,9 +1629,22 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             {/* Step 3 — review preview images with zoom. */}
             {step === 'images' && (
               <div className="space-y-3">
-                <p className="text-sm text-foreground/80">
-                  One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-foreground/80">
+                    One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label="View storyboard"
+                    onClick={() => setStoryboardOverviewOpen(true)}
+                    className="gap-1.5 border-fuchsia-300/30 text-fuchsia-100 hover:bg-fuchsia-500/10"
+                  >
+                    <PanelsTopLeft className="h-4 w-4" aria-hidden="true" />
+                    Storyboard
+                  </Button>
+                </div>
                 <StoryboardSheet
                   plans={plans}
                   images={images}
@@ -1946,6 +1962,45 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         initialImageUrl={editImageIndex === null ? null : safeMediaUrl(images[editImageIndex])}
         onSaved={handleEditedImageSaved}
       />
+
+      <Dialog open={storyboardOverviewOpen} onOpenChange={setStoryboardOverviewOpen}>
+        <DialogContent className="max-w-6xl border-border bg-card text-foreground">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <PanelsTopLeft className="h-4 w-4 text-fuchsia-300" aria-hidden="true" />
+              Storyboard
+            </DialogTitle>
+            <DialogDescription>
+              Review the complete approved shot order at a glance. Close this view to edit or regenerate a shot.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid max-h-[72vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+            {plans.map((plan, index) => {
+              const url = safeMediaUrl(images[index])
+              return (
+                <figure key={index} className="overflow-hidden rounded-md border border-border bg-accent/20">
+                  <div
+                    className="grid w-full place-items-center bg-surface-2/60"
+                    style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
+                  >
+                    {url ? (
+                      <img src={url} alt={`Storyboard shot ${index + 1}`} className="h-full w-full object-contain" />
+                    ) : (
+                      <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
+                    )}
+                  </div>
+                  <figcaption className="space-y-1 p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
+                      Shot {index + 1}
+                    </div>
+                    <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{plan.scenarioText}</p>
+                  </figcaption>
+                </figure>
+              )
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Lightbox for zoom */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>

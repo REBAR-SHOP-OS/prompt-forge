@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildIdentityEvalPrompt,
   MAX_REFERENCE_IMAGES,
   selectEvaluatedSpecs,
   validateReferenceSpecs,
@@ -109,5 +110,18 @@ describe('selectEvaluatedSpecs reaches the generation request as one identity', 
 
   it('returns an empty array for an empty input', () => {
     expect(selectEvaluatedSpecs([])).toEqual([])
+  })
+})
+
+describe('buildIdentityEvalPrompt character consistency', () => {
+  it('rejects merely similar robot or stylized character designs', () => {
+    const prompt = buildIdentityEvalPrompt([
+      { url: 'https://x/robot-sheet.png', role: 'character', characterSheet: true },
+    ])
+
+    expect(prompt).toContain('android, or robot')
+    expect(prompt).toContain('face/head geometry')
+    expect(prompt).toContain('merely similar character is a mismatch')
+    expect(prompt).toContain('redesigned, recolored')
   })
 })

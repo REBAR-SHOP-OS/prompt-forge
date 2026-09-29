@@ -170,11 +170,12 @@ describe('buildIdentityEvalPrompt', () => {
     ])
     // The per-reference note is added only for a character sheet.
     expect(prompt).toContain('REF_1 (CHARACTER): the image labelled "REF_1" (a multi-view character sheet: every view shows the SAME one person)')
-    // The general instruction tells the evaluator a sheet is one identity and
-    // that a different person must be rejected.
+    // The general instruction treats the sheet as one identity and rejects a
+    // redesigned or merely similar human, robot, mascot, or stylized character.
     expect(prompt).toContain('MULTI-VIEW CHARACTER SHEET')
     expect(prompt).toContain('every view is the same person')
-    expect(prompt).toContain('A different person — even a real-looking woman or man — is NOT a match')
+    expect(prompt).toContain('SAME exact design shown across the sheet')
+    expect(prompt).toContain('redesigned, recolored, or only generically similar')
   })
 
   it('does not add the per-reference sheet note for a plain character reference', () => {

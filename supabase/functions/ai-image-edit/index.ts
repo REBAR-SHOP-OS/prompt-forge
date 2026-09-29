@@ -182,11 +182,14 @@ Deno.serve(async (req) => {
           { type: "text", text: multiRefText },
           ...(identitySpecs.length > 0 ? inlinedUrls.flatMap((url, i) => {
             const spec = generationSpecs[i];
+            const characterNote = spec.role === "character"
+              ? " Preserve the exact character identity and design: face/head geometry, silhouette, proportions, materials, colors, markings, wardrobe, and accessories. A merely similar character is not acceptable."
+              : "";
             const sheetNote = spec.role === "character" && spec.characterSheet
-              ? " This is a MULTI-VIEW CHARACTER SHEET of one person; preserve that exact person."
+              ? " This is a MULTI-VIEW CHARACTER SHEET of one identity; preserve the exact character design, including face/head geometry, silhouette, proportions, materials, colors, markings, wardrobe, and accessories. Do not redesign, recolor, or substitute a merely similar character."
               : "";
             return [
-              { type: "text", text: `REFERENCE ${i + 1} ROLE: ${spec.role.toUpperCase()}.${sheetNote}` },
+              { type: "text", text: `REFERENCE ${i + 1} ROLE: ${spec.role.toUpperCase()}.${characterNote}${sheetNote}` },
               { type: "image_url", image_url: { url } },
             ];
           }) : inlinedUrls.map((url) => ({ type: "image_url", image_url: { url } }))),

@@ -212,12 +212,15 @@ Deno.serve(async (req) => {
     const resolveRef = createReferenceResolver(resolveImageForGateway);
     const userContent: unknown[] = [{ type: "text", text: fullPrompt }];
     for (const spec of safeReferenceUrls) {
+      const characterNote = spec.role === "character"
+        ? " Preserve the exact character identity and design: face/head geometry, silhouette, proportions, materials, colors, markings, wardrobe, and accessories. A merely similar character is not acceptable."
+        : "";
       const sheetNote = spec.role === "character" && spec.characterSheet
-        ? " This is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) in the output — do NOT substitute a different person."
+        ? " This is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME identity. Preserve that exact character design in the output — including face/head geometry, silhouette, proportions, materials, colors, markings, wardrobe, and accessories. Do NOT redesign, recolor, or substitute a merely similar human, creature, mascot, android, or robot."
         : "";
       userContent.push({
         type: "text",
-        text: `${spec.role.toUpperCase()} reference image (preserve this exact ${spec.role} in the output):${sheetNote}`,
+        text: `${spec.role.toUpperCase()} reference image (preserve this exact ${spec.role} in the output):${characterNote}${sheetNote}`,
       });
       const resolved = await resolveRef(spec.url);
       userContent.push({ type: "image_url", image_url: { url: resolved } });
