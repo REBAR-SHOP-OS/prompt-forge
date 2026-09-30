@@ -34,7 +34,7 @@ describe('Final Film flow contract', () => {
 
     expect(mergeFlow).toContain('if (approvedJobs) {')
     expect(mergeFlow).toContain('const chronoAsc = approvedJobs')
-    expect(mergeFlow).toContain('if (!approvedJobs && manualOrder)')
+    expect(mergeFlow).toContain('if (!approvedJobs && effectiveManualOrder)')
     expect(dashboardSource).toContain('!startFrameIsStoryboardSheet')
   })
 
