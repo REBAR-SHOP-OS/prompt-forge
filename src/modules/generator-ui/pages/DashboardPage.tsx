@@ -7777,6 +7777,7 @@ export default function DashboardPage() {
       aspect?: FilmAspect
       withNarration?: boolean
       isPlanBased?: boolean
+      scenarioText?: string
       identity?: FilmIdentity
       creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string }
       storyboard?: ApprovedStoryboardSnapshot
@@ -7806,7 +7807,31 @@ export default function DashboardPage() {
           }
         : null
       if (approvedProduct) assignProductToCurrentProject(approvedProduct)
-      // One video job per scene, each seeded by its approved image, rendered at
+
+      // Keep the approved full scenario in the composer and expose the one
+      // storyboard sheet as its Start reference while the render runs.
+      const approvedScenario = options?.scenarioText?.trim() || scenes.join('\n\n')
+      setPromptText(approvedScenario)
+      if (options?.storyboard?.sheetUrl) {
+        setGenerationMode('image-to-video')
+        setUploadTarget('Start')
+        setUploadedFiles((current) => [
+          ...current.filter((file) => file.target !== 'Start'),
+          {
+            id: Date.now(),
+            name: `storyboard-r${options.storyboard?.revision ?? 1}.jpg`,
+            size: 0,
+            target: 'Start',
+            type: 'image/jpeg',
+            status: 'ready',
+            url: options.storyboard.sheetUrl,
+            error: null,
+          },
+        ])
+      }
+
+      // One video job per scene, seeded from the approved storyboard and then
+      // chained through completed last frames at the wizard-selected aspect.
       // the aspect the wizard chose (falls back to the composer's ratio). The
       // wizard's product/character identity is carried through so every job
       // anchors the same subject the user picked in the wizard.
@@ -7836,8 +7861,9 @@ export default function DashboardPage() {
         setVideoColumnMessage(`No clips finished. ${queueFailedCount} failed to queue; 0 pending.`)
         return
       }
-      // Clear the composer prompt like the existing auto-split path does.
-      setPromptText('')
+      // Non-wizard callers keep the legacy clear-after-queue behavior. The
+      // approved wizard scenario remains visible beside its Start storyboard.
+      if (!options?.storyboard) setPromptText('')
 
       // Wait for queued clips with a bounded poll. Completed cards are kept
       // even when another clip fails or remains pending at the deadline.
