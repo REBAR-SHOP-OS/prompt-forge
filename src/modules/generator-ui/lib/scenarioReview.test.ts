@@ -5,6 +5,9 @@ import {
   englishFilmType,
   stripMarkdown,
   buildUnifiedScenario,
+  buildContinuousScenario,
+  redistributeContinuousScenario,
+  buildStoryboardPrompt,
   chunkScenario,
   hasNonLatin,
 } from './scenarioReview'
@@ -76,6 +79,42 @@ describe('buildUnifiedScenario', () => {
     expect(out).toContain('Visuals: first shot')
     expect(out).toContain('Narration: "hello"')
     expect(out).not.toContain('**')
+  })
+})
+
+describe('continuous film scenario', () => {
+  const plans = [
+    plan('**Opening:** product enters frame', 0),
+    plan('Middle action demonstrates the product', 1),
+    plan('Final reveal and call to action', 2),
+  ]
+
+  it('shows one scenario without visible shot boundaries', () => {
+    const scenario = buildContinuousScenario(plans)
+    expect(scenario).toContain('Opening: product enters frame')
+    expect(scenario).toContain('Final reveal and call to action')
+    expect(scenario).not.toContain('SHOT')
+  })
+
+  it('keeps edited paragraphs aligned with hidden timing plans', () => {
+    const redistributed = redistributeContinuousScenario(
+      'New opening.\n\nNew middle.\n\nNew ending.',
+      plans,
+    )
+    expect(redistributed.map((item) => item.scenarioText)).toEqual([
+      'New opening.',
+      'New middle.',
+      'New ending.',
+    ])
+  })
+
+  it('requests one ordered, text-free storyboard contact sheet', () => {
+    const prompt = buildStoryboardPrompt(buildContinuousScenario(plans), plans, 15)
+    expect(prompt).toContain('Create ONE cinematic storyboard contact sheet')
+    expect(prompt).toContain('exactly 3 equal-sized visual panels')
+    expect(prompt).toContain('PANEL 1:')
+    expect(prompt).toContain('PANEL 3:')
+    expect(prompt).toContain('no written captions')
   })
 })
 
