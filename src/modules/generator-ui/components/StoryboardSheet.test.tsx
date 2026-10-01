@@ -25,6 +25,24 @@ describe('StoryboardSheet', () => {
     expect(screen.getByText('Shot 2')).toBeTruthy()
   })
 
+  it('renders one full-film storyboard card for a single generated sheet', () => {
+    render(<StoryboardSheet
+      plans={plans}
+      images={['storyboard.png']}
+      regenIndex={null}
+      onRegenerate={vi.fn()}
+      onEdit={vi.fn()}
+      onZoom={vi.fn()}
+      working={false}
+      aspect="16:9"
+    />)
+
+    expect(screen.getByText('Full film storyboard')).toBeTruthy()
+    expect(screen.getByAltText('Full film storyboard')).toHaveAttribute('src', 'storyboard.png')
+    expect(screen.queryByText('Shot 1')).toBeNull()
+    expect(screen.queryByText('Shot 2')).toBeNull()
+  })
+
   it('calls onRegenerate for a specific panel', async () => {
     const onRegenerate = vi.fn()
 
