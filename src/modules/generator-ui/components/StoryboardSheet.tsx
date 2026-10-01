@@ -25,6 +25,82 @@ export function StoryboardSheet({
   working,
   aspect,
 }: StoryboardSheetProps) {
+  if (images.length <= 1) {
+    const url = safeMediaUrl(images[0])
+    const isRegen = regenIndex === 0
+    const scenario = plans.map((plan) => plan.scenarioText).join('\n\n')
+    return (
+      <div className="mx-auto w-full max-w-4xl space-y-2 rounded-md border border-border bg-accent/20 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
+            Full film storyboard
+          </div>
+          <div className="flex items-center gap-1">
+            {url && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={working}
+                aria-label="Edit storyboard image"
+                title="Edit storyboard image"
+                onClick={() => onEdit(0)}
+                className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                Edit
+              </Button>
+            )}
+            {url && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onZoom(url, scenario)}
+                className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
+              >
+                <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" />
+                Zoom
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={working}
+              onClick={() => onRegenerate(0)}
+              className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
+            >
+              {isRegen ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              Regenerate
+            </Button>
+          </div>
+        </div>
+        <div
+          className="grid w-full cursor-pointer place-items-center overflow-hidden rounded bg-surface-2/60"
+          style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
+          onClick={() => url && onZoom(url, scenario)}
+        >
+          {isRegen ? (
+            <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+          ) : url ? (
+            <img src={url} alt="Full film storyboard" className="h-full w-full object-contain" />
+          ) : (
+            <div className="flex flex-col items-center gap-1 text-muted-foreground">
+              <ImageIcon className="h-6 w-6" aria-hidden="true" />
+              <span className="text-[11px]">No storyboard - regenerate</span>
+            </div>
+          )}
+        </div>
+        <p className="line-clamp-3 text-[11px] leading-4 text-muted-foreground">{scenario}</p>
+      </div>
+    )
+  }
+
   return (
     <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]">
       {plans.map((plan, i) => {
