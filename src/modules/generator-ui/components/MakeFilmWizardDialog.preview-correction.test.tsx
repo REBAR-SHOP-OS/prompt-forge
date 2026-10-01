@@ -1,13 +1,15 @@
-import { beforeEach, describe, expect, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import MakeFilmWizardDialog from './MakeFilmWizardDialog'
 
-const { mockFrom, mockInvoke, mockStorage } = vi.hoisted(() => ({
+const { mockFrom, mockStorage } = vi.hoisted(() => ({
   mockFrom: vi.fn(),
-  mockInvoke: vi.fn(),
   mockStorage: {
     from: vi.fn(() => ({
-      createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/product.png' }, error: null })),
+      createSignedUrl: vi.fn(async () => ({
+        data: { signedUrl: 'https://signed/product.png' },
+        error: null,
+      })),
     })),
   },
 }))
@@ -16,12 +18,9 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (...args: unknown[]) => mockFrom(...args),
     storage: mockStorage,
-    functions: { invoke: (...args: unknown[]) => mockInvoke(...args) },
+    functions: { invoke: vi.fn(async () => ({ data: null, error: null })) },
   },
 }))
-
-const generateSceneImage = vi.fn(async (..._args: unknown[]) => 'data:image/png;base64,SCENE')
-const onApprove = vi.fn()
 
 const SIX_PLANS = [
   'Opening shot with product front and center.',
@@ -31,21 +30,10 @@ const SIX_PLANS = [
   'Character interaction with product.',
   'Final call-to-action with product logo.',
 ]
-const writeScenario = vi.fn(async () => SIX_PLANS)
-const FAILURE_REASON = 'The hands float away from the stirrup and gravity is impossible.'
 
-function evaluation(passed: boolean) {
-  const ok = { passed: true, reason: 'Looks correct.' }
-  return {
-    physicalPlausibility: passed ? ok : { passed: false, reason: FAILURE_REASON },
-    productRelevance: ok,
-    surroundingContinuity: ok,
-    plannedActionFaithfulness: ok,
-    contradiction: null,
-    summary: passed ? 'Preview matches the plan.' : FAILURE_REASON,
-    passed,
-  }
-}
+const writeScenario = vi.fn(async () => SIX_PLANS)
+const generateSceneImage = vi.fn(async () => 'data:image/png;base64,STORYBOARD')
+const onApprove = vi.fn()
 
 function mockProductRows() {
   mockFrom.mockImplementation((table: string) => {
@@ -92,105 +80,89 @@ function renderWizard() {
   )
 }
 
-async function reachPreviewGeneration() {
+async function reachScenario() {
   fireEvent.click(screen.getByText('Choose product'))
   await waitFor(() => expect(screen.getByText('Test product')).toBeInTheDocument())
   fireEvent.click(screen.getByText('Test product'))
-  fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
-  fireEvent.click(screen.getByText('Write scenario'))
-  await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
-  fireEvent.click(screen.getByText('Generate preview images'))
-}
-
-function setEvaluator(
-  decide: (shotIndex: number, attempt: number) => boolean,
-) {
-  const attempts = new Map<number, number>()
-  mockInvoke.mockImplementation(async (functionName: string, options?: { body?: { shotIndex?: number } }) => {
-    if (functionName !== 'film-preview-quality') return { data: null, error: null }
-    const shotIndex = options?.body?.shotIndex ?? -1
-    const attempt = (attempts.get(shotIndex) ?? 0) + 1
-    attempts.set(shotIndex, attempt)
-    return { data: { evaluation: evaluation(decide(shotIndex, attempt)) }, error: null }
+  fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), {
+    target: { value: 'A film' },
   })
+  fireEvent.click(screen.getByText('Write scenario'))
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Full film scenario' })).toBeInTheDocument())
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  generateSceneImage.mockResolvedValue('data:image/png;base64,SCENE')
   writeScenario.mockResolvedValue(SIX_PLANS)
+  generateSceneImage.mockResolvedValue('data:image/png;base64,STORYBOARD')
   mockProductRows()
-  setEvaluator(() => true)
 })
 
-describe('Make Full Film Step 3 independent preview quality retries', () => {
-  it('accepts six valid independent shots without batch rejection and generates each once', async () => {
+describe('Make Full Film unified scenario and storyboard', () => {
+  it('shows one editable scenario and generates exactly one storyboard image', async () => {
     renderWizard()
-    await reachPreviewGeneration()
+    await reachScenario()
 
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
-    await waitFor(() => expect(screen.getAllByAltText(/Preview for scene/)).toHaveLength(6))
+    const scenario = screen.getByRole('textbox', { name: 'Full film scenario' })
+    expect(scenario).toHaveValue(expect.stringContaining('Opening shot'))
+    expect(screen.queryByText(/Shot 1/)).not.toBeInTheDocument()
 
-    for (const plan of SIX_PLANS) {
-      const calls = generateSceneImage.mock.calls.filter((call) => call[0] === plan)
-      expect(calls).toHaveLength(1)
-      expect(calls[0][7]).toBeUndefined()
-    }
+    fireEvent.click(screen.getByRole('button', { name: /Generate storyboard/ }))
+
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(1))
+    const imagePrompt = generateSceneImage.mock.calls[0][0]
+    expect(imagePrompt).toContain('Create ONE cinematic storyboard contact sheet')
+    expect(imagePrompt).toContain('exactly 6 equal-sized visual panels')
+    expect(imagePrompt).toContain('PANEL 1:')
+    expect(imagePrompt).toContain('PANEL 6:')
+    expect(screen.getByAltText('Full film storyboard')).toHaveAttribute(
+      'src',
+      'data:image/png;base64,STORYBOARD',
+    )
   })
 
-  it('retries only one invalid shot, preserves valid neighbors, and forwards the reviewer correction separately', async () => {
-    setEvaluator((shotIndex, attempt) => shotIndex !== 2 || attempt > 1)
+  it('uses edits in the storyboard prompt and approval payload', async () => {
     renderWizard()
-    await reachPreviewGeneration()
+    await reachScenario()
 
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(7))
-    await waitFor(() => expect(screen.getAllByAltText(/Preview for scene/)).toHaveLength(6))
-
-    for (const [index, plan] of SIX_PLANS.entries()) {
-      const calls = generateSceneImage.mock.calls.filter((call) => call[0] === plan)
-      expect(calls).toHaveLength(index === 2 ? 2 : 1)
-    }
-
-    const retriedShotCalls = generateSceneImage.mock.calls.filter((call) => call[0] === SIX_PLANS[2])
-    expect(retriedShotCalls[1][0]).toBe(SIX_PLANS[2])
-    expect(retriedShotCalls[1][0]).not.toContain('QUALITY CORRECTION')
-    expect(retriedShotCalls[1][7]).toContain('QUALITY CORRECTION')
-    expect(retriedShotCalls[1][7]).toContain('hands float away from the stirrup')
-  })
-
-  it('keeps the last identity-safe candidate without exposing review diagnostics or blocking approval', async () => {
-    setEvaluator((shotIndex) => shotIndex !== 1)
-    renderWizard()
-    await reachPreviewGeneration()
-
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(8))
-    await waitFor(() => expect(screen.getAllByAltText(/Preview for scene/)).toHaveLength(6))
-
-    const invalidCalls = generateSceneImage.mock.calls.filter((call) => call[0] === SIX_PLANS[1])
-    expect(invalidCalls).toHaveLength(3)
-    for (const [index, plan] of SIX_PLANS.entries()) {
-      if (index === 1) continue
-      expect(generateSceneImage.mock.calls.filter((call) => call[0] === plan)).toHaveLength(1)
-      expect(screen.getByAltText(`Preview for scene ${index + 1}`)).toBeInTheDocument()
-    }
-    expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SCENE')
-    expect(screen.queryByText(/failed action-quality review after 3 attempts/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
-    expect(screen.getAllByRole('button', { name: /Regenerate$/ }).length).toBeGreaterThan(0)
-  })
-
-  it('keeps the generated image and stays usable when the evaluator function fails at runtime', async () => {
-    mockInvoke.mockImplementation(async (functionName: string, options?: { body?: { shotIndex?: number } }) => {
-      if (functionName !== 'film-preview-quality') return { data: null, error: null }
-      if (options?.body?.shotIndex === 3) return { data: null, error: new Error('Edge function returned 546: RUNTIME_ERROR') }
-      return { data: { evaluation: evaluation(true) }, error: null }
+    const edited = 'New opening. New product action. New ending.'
+    fireEvent.change(screen.getByRole('textbox', { name: 'Full film scenario' }), {
+      target: { value: edited },
     })
-    renderWizard()
-    await reachPreviewGeneration()
+    fireEvent.click(screen.getByRole('button', { name: /Generate storyboard/ }))
+    await waitFor(() => expect(screen.getByAltText('Full film storyboard')).toBeInTheDocument())
 
-    await waitFor(() => expect(screen.getAllByAltText(/Preview for scene/)).toHaveLength(6))
-    expect(generateSceneImage.mock.calls.filter((call) => call[0] === SIX_PLANS[3])).toHaveLength(1)
-    expect(screen.getByAltText('Preview for scene 4')).toHaveAttribute('src', 'data:image/png;base64,SCENE')
-    expect(screen.getByRole('button', { name: 'Approve & Make Film' })).toBeEnabled()
+    expect(generateSceneImage.mock.calls[0][0]).toContain(edited)
+    fireEvent.click(screen.getByRole('button', { name: 'Approve & Make Film' }))
+
+    await waitFor(() => expect(onApprove).toHaveBeenCalledTimes(1))
+    const [scenes, images, options] = onApprove.mock.calls[0]
+    expect(scenes).toHaveLength(6)
+    expect(images).toEqual(new Array(6).fill(undefined))
+    expect(options).toMatchObject({
+      duration: 30,
+      isPlanBased: true,
+      scenarioText: edited,
+      storyboard: {
+        sheetUrl: 'data:image/png;base64,STORYBOARD',
+        scenes,
+        shotImageUrls: [],
+      },
+    })
+  })
+
+  it('regenerates only the single storyboard sheet', async () => {
+    generateSceneImage
+      .mockResolvedValueOnce('data:image/png;base64,FIRST')
+      .mockResolvedValueOnce('data:image/png;base64,SECOND')
+    renderWizard()
+    await reachScenario()
+    fireEvent.click(screen.getByRole('button', { name: /Generate storyboard/ }))
+    await waitFor(() => expect(screen.getByAltText('Full film storyboard')).toHaveAttribute('src', 'data:image/png;base64,FIRST'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
+
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(2))
+    expect(screen.getByAltText('Full film storyboard')).toHaveAttribute('src', 'data:image/png;base64,SECOND')
   })
 })
