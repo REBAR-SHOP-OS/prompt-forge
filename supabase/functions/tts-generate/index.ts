@@ -303,6 +303,21 @@ Deno.serve(async (req) => {
     if (!geminiResp.ok) {
       const errText = await geminiResp.text()
       console.error('Gemini TTS error', geminiResp.status, errText)
+      const billingBlocked =
+        geminiResp.status === 403 && /dunning|billing|PERMISSION_DENIED/i.test(errText)
+      if (billingBlocked) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'Voiceover is unavailable: the Google Gemini account billing is blocked. Please update billing or replace GEMINI_API_KEY.',
+            code: 'TTS_PROVIDER_BILLING',
+          }),
+          {
+            status: 402,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        )
+      }
       const status = geminiResp.status === 429 ? 429 : 502
       return new Response(
         JSON.stringify({ error: `TTS provider error (${status})` }),
