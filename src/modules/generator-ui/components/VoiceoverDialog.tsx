@@ -505,7 +505,15 @@ export function VoiceoverDialog({
       const { data, error } = await supabase.functions.invoke('tts-generate', {
         body: { text: trimmed, gender, tone, voiceName: currentVoice.voiceName, ...(durationSec ? { durationSec } : {}) },
       })
-      if (error) throw error
+      if (error) {
+        let detail = ''
+        try {
+          const ctx = (error as { context?: Response }).context
+          const body = ctx && typeof ctx.json === 'function' ? await ctx.json() : null
+          detail = typeof body?.error === 'string' ? body.error : ''
+        } catch { /* ignore unreadable body */ }
+        throw new Error(detail || 'Voice service is temporarily unavailable. Please try again later.')
+      }
       const payload = data as {
         audioBase64?: string
         mimeType?: string
