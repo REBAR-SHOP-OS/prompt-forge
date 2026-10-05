@@ -78,7 +78,6 @@ const CAMERA_ANGLES: WizardStyleOption[] = buildWizardCameraOptions()
 const THEMES: WizardStyleOption[] = buildWizardThemeOptions()
 
 const PRODUCTS_BUCKET = 'user-images'
-const FRAMES_BUCKET = 'wan-frames'
 
 function storageObjectKey(storagePath: string | null | undefined, bucket: string): string | null {
   if (!storagePath) return null
@@ -852,6 +851,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       plans: storyboardPlans,
       durationSeconds: duration,
       aspect,
+      allowText: !noTextOnImages,
     })
     return generateSceneImage(
       storyboardPrompt,
@@ -1166,7 +1166,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {expectedPlanCount(duration)} shots × ~{PLAN_DURATION_SECONDS}s each
+                    {expectedPlanCount(duration)} slots x 5s each
                   </p>
                 </div>
 
@@ -1341,7 +1341,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       }`}
                     >
                       <Check className="h-3.5 w-3.5" />
-                      Clean images (no text)
+                      Clean panels (slot numbers only)
                     </Button>
                     <Button
                       type="button"
@@ -1355,7 +1355,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       }`}
                     >
                       <ImageIcon className="h-3.5 w-3.5" />
-                      With text overlays
+                      Allow text inside panels
                     </Button>
                   </div>
                 </div>
