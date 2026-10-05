@@ -41,9 +41,9 @@ export function storyboardShotInstruction(
     `APPROVED STORYBOARD SHEET REVISION ${storyboard.revision}.`,
     `Follow panel ${panelNumber} of ${storyboard.scenes.length}, read left-to-right and top-to-bottom.`,
     startsFromSheet
-      ? 'The supplied first frame is the full storyboard sheet. Immediately expand panel 1 to full-screen and animate that shot.'
-      : `Continue the film into panel ${panelNumber} while preserving the approved subject, setting, lighting and style.`,
-    'Never show the storyboard grid, panel borders, labels, captions or multiple panels in the rendered shot.',
+      ? 'The supplied first frame is the only approved storyboard sheet. Immediately expand panel 1 to full-screen and animate that shot.'
+      : `Continue the film with the action planned for panel ${panelNumber}, preserving the approved subject, setting, lighting and style.`,
+    'The numbered panels are timing references only. Never show the storyboard grid, panel borders, labels, captions or multiple panels in the rendered shot.',
   ].join(' ')
 }
 
@@ -55,20 +55,44 @@ export function storyboardFramesForShot(params: {
 }): { startFrameUrl?: string; endFrameUrl?: string } | null {
   if (!params.storyboard) return null
   if (params.shotIndex === 0) {
-    return {
-      startFrameUrl: params.storyboard.sheetUrl,
-      endFrameUrl: params.approvedShotUrl,
-    }
+    return { startFrameUrl: params.storyboard.sheetUrl }
   }
   if (params.previousLastFrameUrl) {
-    return {
-      startFrameUrl: params.previousLastFrameUrl,
-      endFrameUrl: params.approvedShotUrl,
-    }
+    return { startFrameUrl: params.previousLastFrameUrl }
   }
-  return {
-    startFrameUrl: params.approvedShotUrl,
-  }
+  return null
+}
+
+export interface StoryboardPromptPlan {
+  scenarioText: string
+}
+
+export function storyboardGrid(slotCount: number): { columns: number; rows: number } {
+  const slots = Math.max(1, Math.round(slotCount))
+  if (slots <= 3) return { columns: slots, rows: 1 }
+  if (slots <= 6) return { columns: 2, rows: Math.ceil(slots / 2) }
+  return { columns: 3, rows: Math.ceil(slots / 3) }
+}
+
+export function buildStoryboardSheetPrompt(params: {
+  plans: readonly StoryboardPromptPlan[]
+  durationSeconds: number
+  aspect: FilmAspect
+}): string {
+  if (params.plans.length === 0) throw new Error('Storyboard has no slots')
+  const { columns, rows } = storyboardGrid(params.plans.length)
+  const panels = params.plans.map((plan, index) =>
+    `PANEL ${index + 1} (seconds ${index * 5}-${(index + 1) * 5}): ${plan.scenarioText.trim()}`,
+  )
+  return [
+    'Create ONE single cinematic storyboard contact-sheet image. Do not return separate images.',
+    `The finished image must contain exactly ${params.plans.length} equal panels arranged in a ${columns}-column by ${rows}-row grid, read left-to-right and top-to-bottom.`,
+    `This storyboard covers one continuous ${params.durationSeconds}-second film. Every panel is exactly one 5-second slot.`,
+    `Compose every panel for the final ${params.aspect} film frame while keeping the product, character, location, lighting, color grade and art direction visually consistent across all panels.`,
+    'Separate panels with thin black dividers. Put only a clear circular panel number in the top-left corner of each panel. No captions, prose, timestamps, watermarks, extra panels or duplicated panels.',
+    'Each panel must depict the corresponding moment below:',
+    ...panels,
+  ].join('\n')
 }
 
 function panelDimensions(aspect: FilmAspect): { width: number; height: number } {
