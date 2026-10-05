@@ -42,7 +42,7 @@ async function callGateway(
   outputLanguage = "en",
   narration = true,
   correctiveInstruction?: string,
-  unit: "scene" | "plan" = "scene",
+  unit: "scene" | "plan" | "film" = "scene",
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look whenever they appear, and keep them consistent across the film.`
@@ -93,6 +93,17 @@ async function callGateway(
       stage: correctiveInstruction ? "retry" : "initial",
     },
   );
+}
+
+function unifiedFilmScenes(raw: string): string[] {
+  const cleaned = raw
+    .replace(/```(?:text|markdown)?/gi, "")
+    .replace(/```/g, "")
+    .replace(/\s*===SCENE===\s*/gi, " ")
+    .replace(/^\s*(?:shot|scene|plan)\s*\d+\s*[:.)-]\s*/gim, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned ? [cleaned] : [];
 }
 
 // The AI gateway fetches image URLs itself, but our storage buckets (e.g.
@@ -271,8 +282,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Determine unit: "plan" when explicitly requested, otherwise "scene" (legacy).
-    const unit: "scene" | "plan" = body?.unit === "plan" ? "plan" : "scene";
+    // "film" is the Make Full Film contract: one continuous scenario.
+    const unit: "scene" | "plan" | "film" =
+      body?.unit === "film" ? "film" : body?.unit === "plan" ? "plan" : "scene";
 
     const autoFromImage = autoFromImageReq && Boolean(imageUrl) && !productAd && !characterSheet;
     const effectiveIdea = idea
@@ -310,9 +322,10 @@ Deno.serve(async (req) => {
     const data = await readJsonLoose(resp, "scenario-write");
     const raw = readScenarioAssistantText(data, "scenario-write");
 
-    // Use plan-based quality pass when unit === "plan".
-    const quality = unit === "plan"
-      ? await runPlanQualityPass(duration, raw, async (correctiveInstruction) => {
+    const quality = unit === "film"
+      ? { scenes: unifiedFilmScenes(raw) }
+      : unit === "plan"
+        ? await runPlanQualityPass(duration, raw, async (correctiveInstruction) => {
         const retryResp = await callGateway(
           apiKey,
           duration,
@@ -334,7 +347,7 @@ Deno.serve(async (req) => {
         const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
         return readScenarioAssistantText(retryData, "scenario-write corrective retry");
       })
-      : await runScenarioQualityPass(duration, raw, async (correctiveInstruction) => {
+        : await runScenarioQualityPass(duration, raw, async (correctiveInstruction) => {
         const retryResp = await callGateway(
           apiKey,
           duration,
@@ -367,7 +380,9 @@ Deno.serve(async (req) => {
       const error =
         unit === "plan"
           ? `The AI did not return the ${getPlanDurationPolicy(duration).planCount} required 5-second plans. Please try again.`
-          : "Empty AI response";
+          : unit === "film"
+            ? "The AI did not return a unified film scenario. Please try again."
+            : "Empty AI response";
       return new Response(JSON.stringify({ error }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -517,9 +532,11 @@ Deno.serve(async (req) => {
           const retryData = await readJsonLoose(retryResp, "scenario-write anti-duplicate retry");
           const retryRaw = readScenarioAssistantText(retryData, "scenario-write anti-duplicate retry");
           if (!retryRaw) return null;
-          const retryQuality = unit === "plan"
-            ? await runPlanQualityPass(duration, retryRaw, async () => null)
-            : await runScenarioQualityPass(duration, retryRaw, async () => null);
+          const retryQuality = unit === "film"
+            ? { scenes: unifiedFilmScenes(retryRaw) }
+            : unit === "plan"
+              ? await runPlanQualityPass(duration, retryRaw, async () => null)
+              : await runScenarioQualityPass(duration, retryRaw, async () => null);
           return retryQuality.scenes.length > 0 ? retryQuality.scenes : null;
         },
         judge,
