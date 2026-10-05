@@ -1908,10 +1908,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         </DialogContent>
       </Dialog>
 
-      {/* Lightbox for zoom */}          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Lightbox for zoom */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
         <DialogContent className="max-w-4xl border-border bg-card text-foreground">
