@@ -1529,42 +1529,28 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               </div>
             )}
 
-            {/* Step 2 — review / edit the scenario. */}
+            {/* Step 2 - review and edit one complete scenario. */}
             {step === 'scenario' && (
               <div className="space-y-3">
                 <p className="text-sm text-foreground/80">
-                  Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
+                  Review the complete {duration}-second scenario. The {plans.length} five-second slots are timed automatically when the film is rendered.
                 </p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {plans.map((plan, i) => (
-                      <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-4">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                          Shot {i + 1} (~{PLAN_DURATION_SECONDS}s)
-                        </div>
-                        <Textarea
-                          value={plan.scenarioText}
-                          onChange={(e) =>
-                            setPlans((cur) => {
-                              const copy = [...cur]
-                              copy[i] = { ...copy[i], scenarioText: e.target.value }
-                              return copy
-                            })
-                          }
-                          rows={3}
-                          className="min-h-44 w-full resize-none overflow-y-auto border-border bg-accent/30 text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
-                        />
-                      </div>
-                    ))}
-                </div>
+                <Textarea
+                  value={scenarioDraft}
+                  onChange={(event) => setScenarioDraft(event.target.value)}
+                  rows={14}
+                  className="min-h-[22rem] w-full resize-y border-border bg-accent/30 text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
+                  aria-label="Complete film scenario"
+                />
               </div>
             )}
 
-            {/* Step 3 — review preview images with zoom. */}
+            {/* Step 3 - review the single storyboard image. */}
             {step === 'images' && (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-foreground/80">
-                    One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
+                    One storyboard image contains {plans.length} numbered slots. Each slot represents exactly five seconds.
                   </p>
                   <Button
                     type="button"
@@ -1575,11 +1561,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     className="gap-1.5 border-fuchsia-300/30 text-fuchsia-100 hover:bg-fuchsia-500/10"
                   >
                     <PanelsTopLeft className="h-4 w-4" aria-hidden="true" />
-                    Storyboard
+                    View full image
                   </Button>
                 </div>
                 <StoryboardSheet
-                  plans={plans}
+                  plans={plans.length > 0 ? [{ ...plans[0], scenarioText: scenarioDraft }] : []}
                   images={images}
                   regenIndex={regenIndex}
                   onRegenerate={handleRegenerate}
@@ -1587,6 +1573,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   onZoom={openLightbox}
                   working={working}
                   aspect={aspect}
+                  sheetMode={{ slotCount: plans.length }}
                 />
               </div>
             )}
@@ -1661,7 +1648,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   ) : (
                     <ImageIcon className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Generate preview images
+                  Generate storyboard image
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
               )}
@@ -1904,34 +1891,24 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               Storyboard
             </DialogTitle>
             <DialogDescription>
-              Review the complete approved shot order at a glance. Close this view to edit or regenerate a shot.
+              Review the single approved storyboard image. Its {plans.length} numbered panels each represent five seconds.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid max-h-[72vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
-            {plans.map((plan, index) => {
-              const url = safeMediaUrl(images[index])
-              return (
-                <figure key={index} className="overflow-hidden rounded-md border border-border bg-accent/20">
-                  <div
-                    className="grid w-full place-items-center bg-surface-2/60"
-                    style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
-                  >
-                    {url ? (
-                      <img src={url} alt={`Storyboard shot ${index + 1}`} className="h-full w-full object-contain" />
-                    ) : (
-                      <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
-                    )}
-                  </div>
-                  <figcaption className="space-y-1 p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                      Shot {index + 1}
-                    </div>
-                    <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{plan.scenarioText}</p>
-                  </figcaption>
-                </figure>
-              )
-            })}
+          <div className="grid max-h-[72vh] place-items-center overflow-y-auto rounded-md border border-border bg-accent/20 p-3">
+            {safeMediaUrl(images[0]) ? (
+              <img
+                src={safeMediaUrl(images[0])}
+                alt={`Storyboard with ${plans.length} five-second slots`}
+                className="max-h-[68vh] w-auto max-w-full object-contain"
+              />
+            ) : (
+              <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
+            )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox for zoom */}          </div>
         </DialogContent>
       </Dialog>
 
@@ -1941,7 +1918,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           <DialogHeader>
             <DialogTitle className="text-base">Preview</DialogTitle>
             <DialogDescription>
-              Review the selected scene image at full size before approving the film.
+              Review the complete storyboard image at full size before approving the film.
             </DialogDescription>
           </DialogHeader>
           {lightboxImage && (
