@@ -694,6 +694,28 @@ export function buildFilmPlansFromScenes(
 }
 
 /**
+ * Build the internal 5-second render slots for one approved, unified scenario.
+ *
+ * The scenario stays a single editable text in the wizard. Slot boundaries are
+ * an implementation detail used only by Wan and the storyboard instructions;
+ * every slot receives the same full narrative plus its own panel instruction.
+ */
+export function buildUnifiedFilmPlans(
+  totalDurationSeconds: number,
+  scenarioText: string,
+  fullNarration: string | undefined,
+): FilmPlan[] {
+  const cleaned = scenarioText.trim()
+  if (!cleaned) throw new Error('The scenario came back empty — try again.')
+  const planCount = expectedPlanCount(totalDurationSeconds)
+  return assemblePlans(
+    totalDurationSeconds,
+    Array.from({ length: planCount }, () => cleaned),
+    fullNarration,
+  )
+}
+
+/**
  * Compute credit consumption for a plan-based film. Each plan is one job.
  * For now, credits = planCount * cost_per_5s_job. This is shown to the user
  * before production starts.
