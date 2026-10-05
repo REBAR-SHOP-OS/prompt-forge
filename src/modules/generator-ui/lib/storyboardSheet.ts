@@ -78,6 +78,7 @@ export function buildStoryboardSheetPrompt(params: {
   plans: readonly StoryboardPromptPlan[]
   durationSeconds: number
   aspect: FilmAspect
+  allowText?: boolean
 }): string {
   if (params.plans.length === 0) throw new Error('Storyboard has no slots')
   const { columns, rows } = storyboardGrid(params.plans.length)
@@ -89,7 +90,9 @@ export function buildStoryboardSheetPrompt(params: {
     `The finished image must contain exactly ${params.plans.length} equal panels arranged in a ${columns}-column by ${rows}-row grid, read left-to-right and top-to-bottom.`,
     `This storyboard covers one continuous ${params.durationSeconds}-second film. Every panel is exactly one 5-second slot.`,
     `Compose every panel for the final ${params.aspect} film frame while keeping the product, character, location, lighting, color grade and art direction visually consistent across all panels.`,
-    'Separate panels with thin black dividers. Put only a clear circular panel number in the top-left corner of each panel. No captions, prose, timestamps, watermarks, extra panels or duplicated panels.',
+    params.allowText
+      ? 'Separate panels with thin black dividers. Put a clear circular panel number in the top-left corner of each panel. Keep any requested in-scene text inside its own panel. No timestamps, watermarks, extra panels or duplicated panels.'
+      : 'Separate panels with thin black dividers. Put only a clear circular panel number in the top-left corner of each panel. No captions, prose, timestamps, watermarks, extra panels or duplicated panels.',
     'Each panel must depict the corresponding moment below:',
     ...panels,
   ].join('\n')
