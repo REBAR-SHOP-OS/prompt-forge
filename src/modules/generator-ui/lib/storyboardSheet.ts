@@ -31,6 +31,23 @@ export function createApprovedStoryboardSnapshot(params: {
   })
 }
 
+export function buildStoryboardSheetPrompt(params: {
+  scenario: string
+  panelCount: number
+  durationSeconds: number
+}): string {
+  const panelCount = Math.max(1, Math.round(params.panelCount))
+  return [
+    `Create ONE cinematic storyboard sheet as a single image for this complete ${params.durationSeconds}-second film.`,
+    `The sheet must contain exactly ${panelCount} equal-size panels, read left-to-right and top-to-bottom.`,
+    `Each panel represents exactly 5 seconds of consecutive screen time. Panel 1 is 0-5s, panel 2 is 5-10s, and so on.`,
+    'Show a clear visual progression from opening hook through development to the final payoff. Keep product, character, environment, lighting and visual style consistent across panels.',
+    'Separate panels with thin black dividers. Put a small, legible number badge in the top-left of every panel, numbered consecutively from 1.',
+    'This must be one flat storyboard image, not separate files, not a collage of duplicate frames, and not a contact sheet with captions.',
+    `FULL FILM SCENARIO: ${params.scenario.trim()}`,
+  ].join('\n\n')
+}
+
 export function storyboardShotInstruction(
   storyboard: ApprovedStoryboardSnapshot,
   shotIndex: number,
@@ -55,20 +72,15 @@ export function storyboardFramesForShot(params: {
 }): { startFrameUrl?: string; endFrameUrl?: string } | null {
   if (!params.storyboard) return null
   if (params.shotIndex === 0) {
-    return {
-      startFrameUrl: params.storyboard.sheetUrl,
-      endFrameUrl: params.approvedShotUrl,
-    }
+    return { startFrameUrl: params.storyboard.sheetUrl }
   }
   if (params.previousLastFrameUrl) {
-    return {
-      startFrameUrl: params.previousLastFrameUrl,
-      endFrameUrl: params.approvedShotUrl,
-    }
+    return { startFrameUrl: params.previousLastFrameUrl }
   }
-  return {
-    startFrameUrl: params.approvedShotUrl,
-  }
+  // A storyboard is generated as one AI image. If continuity capture is not
+  // available, reuse that single approved sheet rather than inventing another
+  // generated frame for this slot.
+  return { startFrameUrl: params.storyboard.sheetUrl }
 }
 
 function panelDimensions(aspect: FilmAspect): { width: number; height: number } {
