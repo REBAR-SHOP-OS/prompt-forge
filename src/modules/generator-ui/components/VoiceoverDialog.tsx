@@ -77,6 +77,8 @@ interface VoiceoverDialogProps {
   mergedDurationSec?: number
   waveformRef?: MutableRefObject<SoundtrackWaveformHandle | null>
   onClearVoiceover?: () => void
+  /** Incremented when the parent resets the workspace. */
+  resetKey?: number
 }
 
 function base64ToBlob(b64: string, mime: string): Blob {
@@ -110,6 +112,7 @@ export function VoiceoverDialog({
   mergedDurationSec = 0,
   waveformRef,
   onClearVoiceover,
+  resetKey = 0,
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
@@ -120,6 +123,15 @@ export function VoiceoverDialog({
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   
   const lastUrlRef = useRef<string | null>(null)
+
+  function clearScript() {
+    if (lastUrlRef.current) {
+      try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
+      lastUrlRef.current = null
+    }
+    setText('')
+    setAudioUrl(null)
+  }
 
   function resolveDurationSec(): number | undefined {
     if (durationMode === 'auto') return undefined
@@ -147,6 +159,12 @@ export function VoiceoverDialog({
       setIsGenerating(false)
     }
   }, [open])
+
+  useEffect(() => {
+    if (resetKey === 0) return
+    clearScript()
+    setIsGenerating(false)
+  }, [resetKey])
 
   async function persistVoiceover(blob: Blob) {
     try {
@@ -241,10 +259,9 @@ export function VoiceoverDialog({
     if (!audioUrl) return
     const name = `Voiceover (${gender}, ${tone}).wav`
     onUseAsSoundtrack?.(audioUrl, name)
-    // Hand off ownership so we don't revoke it.
+    // Hand off ownership so clearScript does not revoke the applied soundtrack.
     lastUrlRef.current = null
-    setAudioUrl(null)
-    setText('')
+    clearScript()
     // Keep the dialog open so the user can adjust timing/volume right here.
     toast.success('Voiceover set as soundtrack')
   }
@@ -265,9 +282,22 @@ export function VoiceoverDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="vo-text" className="text-xs uppercase tracking-wider text-zinc-400">
-              Text
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="vo-text" className="text-xs uppercase tracking-wider text-zinc-400">
+                Text
+              </Label>
+              {text.trim().length > 0 ? (
+                <button
+                  type="button"
+                  onClick={clearScript}
+                  aria-label="Clear script"
+                  className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-zinc-500 transition hover:text-zinc-200"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                  Clear
+                </button>
+              ) : null}
+            </div>
             <Textarea
               id="vo-text"
               value={text}
