@@ -13,6 +13,7 @@ interface StoryboardSheetProps {
   onZoom: (url: string, text: string) => void
   working: boolean
   aspect: FilmAspect
+  sheetMode?: { slotCount: number }
 }
 
 export function StoryboardSheet({
@@ -24,6 +25,7 @@ export function StoryboardSheet({
   onZoom,
   working,
   aspect,
+  sheetMode,
 }: StoryboardSheetProps) {
   return (
     <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]">
@@ -34,7 +36,7 @@ export function StoryboardSheet({
           <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-3">
             <div className="flex items-center justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                Shot {i + 1}
+                {sheetMode ? `Storyboard · ${sheetMode.slotCount} slots` : `Shot ${i + 1}`}
               </div>
               <div className="flex items-center gap-1">
                 {url && (
@@ -43,8 +45,8 @@ export function StoryboardSheet({
                     size="sm"
                     variant="ghost"
                     disabled={working}
-                    aria-label={`Edit image for shot ${i + 1}`}
-                    title={`Edit image for shot ${i + 1}`}
+                    aria-label={sheetMode ? 'Edit storyboard image' : `Edit image for shot ${i + 1}`}
+                    title={sheetMode ? 'Edit storyboard image' : `Edit image for shot ${i + 1}`}
                     onClick={() => onEdit(i)}
                     className="h-7 gap-1 px-2 text-xs text-foreground/80 hover:text-fuchsia-100"
                   >
@@ -89,11 +91,11 @@ export function StoryboardSheet({
               {isRegen ? (
                 <LoaderCircle className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
               ) : url ? (
-                <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-contain" />
+                <img src={url} alt={sheetMode ? `Storyboard with ${sheetMode.slotCount} five-second slots` : `Preview for scene ${i + 1}`} className="h-full w-full object-contain" />
               ) : (
                 <div className="flex flex-col items-center gap-1 text-muted-foreground">
                   <ImageIcon className="h-6 w-6" aria-hidden="true" />
-                  <span className="text-[11px]">No image — regenerate</span>
+                  <span className="text-[11px]">{sheetMode ? 'No storyboard — regenerate' : 'No image — regenerate'}</span>
                 </div>
               )}
             </div>
