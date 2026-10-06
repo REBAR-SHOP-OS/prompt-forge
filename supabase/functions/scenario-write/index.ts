@@ -323,7 +323,7 @@ Deno.serve(async (req) => {
     const raw = readScenarioAssistantText(data, "scenario-write");
 
     const quality = unit === "film"
-      ? { scenes: unifiedFilmScenes(raw) }
+      ? { scenes: unifiedFilmScenes(raw), warning: undefined }
       : unit === "plan"
         ? await runPlanQualityPass(duration, raw, async (correctiveInstruction) => {
         const retryResp = await callGateway(
@@ -533,7 +533,7 @@ Deno.serve(async (req) => {
           const retryRaw = readScenarioAssistantText(retryData, "scenario-write anti-duplicate retry");
           if (!retryRaw) return null;
           const retryQuality = unit === "film"
-            ? { scenes: unifiedFilmScenes(retryRaw) }
+            ? { scenes: unifiedFilmScenes(retryRaw), warning: undefined }
             : unit === "plan"
               ? await runPlanQualityPass(duration, retryRaw, async () => null)
               : await runScenarioQualityPass(duration, retryRaw, async () => null);
