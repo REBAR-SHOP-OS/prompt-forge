@@ -7273,9 +7273,9 @@ export default function DashboardPage() {
     const hasPerSceneImages = Boolean(
       opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
     )
-    // Preserve the wizard's independent queueing for short films. Supported
-    // 30s+ films must instead wait for each completed clip and hand its actual
-    // last frame to the next card as that card's visual start frame.
+    // A unified storyboard approval represents one continuous film, so every
+    // internal 5-second Wan slot waits for the previous clip and starts from its
+    // captured last frame. Other multi-scene flows keep independent queueing.
     const isWizardSceneBatch = Array.isArray(opts?.perSceneImageUrls)
     const requiresSequentialContinuity = isWizardSceneBatch && Boolean(opts?.storyboard)
     const isIndependentSceneBatch = isWizardSceneBatch && !requiresSequentialContinuity
