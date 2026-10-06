@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildStoryboardSheetPrompt,
   createApprovedStoryboardSnapshot,
   replaceStoryboardPanel,
   storyboardFramesForShot,
@@ -53,30 +54,37 @@ describe('storyboard sheet state', () => {
     expect(storyboardShotInstruction(snapshot, 1)).toContain('panel 2')
   })
 
-  it('starts the film from the full sheet, then hands off sequentially to approved panels', () => {
+  it('uses one storyboard as Start, then continues from each prior clip frame', () => {
     const snapshot = createApprovedStoryboardSnapshot({
       revision: 3,
       sheetUrl: 'https://example.com/storyboard-r3.jpg',
-      scenes: ['scene 1', 'scene 2'],
-      shotImageUrls: ['shot-1.png', 'shot-2.png'],
+      scenes: ['scenario', 'scenario'],
+      shotImageUrls: ['https://example.com/storyboard-r3.jpg', 'https://example.com/storyboard-r3.jpg'],
     })
 
-    expect(storyboardFramesForShot({
-      storyboard: snapshot,
-      shotIndex: 0,
-      approvedShotUrl: 'shot-1.png',
-    })).toEqual({
+    expect(storyboardFramesForShot({ storyboard: snapshot, shotIndex: 0 })).toEqual({
       startFrameUrl: 'https://example.com/storyboard-r3.jpg',
-      endFrameUrl: 'shot-1.png',
     })
     expect(storyboardFramesForShot({
       storyboard: snapshot,
       shotIndex: 1,
       previousLastFrameUrl: 'clip-1-last.png',
-      approvedShotUrl: 'shot-2.png',
     })).toEqual({
       startFrameUrl: 'clip-1-last.png',
-      endFrameUrl: 'shot-2.png',
     })
+  })
+
+  it('requests one numbered panel for every 5 seconds', () => {
+    const prompt = buildStoryboardSheetPrompt({
+      scenario: 'A complete story from hook to payoff.',
+      panelCount: 6,
+      durationSeconds: 30,
+    })
+
+    expect(prompt).toContain('ONE cinematic storyboard sheet as a single image')
+    expect(prompt).toContain('exactly 6 equal-size panels')
+    expect(prompt).toContain('Each panel represents exactly 5 seconds')
+    expect(prompt).toContain('numbered consecutively from 1')
+    expect(prompt).toContain('A complete story from hook to payoff.')
   })
 })
