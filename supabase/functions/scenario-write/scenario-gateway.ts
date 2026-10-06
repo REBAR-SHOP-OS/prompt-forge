@@ -2,7 +2,7 @@ export type ScenarioGatewayStage = "initial" | "retry" | "semantic-judge";
 
 export interface ScenarioGatewayContext {
   durationSeconds: number;
-  unit: "scene" | "plan";
+  unit: "scene" | "plan" | "film";
   stage: ScenarioGatewayStage;
 }
 
