@@ -40,29 +40,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import {
-  generateQualityCheckedPreviewShot,
-  PreviewShotQualityError,
-  PreviewShotVerificationError,
-  type PreviewShotContext,
-  type PreviewShotQualityEvaluation,
-} from '@/modules/generator-ui/lib/previewShotQuality'
-
-import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed, storyboardReferencesForShot } from '@/modules/generator-ui/lib/makeFilmWizard'
-import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
+import { buildUnifiedFilmPlans, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { REVIEW_LANGS, isRtlLang, englishFilmType, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { inFlightSigns } from '@/modules/generator-ui/lib/makeFilmSigning'
 import {
-  buildStoryboardSheetBlob,
+  buildStoryboardSheetPrompt,
   createApprovedStoryboardSnapshot,
-  replaceStoryboardPanel,
   type ApprovedStoryboardSnapshot,
 } from '@/modules/generator-ui/lib/storyboardSheet'
 import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
-import { StoryboardSheet } from './StoryboardSheet'
 import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import { groupProductPhotos, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
@@ -86,7 +76,6 @@ const CAMERA_ANGLES: WizardStyleOption[] = buildWizardCameraOptions()
 const THEMES: WizardStyleOption[] = buildWizardThemeOptions()
 
 const PRODUCTS_BUCKET = 'user-images'
-const FRAMES_BUCKET = 'wan-frames'
 
 function storageObjectKey(storagePath: string | null | undefined, bucket: string): string | null {
   if (!storagePath) return null
@@ -199,7 +188,7 @@ export interface MakeFilmWizardDialogProps {
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' | 'film' }) => Promise<string[]>
   generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrls?: string[], characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean, correction?: string) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative; storyboard?: ApprovedStoryboardSnapshot }) => void
 }
@@ -220,6 +209,7 @@ export function MakeFilmWizardDialog({
   const [prompt, setPrompt] = useState('')
   const [plans, setPlans] = useState<FilmPlan[]>([])
   const [images, setImages] = useState<(string | undefined)[]>([])
+  const [storyboardSheetUrl, setStoryboardSheetUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [sheetRevision, setSheetRevision] = useState(1)
@@ -282,6 +272,7 @@ export function MakeFilmWizardDialog({
       setPrompt(initialPrompt ?? '')
       setPlans([])
       setImages([])
+      setStoryboardSheetUrl(null)
       setBusy('idle')
       setRegenIndex(null)
       setSheetRevision(1)
@@ -512,12 +503,9 @@ export function MakeFilmWizardDialog({
   }
 
     function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
-    const planCount = expectedPlanCount(durationSeconds)
-    
     return `${basePrompt}
 
-IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, split into ${planCount} sequential 5-second plans (shots). Total film duration must be ${durationSeconds} seconds.
-Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
+IMPORTANT: Write one complete, continuous scenario for a ${durationSeconds}-second film. It must have a clear beginning, middle, and ending. Return flowing prose only: do not split, number, label, timestamp, or list shots, scenes, plans, or 5-second sections.`
   }
 
   function buildScenarioRequest(idea: string, variation: boolean, characterDescription = '', previousScenario = '') {
@@ -574,7 +562,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         aspect,
         cameraStyle: cameraAngle?.prompt,
         theme: theme?.prompt,
-        unit: 'plan' as const,
+        unit: 'film' as const,
       },
     }
   }
@@ -604,23 +592,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         setError('The scenario came back empty — try rephrasing your prompt.')
         return
       }
-      // The model must return exactly the expected number of plans. If it
-      // doesn't match, retry once before giving up.
-      let builtPlans: FilmPlan[]
-      try {
-        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
-      } catch (firstErr) {
-        setProgress('Retrying scenario…')
-        const retryWritten = await writeScenario(enrichedPrompt, options)
-        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
-        if (retryScenes.length === 0) {
-          setError('The scenario came back empty — try rephrasing your prompt.')
-          return
-        }
-        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
-      }
+      const builtPlans = buildUnifiedFilmPlans(duration, rawScenes.join(' '), undefined)
       setPlans(builtPlans)
       setImages(new Array(builtPlans.length).fill(undefined))
+      setStoryboardSheetUrl(null)
       setStep('scenario')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write the scenario.')
@@ -641,7 +616,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       // leak into the regenerated scenario. Skipped synchronously when no
       // character is selected.
       const characterDescription = selectedCharacter ? (characterDesc || await resolveCharacterDescription(selectedCharacter)) : ''
-      const previousScenario = plans.map((p) => p.scenarioText).join('\n\n')
+      const previousScenario = plans[0]?.scenarioText ?? ''
       const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true, characterDescription, previousScenario)
       const written = await writeScenario(enrichedPrompt, options)
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
@@ -649,23 +624,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         setError('The scenario came back empty — try again.')
         return
       }
-      let builtPlans: FilmPlan[]
-      try {
-        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
-      } catch (firstErr) {
-        setProgress('Retrying scenario…')
-        const retryWritten = await writeScenario(enrichedPrompt, options)
-        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
-        if (retryScenes.length === 0) {
-          setError('The scenario came back empty — try again.')
-          return
-        }
-        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
-      }
-      // Success: replace the plans atomically and reset the stale preview
-      // images so they never mismatch the new shots.
+      const builtPlans = buildUnifiedFilmPlans(duration, rawScenes.join(' '), undefined)
       setPlans(builtPlans)
       setImages(new Array(builtPlans.length).fill(undefined))
+      setStoryboardSheetUrl(null)
       setIdentitySnapshot(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not regenerate the scenario.')
@@ -828,72 +790,22 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     }
   }
 
-  function previewShotContext(index: number, snapshot: IdentitySnapshot): PreviewShotContext {
-    return {
-      shotIndex: index,
-      totalShots: plans.length,
-      shotMode: plans[index].shotMode ?? 'product',
-      plannedAction: plans[index].scenarioText,
-      previousPlannedAction: index > 0 ? plans[index - 1].scenarioText : undefined,
-      nextPlannedAction: index + 1 < plans.length ? plans[index + 1].scenarioText : undefined,
-      productName: snapshot.product?.name ?? undefined,
-    }
-  }
-
-  async function evaluatePreviewShot(
-    imageUrl: string,
-    context: PreviewShotContext,
-  ): Promise<PreviewShotQualityEvaluation> {
-    const { data, error: qualityError } = await supabase.functions.invoke('film-preview-quality', {
-      body: { imageUrl, ...context },
-    })
-    if (qualityError) throw qualityError
-    const evaluation = (data as { evaluation?: PreviewShotQualityEvaluation } | null)?.evaluation
-    if (!evaluation || typeof evaluation.passed !== 'boolean') {
-      throw new Error('Preview quality evaluator returned an invalid response.')
-    }
-    return evaluation
-  }
-
-  async function generateCheckedPreviewShot(
-    index: number,
-    snapshot: IdentitySnapshot,
-    creative: FilmCreative,
-    noTextOnImages: boolean
-  ): Promise<string> {
-    const plan = plans[index]
-    const references = storyboardReferencesForShot(
-      plan.shotMode ?? 'product',
-      snapshot.product?.url,
-      snapshot.character?.url,
+  async function generateStoryboardSheet(snapshot: IdentitySnapshot): Promise<string> {
+    const scenario = plans[0]?.scenarioText.trim()
+    if (!scenario) throw new Error('Write the scenario before generating its storyboard.')
+    const productUrls = snapshot.product?.urls?.length
+      ? snapshot.product.urls
+      : snapshot.product?.url ? [snapshot.product.url] : []
+    const characterUrl = snapshot.character?.url
+    return generateSceneImage(
+      buildStoryboardSheetPrompt({ scenario, panelCount: plans.length, durationSeconds: duration }),
+      aspect,
+      productUrls,
+      characterUrl,
+      false,
+      currentCreative(),
+      Boolean(characterUrl && snapshot.character?.characterSheet),
     )
-    const productUrls = references.productUrl
-      ? snapshot.product?.urls?.length
-        ? snapshot.product.urls
-        : [references.productUrl]
-      : []
-    const characterUrl = references.characterUrl ? snapshot.character?.url : undefined
-    const characterSheet = Boolean(characterUrl && snapshot.character?.characterSheet)
-    const shotSnapshot: IdentitySnapshot = {
-      product: references.productUrl ? snapshot.product : undefined,
-      character: characterUrl ? snapshot.character : undefined,
-    }
-    const context = previewShotContext(index, shotSnapshot)
-    const result = await generateQualityCheckedPreviewShot(
-      context,
-      (correction) => generateSceneImage(
-        plan.scenarioText,
-        aspect,
-        productUrls,
-        characterUrl,
-        noTextOnImages,
-        creative,
-        characterSheet,
-        correction,
-      ),
-      evaluatePreviewShot,
-    )
-    return result.imageUrl
   }
 
   async function handleGenerateImages() {
@@ -905,55 +817,47 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       character: toIdentityRef(selectedCharacter, 'character'),
     }
     setIdentitySnapshot(snapshot)
-    const next: (string | undefined)[] = new Array(plans.length).fill(undefined)
-    const creative = currentCreative()
-    for (let i = 0; i < plans.length; i++) {
-      setProgress(`Designing and checking preview image ${i + 1} of ${plans.length}…`)
-      try {
-        next[i] = await generateCheckedPreviewShot(i, snapshot, creative, noTextOnImages)
-      } catch (err) {
-        console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
-        // The image generator enforces product/character identity before it
-        // returns a URL. Keep a known identity-safe candidate when only the
-        // separate action-quality review or a later correction attempt fails;
-        // a first-attempt identity rejection carries no URL and stays blank.
-        next[i] = err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError
-          ? err.imageUrl
-          : undefined
-      }
-      setImages([...next])
+    setProgress(`Designing one storyboard with ${plans.length} × 5-second slots…`)
+    try {
+      const sheetUrl = await generateStoryboardSheet(snapshot)
+      setStoryboardSheetUrl(sheetUrl)
+      setImages(new Array(plans.length).fill(sheetUrl))
+      setStep('images')
+    } catch (err) {
+      setStoryboardSheetUrl(null)
+      setImages(new Array(plans.length).fill(undefined))
+      setError(err instanceof Error ? err.message : 'Could not generate the storyboard.')
+    } finally {
+      setBusy('idle')
+      setProgress(null)
     }
-    setBusy('idle')
-    setProgress(null)
-    setStep('images')
   }
 
-  async function handleRegenerate(index: number) {
+  async function handleRegenerate() {
     if (working) return
-    setRegenIndex(index)
+    const snapshot = identitySnapshot
+    if (!snapshot) {
+      setError('The original film identity snapshot is unavailable. Generate the storyboard again.')
+      return
+    }
+    setRegenIndex(0)
     setError(null)
     try {
-      const snapshot = identitySnapshot
-      if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
-      const url = await generateCheckedPreviewShot(index, snapshot, currentCreative(), noTextOnImages)
-      setImages((cur) => replaceStoryboardPanel(cur, index, url))
-      setSheetRevision((r) => r + 1)
+      const sheetUrl = await generateStoryboardSheet(snapshot)
+      setStoryboardSheetUrl(sheetUrl)
+      setImages(new Array(plans.length).fill(sheetUrl))
+      setSheetRevision((revision) => revision + 1)
     } catch (err) {
-      console.error(`Make-film wizard: preview image ${index + 1} regeneration failed`, err)
-      if (err instanceof PreviewShotQualityError || err instanceof PreviewShotVerificationError) {
-        setImages((cur) => replaceStoryboardPanel(cur, index, err.imageUrl))
-        setSheetRevision((r) => r + 1)
-      }
+      setError(err instanceof Error ? err.message : 'Could not regenerate the storyboard.')
     } finally {
       setRegenIndex(null)
     }
   }
 
   function handleEditedImageSaved(row: AiImageSavedRow) {
-    if (editImageIndex === null) return
-    const index = editImageIndex
-    setImages((cur) => replaceStoryboardPanel(cur, index, row.storage_path))
-    setSheetRevision((r) => r + 1)
+    setStoryboardSheetUrl(row.storage_path)
+    setImages(new Array(plans.length).fill(row.storage_path))
+    setSheetRevision((revision) => revision + 1)
     setEditImageIndex(null)
   }
 
@@ -963,45 +867,16 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setLightboxOpen(true)
   }
 
-  async function uploadApprovedStoryboardSheet(
-    shotImageUrls: readonly string[],
-    revision: number,
-  ): Promise<string> {
-    if (!userId) throw new Error('Sign in before creating the storyboard sheet.')
-    const downloadableUrls = await Promise.all(shotImageUrls.map((url) => {
-      const bucket = url.includes(`/${PRODUCTS_BUCKET}/`) ? PRODUCTS_BUCKET : FRAMES_BUCKET
-      return signStorageUrl(url, bucket)
-    }))
-    const blob = await buildStoryboardSheetBlob(downloadableUrls, aspect)
-    const storyboardId = typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    const objectPath = `${userId}/storyboards/${storyboardId}-r${revision}.jpg`
-    const { error: uploadError } = await supabase.storage
-      .from(FRAMES_BUCKET)
-      .upload(objectPath, blob, { contentType: 'image/jpeg', upsert: false })
-    if (uploadError) throw new Error(`Could not upload storyboard sheet (${uploadError.message})`)
-    const { data, error: signError } = await supabase.storage
-      .from(FRAMES_BUCKET)
-      .createSignedUrl(objectPath, 60 * 60 * 24 * 7)
-    if (signError || !data?.signedUrl) {
-      throw new Error(`Could not prepare storyboard sheet (${signError?.message ?? 'missing signed URL'})`)
-    }
-    return data.signedUrl
-  }
-
   async function handleApprove() {
     if (working) return
     setApproving(true)
     setError(null)
     try {
       const scenes = plans.map((p) => p.scenarioText)
-      const shotImageUrls = images.filter((url): url is string => Boolean(url))
-      if (shotImageUrls.length !== scenes.length) {
-        throw new Error('Every storyboard panel needs an approved image before film generation.')
-      }
+      const sheetUrl = storyboardSheetUrl
+      if (!sheetUrl) throw new Error('Generate and approve the storyboard before film generation.')
+      const shotImageUrls = Array.from({ length: scenes.length }, () => sheetUrl)
       const approvedRevision = sheetRevision
-      const sheetUrl = await uploadApprovedStoryboardSheet(shotImageUrls, approvedRevision)
       const storyboard = createApprovedStoryboardSnapshot({
         revision: approvedRevision,
         sheetUrl,
@@ -1047,9 +922,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   const selectedCameraLabel = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)?.label ?? 'Auto (AI decides)'
   const selectedThemeLabel = THEMES.find((t) => t.value === selectedTheme)?.label ?? 'Auto (AI decides)'
 
-  // Unified English scenario for the review: every plan in order, Markdown
-  // stripped, with SHOT n (start–end s) boundaries preserved.
-  const unifiedScenario = useMemo(() => buildUnifiedScenario(plans), [plans])
+  // Step 2 keeps one complete scenario. Repeated plans are internal Wan slots.
+  const unifiedScenario = useMemo(() => plans[0]?.scenarioText ?? '', [plans])
 
   // Translate one chunk via the translate-text edge function, cached per
   // `${lang}::${text}` so re-selecting a language is instant.
@@ -1596,65 +1470,54 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               </div>
             )}
 
-            {/* Step 2 — review / edit the scenario. */}
+            {/* Step 2 — one complete scenario, never split into shot cards. */}
             {step === 'scenario' && (
               <div className="space-y-3">
                 <p className="text-sm text-foreground/80">
-                  Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
+                  Review the complete {duration}-second scenario, then create one storyboard image with {expectedPlanCount(duration)} × 5-second slots.
                 </p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {plans.map((plan, i) => (
-                      <div key={i} className="space-y-2 rounded-md border border-border bg-accent/20 p-4">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                          Shot {i + 1} (~{PLAN_DURATION_SECONDS}s)
-                        </div>
-                        <Textarea
-                          value={plan.scenarioText}
-                          onChange={(e) =>
-                            setPlans((cur) => {
-                              const copy = [...cur]
-                              copy[i] = { ...copy[i], scenarioText: e.target.value }
-                              return copy
-                            })
-                          }
-                          rows={3}
-                          className="min-h-44 w-full resize-none overflow-y-auto border-border bg-accent/30 text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
-                        />
-                      </div>
-                    ))}
-                </div>
+                <Textarea
+                  aria-label="Full film scenario"
+                  value={plans[0]?.scenarioText ?? ''}
+                  onChange={(event) => {
+                    const scenarioText = event.target.value
+                    setPlans((current) => current.map((plan) => ({ ...plan, scenarioText })))
+                    setImages(new Array(plans.length).fill(undefined))
+                    setStoryboardSheetUrl(null)
+                  }}
+                  rows={10}
+                  className="min-h-72 w-full resize-y overflow-y-auto border-border bg-accent/30 text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
+                />
               </div>
             )}
 
-            {/* Step 3 — review preview images with zoom. */}
+            {/* Step 3 — exactly one generated storyboard sheet. */}
             {step === 'images' && (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-foreground/80">
-                    One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
+                    One storyboard image, {expectedPlanCount(duration)} slots, exactly {PLAN_DURATION_SECONDS} seconds per slot.
                   </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    aria-label="View storyboard"
-                    onClick={() => setStoryboardOverviewOpen(true)}
-                    className="gap-1.5 border-fuchsia-300/30 text-fuchsia-100 hover:bg-fuchsia-500/10"
-                  >
-                    <PanelsTopLeft className="h-4 w-4" aria-hidden="true" />
-                    Storyboard
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => setEditImageIndex(0)}>
+                      Edit image
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" disabled={working} onClick={handleRegenerate} className="gap-1.5">
+                      {regenIndex !== null ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                      Regenerate
+                    </Button>
+                  </div>
                 </div>
-                <StoryboardSheet
-                  plans={plans}
-                  images={images}
-                  regenIndex={regenIndex}
-                  onRegenerate={handleRegenerate}
-                  onEdit={setEditImageIndex}
-                  onZoom={openLightbox}
-                  working={working}
-                  aspect={aspect}
-                />
+                {storyboardSheetUrl && (
+                  <button
+                    type="button"
+                    aria-label="Open storyboard image"
+                    onClick={() => openLightbox(storyboardSheetUrl, unifiedScenario)}
+                    className="block w-full overflow-hidden rounded-md border border-border bg-black/30"
+                  >
+                    <img src={safeMediaUrl(storyboardSheetUrl)} alt="Full film storyboard" className="max-h-[58vh] w-full object-contain" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -1728,7 +1591,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   ) : (
                     <ImageIcon className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Generate preview images
+                  Generate storyboard
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
               )}
@@ -1959,7 +1822,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         }}
         userId={userId}
         defaultAspect={aspect}
-        initialImageUrl={editImageIndex === null ? null : safeMediaUrl(images[editImageIndex])}
+        initialImageUrl={editImageIndex === null ? null : safeMediaUrl(storyboardSheetUrl)}
         onSaved={handleEditedImageSaved}
       />
 
