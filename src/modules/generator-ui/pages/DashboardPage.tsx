@@ -7337,11 +7337,11 @@ export default function DashboardPage() {
     const hasPerSceneImages = Boolean(
       opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
     )
-    // Preserve the wizard's independent queueing for short films. Supported
-    // 30s+ films must instead wait for each completed clip and hand its actual
-    // last frame to the next card as that card's visual start frame.
+    // A unified storyboard approval represents one continuous film, so every
+    // internal 5-second Wan slot waits for the previous clip and starts from its
+    // captured last frame. Other multi-scene flows keep independent queueing.
     const isWizardSceneBatch = Array.isArray(opts?.perSceneImageUrls)
-    const requiresSequentialContinuity = isWizardSceneBatch && totalDuration >= 30
+    const requiresSequentialContinuity = isWizardSceneBatch && Boolean(opts?.storyboard)
     const isIndependentSceneBatch = isWizardSceneBatch && !requiresSequentialContinuity
     const scenarioModel =
       continuityCharacterRef || activeProduct || hasPerSceneImages
@@ -7652,6 +7652,7 @@ export default function DashboardPage() {
       characterName?: string | null
       cameraStyle?: string
       theme?: string
+      unit?: 'scene' | 'plan' | 'film'
     },
   ): Promise<string[]> {
     const trimmed = idea.trim()
@@ -7696,7 +7697,7 @@ export default function DashboardPage() {
           withNarration: options?.withNarration,
           cameraStyle: options?.cameraStyle,
           genre: options?.theme,
-          unit: "plan",
+          unit: options?.unit ?? "film",
         },
       })
       if (error) throw error
@@ -7870,10 +7871,14 @@ export default function DashboardPage() {
           }
         : null
       if (approvedProduct) assignProductToCurrentProject(approvedProduct)
-      // One video job per scene, each seeded by its approved image, rendered at
-      // the aspect the wizard chose (falls back to the composer's ratio). The
-      // wizard's product/character identity is carried through so every job
-      // anchors the same subject the user picked in the wizard.
+      // Mirror the approved handoff in the composer: one unified scenario in
+      // the prompt box and the single storyboard sheet in Start. Rendering uses
+      // one sequential 5-second Wan job per storyboard slot.
+      const unifiedScenario = scenes[0]?.trim() ?? ''
+      if (unifiedScenario) setPromptText(unifiedScenario)
+      if (options?.storyboard?.sheetUrl) {
+        await handleUseImageAsStart(options.storyboard.sheetUrl)
+      }
       const createdJobIds = await submitScenesAsJobs(scenes, options?.storyboard?.sheetUrl ?? perSceneImageUrls[0], {
         perSceneImageUrls,
         aspect: options?.aspect,
@@ -7900,8 +7905,9 @@ export default function DashboardPage() {
         setVideoColumnMessage(`No clips finished. ${queueFailedCount} failed to queue; 0 pending.`)
         return
       }
-      // Clear the composer prompt like the existing auto-split path does.
-      setPromptText('')
+      // Keep the approved unified scenario visible beside its staged Start
+      // image. Legacy non-storyboard callers retain clear-after-queue behavior.
+      if (!options?.storyboard) setPromptText('')
 
       // Wait for queued clips with a bounded poll. Completed cards are kept
       // even when another clip fails or remains pending at the deadline.

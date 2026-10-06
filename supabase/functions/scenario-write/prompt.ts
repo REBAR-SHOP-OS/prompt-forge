@@ -77,7 +77,7 @@ export function buildSystemPrompt(
   businessInfo?: string,
   outputLanguage = "en",
   narration = true,
-  unit: "scene" | "plan" = "scene",
+  unit: "scene" | "plan" | "film" = "scene",
 ): string {
   const langName = LANGUAGE_NAMES[outputLanguage] ?? "English";
   const isEnglish = outputLanguage === "en";
@@ -147,6 +147,31 @@ export function buildSystemPrompt(
     : adWithCharacter
       ? "a persuasive voiceover or the recurring character's spoken dialogue in a character-only shot; the character must not hold or touch the product by default"
       : "a persuasive voiceover line that promotes the product";
+
+  // ---------------------------------------------------------------------------
+  // Unified-film system prompt (Make Full Film).
+  // ---------------------------------------------------------------------------
+  if (unit === "film") {
+    const longForm = isCharacter ? "character-driven film" : isAd ? "product advertisement" : "commercial";
+    const minWords = Math.max(35, Math.round(duration * 1.2));
+    const maxWords = Math.max(55, Math.round(duration * 2));
+    const narrationLine = narration
+      ? `Include one coherent narration thread when useful, capped at ${planPolicy.maxSpokenWordsPerFilm} naturally speakable words for the full film.`
+      : `Do not include narration, voiceover, dialogue, captions, or spoken words.`;
+
+    return [
+      persona,
+      businessLine,
+      languageLine,
+      `Write ONE unified, cohesive scenario for a ${duration}-second cinematic ${longForm}.`,
+      "The scenario must have a clear beginning, middle, and payoff, with continuous visual progression and no repeated action.",
+      `Plan the visual progression internally in ${planCount} consecutive 5-second beats, but DO NOT expose, number, label, list, or separate those beats in the response.`,
+      "Return flowing prose only as one continuous scenario. No shot headings, timestamps, bullet points, markdown, delimiters, JSON, preamble, or production notes.",
+      "Describe concrete action, camera movement, lighting, emotion, continuity, and the final resolution naturally inside the prose.",
+      `Write ${minWords}-${maxWords} words total.`,
+      narrationLine,
+    ].filter(Boolean).join(" ");
+  }
 
   // ---------------------------------------------------------------------------
   // Plan-based system prompt (unit === "plan")
