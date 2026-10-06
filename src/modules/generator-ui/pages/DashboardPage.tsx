@@ -2403,6 +2403,7 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  const [voiceoverResetKey, setVoiceoverResetKey] = useState(0)
   
   const [isReframeOpen, setIsReframeOpen] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
@@ -6614,6 +6615,8 @@ export default function DashboardPage() {
   }
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
+    setVoiceoverResetKey((value) => value + 1)
+    setIsVoiceoverOpen(false)
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
     // the user's permanent saved outputs — reset MUST NOT touch them
     // or their files in storage. Only the working composer/history workspace
@@ -8141,6 +8144,8 @@ export default function DashboardPage() {
       </>
       )}
       <VoiceoverDialog
+        key={`vo-${voiceoverResetKey}`}
+        resetKey={voiceoverResetKey}
         open={isVoiceoverOpen}
         onOpenChange={setIsVoiceoverOpen}
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
