@@ -40,21 +40,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import { buildFilmPlansFromScenes, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
-import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
+import { buildUnifiedFilmPlans, type FilmDuration, type FilmAspect, type FilmPlan, expectedPlanCount, PLAN_DURATION_SECONDS, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES, buildAutoPromptSeed } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { REVIEW_LANGS, isRtlLang, englishFilmType, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { inFlightSigns } from '@/modules/generator-ui/lib/makeFilmSigning'
 import {
   buildStoryboardSheetPrompt,
   createApprovedStoryboardSnapshot,
-  replaceStoryboardPanel,
   type ApprovedStoryboardSnapshot,
 } from '@/modules/generator-ui/lib/storyboardSheet'
 import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLanguage'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
-import { StoryboardSheet } from './StoryboardSheet'
 import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import { groupProductPhotos, type ProductPhotoGroup } from '@/modules/generator-ui/lib/productPhotoGroups'
@@ -190,8 +188,8 @@ export interface MakeFilmWizardDialogProps {
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
-  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrls?: string[], characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean, correction?: string, storyboardSheet?: boolean) => Promise<string>
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' | 'film' }) => Promise<string[]>
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrls?: string[], characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean, correction?: string) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative; storyboard?: ApprovedStoryboardSnapshot }) => void
 }
 
@@ -210,8 +208,8 @@ export function MakeFilmWizardDialog({
   const [step, setStep] = useState<WizardStep>('prompt')
   const [prompt, setPrompt] = useState('')
   const [plans, setPlans] = useState<FilmPlan[]>([])
-  const [scenarioDraft, setScenarioDraft] = useState('')
   const [images, setImages] = useState<(string | undefined)[]>([])
+  const [storyboardSheetUrl, setStoryboardSheetUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [sheetRevision, setSheetRevision] = useState(1)
@@ -273,8 +271,8 @@ export function MakeFilmWizardDialog({
       setStep('prompt')
       setPrompt(initialPrompt ?? '')
       setPlans([])
-      setScenarioDraft('')
       setImages([])
+      setStoryboardSheetUrl(null)
       setBusy('idle')
       setRegenIndex(null)
       setSheetRevision(1)
@@ -505,12 +503,9 @@ export function MakeFilmWizardDialog({
   }
 
     function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
-    const planCount = expectedPlanCount(durationSeconds)
-    
     return `${basePrompt}
 
-IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, split into ${planCount} sequential 5-second plans (shots). Total film duration must be ${durationSeconds} seconds.
-Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
+IMPORTANT: Write one complete, continuous scenario for a ${durationSeconds}-second film. It must have a clear beginning, middle, and ending. Return flowing prose only: do not split, number, label, timestamp, or list shots, scenes, plans, or 5-second sections.`
   }
 
   function buildScenarioRequest(idea: string, variation: boolean, characterDescription = '', previousScenario = '') {
@@ -567,7 +562,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         aspect,
         cameraStyle: cameraAngle?.prompt,
         theme: theme?.prompt,
-        unit: 'plan' as const,
+        unit: 'film' as const,
       },
     }
   }
@@ -597,24 +592,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         setError('The scenario came back empty — try rephrasing your prompt.')
         return
       }
-      // The model must return exactly the expected number of plans. If it
-      // doesn't match, retry once before giving up.
-      let builtPlans: FilmPlan[]
-      try {
-        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
-      } catch (firstErr) {
-        setProgress('Retrying scenario…')
-        const retryWritten = await writeScenario(enrichedPrompt, options)
-        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
-        if (retryScenes.length === 0) {
-          setError('The scenario came back empty — try rephrasing your prompt.')
-          return
-        }
-        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
-      }
+      const builtPlans = buildUnifiedFilmPlans(duration, rawScenes.join(' '), undefined)
       setPlans(builtPlans)
-      setScenarioDraft(builtPlans.map((plan) => plan.scenarioText).join('\n\n'))
-      setImages([])
+      setImages(new Array(builtPlans.length).fill(undefined))
+      setStoryboardSheetUrl(null)
       setStep('scenario')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write the scenario.')
@@ -635,7 +616,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       // leak into the regenerated scenario. Skipped synchronously when no
       // character is selected.
       const characterDescription = selectedCharacter ? (characterDesc || await resolveCharacterDescription(selectedCharacter)) : ''
-      const previousScenario = plans.map((p) => p.scenarioText).join('\n\n')
+      const previousScenario = plans[0]?.scenarioText ?? ''
       const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true, characterDescription, previousScenario)
       const written = await writeScenario(enrichedPrompt, options)
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
@@ -643,24 +624,10 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         setError('The scenario came back empty — try again.')
         return
       }
-      let builtPlans: FilmPlan[]
-      try {
-        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
-      } catch (firstErr) {
-        setProgress('Retrying scenario…')
-        const retryWritten = await writeScenario(enrichedPrompt, options)
-        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
-        if (retryScenes.length === 0) {
-          setError('The scenario came back empty — try again.')
-          return
-        }
-        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
-      }
-      // Success: replace the plans atomically and reset the stale preview
-      // images so they never mismatch the new shots.
+      const builtPlans = buildUnifiedFilmPlans(duration, rawScenes.join(' '), undefined)
       setPlans(builtPlans)
-      setScenarioDraft(builtPlans.map((plan) => plan.scenarioText).join('\n\n'))
-      setImages([])
+      setImages(new Array(builtPlans.length).fill(undefined))
+      setStoryboardSheetUrl(null)
       setIdentitySnapshot(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not regenerate the scenario.')
@@ -823,46 +790,21 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     }
   }
 
-  function plansFromScenarioDraft(): FilmPlan[] {
-    const paragraphs = scenarioDraft
-      .split(/\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-    if (paragraphs.length === 0) throw new Error('The scenario is empty.')
-    if (paragraphs.length === plans.length) {
-      return plans.map((plan, index) => ({ ...plan, scenarioText: paragraphs[index] }))
-    }
-    return buildFilmPlansFromScenes(duration, [scenarioDraft], undefined)
-  }
-
-  async function generateStoryboardSheetImage(
-    storyboardPlans: FilmPlan[],
-    snapshot: IdentitySnapshot,
-    creative: FilmCreative,
-  ): Promise<string> {
+  async function generateStoryboardSheet(snapshot: IdentitySnapshot): Promise<string> {
+    const scenario = plans[0]?.scenarioText.trim()
+    if (!scenario) throw new Error('Write the scenario before generating its storyboard.')
     const productUrls = snapshot.product?.urls?.length
       ? snapshot.product.urls
-      : snapshot.product?.url
-        ? [snapshot.product.url]
-        : []
+      : snapshot.product?.url ? [snapshot.product.url] : []
     const characterUrl = snapshot.character?.url
-    const characterSheet = Boolean(characterUrl && snapshot.character?.characterSheet)
-    const storyboardPrompt = buildStoryboardSheetPrompt({
-      plans: storyboardPlans,
-      durationSeconds: duration,
-      aspect,
-      allowText: !noTextOnImages,
-    })
     return generateSceneImage(
-      storyboardPrompt,
+      buildStoryboardSheetPrompt({ scenario, panelCount: plans.length, durationSeconds: duration }),
       aspect,
       productUrls,
       characterUrl,
       false,
-      creative,
-      characterSheet,
-      undefined,
-      true,
+      currentCreative(),
+      Boolean(characterUrl && snapshot.character?.characterSheet),
     )
   }
 
@@ -870,51 +812,52 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     if (plans.length === 0) return
     setBusy('images')
     setError(null)
+    const snapshot: IdentitySnapshot = {
+      product: toIdentityRef(selectedProduct, 'product'),
+      character: toIdentityRef(selectedCharacter, 'character'),
+    }
+    setIdentitySnapshot(snapshot)
+    setProgress(`Designing one storyboard with ${plans.length} × 5-second slots…`)
     try {
-      const storyboardPlans = plansFromScenarioDraft()
-      setPlans(storyboardPlans)
-      const snapshot: IdentitySnapshot = {
-        product: toIdentityRef(selectedProduct, 'product'),
-        character: toIdentityRef(selectedCharacter, 'character'),
-      }
-      setIdentitySnapshot(snapshot)
-      setProgress(`Designing one storyboard image with ${storyboardPlans.length} five-second slots…`)
-      const sheetUrl = await generateStoryboardSheetImage(storyboardPlans, snapshot, currentCreative())
-      setImages([sheetUrl])
+      const sheetUrl = await generateStoryboardSheet(snapshot)
+      setStoryboardSheetUrl(sheetUrl)
+      setImages(new Array(plans.length).fill(sheetUrl))
       setStep('images')
     } catch (err) {
-      console.error('Make-film wizard: storyboard image generation failed', err)
-      setImages([])
-      setError(err instanceof Error ? err.message : 'Could not generate the storyboard image.')
+      setStoryboardSheetUrl(null)
+      setImages(new Array(plans.length).fill(undefined))
+      setError(err instanceof Error ? err.message : 'Could not generate the storyboard.')
     } finally {
       setBusy('idle')
       setProgress(null)
     }
   }
 
-  async function handleRegenerate(index: number) {
+  async function handleRegenerate() {
     if (working) return
-    setRegenIndex(index)
+    const snapshot = identitySnapshot
+    if (!snapshot) {
+      setError('The original film identity snapshot is unavailable. Generate the storyboard again.')
+      return
+    }
+    setRegenIndex(0)
     setError(null)
     try {
-      const snapshot = identitySnapshot
-      if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the storyboard again.')
-      const url = await generateStoryboardSheetImage(plans, snapshot, currentCreative())
-      setImages((current) => replaceStoryboardPanel(current, 0, url))
+      const sheetUrl = await generateStoryboardSheet(snapshot)
+      setStoryboardSheetUrl(sheetUrl)
+      setImages(new Array(plans.length).fill(sheetUrl))
       setSheetRevision((revision) => revision + 1)
     } catch (err) {
-      console.error('Make-film wizard: storyboard regeneration failed', err)
-      setError(err instanceof Error ? err.message : 'Could not regenerate the storyboard image.')
+      setError(err instanceof Error ? err.message : 'Could not regenerate the storyboard.')
     } finally {
       setRegenIndex(null)
     }
   }
 
   function handleEditedImageSaved(row: AiImageSavedRow) {
-    if (editImageIndex === null) return
-    const index = editImageIndex
-    setImages((cur) => replaceStoryboardPanel(cur, index, row.storage_path))
-    setSheetRevision((r) => r + 1)
+    setStoryboardSheetUrl(row.storage_path)
+    setImages(new Array(plans.length).fill(row.storage_path))
+    setSheetRevision((revision) => revision + 1)
     setEditImageIndex(null)
   }
 
@@ -930,20 +873,19 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setError(null)
     try {
       const scenes = plans.map((p) => p.scenarioText)
-      const sheetUrl = images[0]
-      if (!sheetUrl) {
-        throw new Error('Generate and approve the storyboard image before film generation.')
-      }
+      const sheetUrl = storyboardSheetUrl
+      if (!sheetUrl) throw new Error('Generate and approve the storyboard before film generation.')
+      const shotImageUrls = Array.from({ length: scenes.length }, () => sheetUrl)
       const approvedRevision = sheetRevision
       const storyboard = createApprovedStoryboardSnapshot({
         revision: approvedRevision,
         sheetUrl,
         scenes,
-        shotImageUrls: [],
+        shotImageUrls,
       })
       const productIdentity = identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product')
       const characterIdentity = identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character')
-      onApprove([...storyboard.scenes], [], {
+      onApprove([...storyboard.scenes], [...storyboard.shotImageUrls], {
         duration,
         aspect,
         withNarration,
@@ -974,15 +916,14 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   const stepLabel =
     step === 'prompt' ? 'Prompt' :
     step === 'scenario' ? 'Scenario' :
-    'Storyboard image'
+    'Preview images'
 
   // Get display labels for selected styles
   const selectedCameraLabel = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)?.label ?? 'Auto (AI decides)'
   const selectedThemeLabel = THEMES.find((t) => t.value === selectedTheme)?.label ?? 'Auto (AI decides)'
 
-  // Unified English scenario for the review: every plan in order, Markdown
-  // stripped, with SHOT n (start–end s) boundaries preserved.
-  const unifiedScenario = useMemo(() => buildUnifiedScenario(plans), [plans])
+  // Step 2 keeps one complete scenario. Repeated plans are internal Wan slots.
+  const unifiedScenario = useMemo(() => plans[0]?.scenarioText ?? '', [plans])
 
   // Translate one chunk via the translate-text edge function, cached per
   // `${lang}::${text}` so re-selecting a language is instant.
@@ -1132,7 +1073,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               <span className="text-base font-semibold text-foreground">{stepLabel}</span>
             </div>
             <DialogDescription className="text-sm text-muted-foreground">
-              Review one complete scenario and one storyboard image. Nothing renders until you approve.
+              Review the scenario and one preview image per scene. Nothing renders until you approve.
             </DialogDescription>
           </DialogHeader>
 
@@ -1166,7 +1107,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {expectedPlanCount(duration)} slots x 5s each
+                    {expectedPlanCount(duration)} shots × ~{PLAN_DURATION_SECONDS}s each
                   </p>
                 </div>
 
@@ -1341,7 +1282,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       }`}
                     >
                       <Check className="h-3.5 w-3.5" />
-                      Clean panels (slot numbers only)
+                      Clean images (no text)
                     </Button>
                     <Button
                       type="button"
@@ -1355,7 +1296,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       }`}
                     >
                       <ImageIcon className="h-3.5 w-3.5" />
-                      Allow text inside panels
+                      With text overlays
                     </Button>
                   </div>
                 </div>
@@ -1529,52 +1470,54 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               </div>
             )}
 
-            {/* Step 2 - review and edit one complete scenario. */}
+            {/* Step 2 — one complete scenario, never split into shot cards. */}
             {step === 'scenario' && (
               <div className="space-y-3">
                 <p className="text-sm text-foreground/80">
-                  Review the complete {duration}-second scenario. The {plans.length} five-second slots are timed automatically when the film is rendered.
+                  Review the complete {duration}-second scenario, then create one storyboard image with {expectedPlanCount(duration)} × 5-second slots.
                 </p>
                 <Textarea
-                  value={scenarioDraft}
-                  onChange={(event) => setScenarioDraft(event.target.value)}
-                  rows={14}
-                  className="min-h-[22rem] w-full resize-y border-border bg-accent/30 text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
-                  aria-label="Complete film scenario"
+                  aria-label="Full film scenario"
+                  value={plans[0]?.scenarioText ?? ''}
+                  onChange={(event) => {
+                    const scenarioText = event.target.value
+                    setPlans((current) => current.map((plan) => ({ ...plan, scenarioText })))
+                    setImages(new Array(plans.length).fill(undefined))
+                    setStoryboardSheetUrl(null)
+                  }}
+                  rows={10}
+                  className="min-h-72 w-full resize-y overflow-y-auto border-border bg-accent/30 text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
                 />
               </div>
             )}
 
-            {/* Step 3 - review the single storyboard image. */}
+            {/* Step 3 — exactly one generated storyboard sheet. */}
             {step === 'images' && (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-foreground/80">
-                    One storyboard image contains {plans.length} numbered slots. Each slot represents exactly five seconds.
+                    One storyboard image, {expectedPlanCount(duration)} slots, exactly {PLAN_DURATION_SECONDS} seconds per slot.
                   </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    aria-label="View storyboard"
-                    onClick={() => setStoryboardOverviewOpen(true)}
-                    className="gap-1.5 border-fuchsia-300/30 text-fuchsia-100 hover:bg-fuchsia-500/10"
-                  >
-                    <PanelsTopLeft className="h-4 w-4" aria-hidden="true" />
-                    View full image
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => setEditImageIndex(0)}>
+                      Edit image
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" disabled={working} onClick={handleRegenerate} className="gap-1.5">
+                      {regenIndex !== null ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+                      Regenerate
+                    </Button>
+                  </div>
                 </div>
-                <StoryboardSheet
-                  plans={plans.length > 0 ? [{ ...plans[0], scenarioText: scenarioDraft }] : []}
-                  images={images}
-                  regenIndex={regenIndex}
-                  onRegenerate={handleRegenerate}
-                  onEdit={setEditImageIndex}
-                  onZoom={openLightbox}
-                  working={working}
-                  aspect={aspect}
-                  sheetMode={{ slotCount: plans.length }}
-                />
+                {storyboardSheetUrl && (
+                  <button
+                    type="button"
+                    aria-label="Open storyboard image"
+                    onClick={() => openLightbox(storyboardSheetUrl, unifiedScenario)}
+                    className="block w-full overflow-hidden rounded-md border border-border bg-black/30"
+                  >
+                    <img src={safeMediaUrl(storyboardSheetUrl)} alt="Full film storyboard" className="max-h-[58vh] w-full object-contain" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -1648,7 +1591,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   ) : (
                     <ImageIcon className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Generate storyboard image
+                  Generate storyboard
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
               )}
@@ -1879,7 +1822,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         }}
         userId={userId}
         defaultAspect={aspect}
-        initialImageUrl={editImageIndex === null ? null : safeMediaUrl(images[editImageIndex])}
+        initialImageUrl={editImageIndex === null ? null : safeMediaUrl(storyboardSheetUrl)}
         onSaved={handleEditedImageSaved}
       />
 
@@ -1891,19 +1834,33 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               Storyboard
             </DialogTitle>
             <DialogDescription>
-              Review the single approved storyboard image. Its {plans.length} numbered panels each represent five seconds.
+              Review the complete approved shot order at a glance. Close this view to edit or regenerate a shot.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid max-h-[72vh] place-items-center overflow-y-auto rounded-md border border-border bg-accent/20 p-3">
-            {safeMediaUrl(images[0]) ? (
-              <img
-                src={safeMediaUrl(images[0])}
-                alt={`Storyboard with ${plans.length} five-second slots`}
-                className="max-h-[68vh] w-auto max-w-full object-contain"
-              />
-            ) : (
-              <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
-            )}
+          <div className="grid max-h-[72vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+            {plans.map((plan, index) => {
+              const url = safeMediaUrl(images[index])
+              return (
+                <figure key={index} className="overflow-hidden rounded-md border border-border bg-accent/20">
+                  <div
+                    className="grid w-full place-items-center bg-surface-2/60"
+                    style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
+                  >
+                    {url ? (
+                      <img src={url} alt={`Storyboard shot ${index + 1}`} className="h-full w-full object-contain" />
+                    ) : (
+                      <ImageIcon className="h-7 w-7 text-muted-foreground" aria-hidden="true" />
+                    )}
+                  </div>
+                  <figcaption className="space-y-1 p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
+                      Shot {index + 1}
+                    </div>
+                    <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{plan.scenarioText}</p>
+                  </figcaption>
+                </figure>
+              )
+            })}
           </div>
         </DialogContent>
       </Dialog>
@@ -1914,7 +1871,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           <DialogHeader>
             <DialogTitle className="text-base">Preview</DialogTitle>
             <DialogDescription>
-              Review the complete storyboard image at full size before approving the film.
+              Review the selected scene image at full size before approving the film.
             </DialogDescription>
           </DialogHeader>
           {lightboxImage && (
