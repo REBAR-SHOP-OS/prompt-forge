@@ -23,6 +23,7 @@ import {
   FILM_DURATIONS,
   buildFilmPlans,
   buildFilmPlansFromScenes,
+  buildUnifiedFilmPlans,
   validateFilmPlans,
   splitNarrationAcrossPlans,
   splitScenarioIntoPlans,
@@ -943,5 +944,25 @@ describe('buildAutoPromptSeed - Step 1 auto-prompt', () => {
   it('is deterministic - same selections in, same string out', () => {
     const ctx = { ...base, productName: 'Rebar Coil', filmType: 'Brand Story', cameraAngle: 'low angle' }
     expect(buildAutoPromptSeed(ctx)).toBe(buildAutoPromptSeed(ctx))
+  })
+})
+
+
+describe('buildUnifiedFilmPlans', () => {
+  it('keeps one scenario while creating one internal 5-second slot per duration segment', () => {
+    const scenario = 'A continuous story opens at dawn, develops through precise work, and ends with the finished structure.'
+    const plans = buildUnifiedFilmPlans(30, scenario, undefined)
+
+    expect(plans).toHaveLength(6)
+    expect(plans.every((plan) => plan.durationSeconds === 5)).toBe(true)
+    expect(plans.every((plan) => plan.scenarioText === scenario)).toBe(true)
+    expect(plans.map((plan) => plan.label)).toEqual([
+      'SHOT 1 OF 6',
+      'SHOT 2 OF 6',
+      'SHOT 3 OF 6',
+      'SHOT 4 OF 6',
+      'SHOT 5 OF 6',
+      'SHOT 6 OF 6',
+    ])
   })
 })

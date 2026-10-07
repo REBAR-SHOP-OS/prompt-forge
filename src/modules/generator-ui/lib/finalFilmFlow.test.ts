@@ -34,13 +34,16 @@ describe('Final Film flow contract', () => {
 
     expect(mergeFlow).toContain('if (approvedJobs) {')
     expect(mergeFlow).toContain('const chronoAsc = approvedJobs')
-    expect(mergeFlow).toContain('if (!approvedJobs && manualOrder)')
+    expect(mergeFlow).toContain('if (!approvedJobs && effectiveManualOrder)')
     expect(dashboardSource).toContain('!startFrameIsStoryboardSheet')
   })
 
-  it('chains 30s+ wizard cards while preserving independent short-film queueing', () => {
+  it('chains every approved unified-storyboard slot while preserving other independent batches', () => {
     expect(dashboardSource).toContain(
-      'const requiresSequentialContinuity = isWizardSceneBatch && totalDuration >= 30',
+      'const requiresSequentialContinuity = isWizardSceneBatch && Boolean(opts?.storyboard)',
+    )
+    expect(dashboardSource).toContain(
+      'const isIndependentSceneBatch = isWizardSceneBatch && !requiresSequentialContinuity',
     )
     expect(dashboardSource).toContain('if (requiresSequentialContinuity) {')
     expect(dashboardSource).toContain('queueSequentialSceneBatch(')
@@ -48,7 +51,6 @@ describe('Final Film flow contract', () => {
       '(jobId, sceneIndex) => waitForLastFrameUrl(jobId, `Scene ${sceneIndex + 1}`)',
     )
     expect(dashboardSource).toContain('startFrameUrl = previousLastFrameUrl')
-    expect(dashboardSource).toContain('totalDuration >= 30 ||')
     expect(dashboardSource).toContain('} else if (isIndependentSceneBatch) {')
   })
 })

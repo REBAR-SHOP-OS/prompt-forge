@@ -18,12 +18,12 @@ function writeFilmScenarioSource(): string {
 }
 
 describe("scenario-write film duration contract", () => {
-  it("threads the selected 30s duration into scenario-write plan generation", () => {
+  it("requests one unified scenario while retaining 5-second Wan slots", () => {
     const source = writeFilmScenarioSource();
 
     expect(source).toContain("const filmDuration = options?.duration ?? durationSeconds");
     expect(source).toMatch(
-      /functions\.invoke\(['"]scenario-write['"],[\s\S]*?durationSeconds:\s*filmDuration,[\s\S]*?unit:\s*["']plan["']/,
+      /functions\.invoke\(['"]scenario-write['"],[\s\S]*?durationSeconds:\s*filmDuration,[\s\S]*?unit:\s*options\?\.unit\s*\?\?\s*["']film["']/,
     );
 
     expect(getPlanDurationPolicy(30)).toMatchObject({
@@ -32,8 +32,9 @@ describe("scenario-write film duration contract", () => {
       planSeconds: 5,
     });
 
-    const prompt = buildSystemPrompt(30, undefined, false, undefined, "Rebar fabrication", "en", true, "plan");
-    expect(prompt).toContain("structured as SIX sequential 5-second plans");
-    expect(prompt).toContain("Output EXACTLY 6 plan blocks");
+    const prompt = buildSystemPrompt(30, undefined, false, undefined, "Rebar fabrication", "en", true, "film");
+    expect(prompt).toContain("Write ONE unified, cohesive scenario")
+    expect(prompt).toContain("6 consecutive 5-second beats")
+    expect(prompt).toContain("DO NOT expose, number, label, list, or separate those beats")
   });
 });

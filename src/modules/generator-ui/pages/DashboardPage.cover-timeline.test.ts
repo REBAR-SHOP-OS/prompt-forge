@@ -41,18 +41,40 @@ describe('Dashboard cover lifecycle and soundtrack contract', () => {
       .toBeLessThan(dashboardSource.indexOf('const coverFilmFrameUrl'))
   })
 
-  it('renders selected-project clips in their saved snapshot order without changing merge order', () => {
+  it('sorts selected-project clips chronologically before applying a persisted manual order', () => {
     const display = section('const displayedClips = useMemo', 'type PreviewItem')
-    const selectedProjectGuard = display.indexOf('if (selectedProjectId)')
     const chronologicalSort = display.indexOf('const chronoAsc = items.sort')
 
-    expect(selectedProjectGuard).toBeGreaterThan(-1)
-    expect(display.slice(selectedProjectGuard, chronologicalSort)).toContain('return items')
-    expect(selectedProjectGuard).toBeLessThan(chronologicalSort)
+    expect(chronologicalSort).toBeGreaterThan(-1)
+    expect(display).not.toContain('if (selectedProjectId) {\n      return items')
+    expect(display).toContain('if (!effectiveManualOrder) return chronoAsc')
+    expect(display).toContain('for (const id of effectiveManualOrder)')
 
     const merge = section('async function handleMergeAllVideos()', 'function resetWorkspace')
     expect(merge).not.toContain('if (selectedProjectId) {\n      eligibleClips = [...baseClips]')
     expect(merge).toContain('let eligibleClips: UnifiedClip[] = chronoAsc')
+  })
+
+  it('persists scoped drag order in a synced per-user map, appends new cards, and only starts dragging from a handle', () => {
+    const ordering = section('const manualOrderScope', '// Stable key for the current generation chain')
+    // Single per-user map key so the library sync layer tracks it across devices.
+    expect(ordering).toContain('manual-card-order:${userId}`')
+    expect(ordering).toContain('map[manualOrderScope] = manualOrder')
+    expect(ordering).toContain('readManualOrderMap(manualOrderStoreKey)')
+
+    const dragHandlers = section('const handleCardDragStart', '// Unified clip list')
+    expect(dragHandlers).toContain("target.closest('[data-card-drag-handle=\"true\"]')")
+    expect(dragHandlers).toContain('setDragOverId(targetId)')
+
+    const display = section('const displayedClips = useMemo', 'type PreviewItem')
+    expect(display).toContain('next.push(id)')
+    expect(display).toContain('setManualOrder(next)')
+
+    const cards = section('{displayedClips.map((clip, index)', '{/* Left library panel')
+    expect(cards).toContain('data-card-drag-handle="true"')
+    expect(cards).not.toContain('draggable={!isReadOnlyProject}')
+    expect(cards).toContain("dragOverId === clip.id ? 'border-accent-cool")
+    expect(cards).toContain("dragOverId === video.id ? 'border-accent-cool")
   })
 
   it('keeps a finalized project cover when Start Over leaves a read-only Final view', () => {

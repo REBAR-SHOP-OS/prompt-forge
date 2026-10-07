@@ -34,6 +34,9 @@ const TRACKED_PREFIXES = [
   "workspace-active-images",
   "selected-project",
   "preview-state",
+  // Card drag-order map (`manual-card-order:${userId}` holds a JSON
+  // scope->order map). Tracked so ordering syncs across devices.
+  "manual-card-order",
 ] as const;
 
 export type LibraryDoc = Record<string, string>;
