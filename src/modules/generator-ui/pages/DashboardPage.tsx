@@ -7036,7 +7036,7 @@ export default function DashboardPage() {
 
       const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 1
       const perClipDuration: 5 | 10 | 15 =
-        (durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
+        durationSeconds > 15 ? 15 : durationSeconds
 
 
 
