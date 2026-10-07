@@ -55,10 +55,12 @@ describe('Dashboard cover lifecycle and soundtrack contract', () => {
     expect(merge).toContain('let eligibleClips: UnifiedClip[] = chronoAsc')
   })
 
-  it('persists scoped drag order, appends new cards, and only starts dragging from a handle', () => {
+  it('persists scoped drag order in a synced per-user map, appends new cards, and only starts dragging from a handle', () => {
     const ordering = section('const manualOrderScope', '// Stable key for the current generation chain')
-    expect(ordering).toContain('manual-card-order:${userId}:${manualOrderScope}')
-    expect(ordering).toContain('window.localStorage.setItem(manualOrderKey, JSON.stringify(manualOrder))')
+    // Single per-user map key so the library sync layer tracks it across devices.
+    expect(ordering).toContain('manual-card-order:${userId}`')
+    expect(ordering).toContain('map[manualOrderScope] = manualOrder')
+    expect(ordering).toContain('readManualOrderMap(manualOrderStoreKey)')
 
     const dragHandlers = section('const handleCardDragStart', '// Unified clip list')
     expect(dragHandlers).toContain("target.closest('[data-card-drag-handle=\"true\"]')")
