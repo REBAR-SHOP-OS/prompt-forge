@@ -11030,7 +11030,7 @@ export default function DashboardPage() {
         userId={userId}
         writeScenario={writeFilmScenario}
         generateSceneImage={(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction, storyboardSheet) =>
-          generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction, storyboardSheet)
+          generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction, Boolean(storyboardSheet))
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
