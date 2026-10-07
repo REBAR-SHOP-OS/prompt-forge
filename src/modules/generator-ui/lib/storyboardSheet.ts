@@ -31,6 +31,23 @@ export function createApprovedStoryboardSnapshot(params: {
   })
 }
 
+export function buildStoryboardSheetPrompt(params: {
+  scenario: string
+  panelCount: number
+  durationSeconds: number
+}): string {
+  const panelCount = Math.max(1, Math.round(params.panelCount))
+  return [
+    `Create ONE cinematic storyboard sheet as a single image for this complete ${params.durationSeconds}-second film.`,
+    `The sheet must contain exactly ${panelCount} equal-size panels, read left-to-right and top-to-bottom.`,
+    `Each panel represents exactly 5 seconds of consecutive screen time. Panel 1 is 0-5s, panel 2 is 5-10s, and so on.`,
+    'Show a clear visual progression from opening hook through development to the final payoff. Keep product, character, environment, lighting and visual style consistent across panels.',
+    'Separate panels with thin black dividers. Put a small, legible number badge in the top-left of every panel, numbered consecutively from 1.',
+    'This must be one flat storyboard image, not separate files, not a collage of duplicate frames, and not a contact sheet with captions.',
+    `FULL FILM SCENARIO: ${params.scenario.trim()}`,
+  ].join('\n\n')
+}
+
 export function storyboardShotInstruction(
   storyboard: ApprovedStoryboardSnapshot,
   shotIndex: number,
@@ -41,9 +58,9 @@ export function storyboardShotInstruction(
     `APPROVED STORYBOARD SHEET REVISION ${storyboard.revision}.`,
     `Follow panel ${panelNumber} of ${storyboard.scenes.length}, read left-to-right and top-to-bottom.`,
     startsFromSheet
-      ? 'The supplied first frame is the only approved storyboard sheet. Immediately expand panel 1 to full-screen and animate that shot.'
-      : `Continue the film with the action planned for panel ${panelNumber}, preserving the approved subject, setting, lighting and style.`,
-    'The numbered panels are timing references only. Never show the storyboard grid, panel borders, labels, captions or multiple panels in the rendered shot.',
+      ? 'The supplied first frame is the full storyboard sheet. Immediately expand panel 1 to full-screen and animate that shot.'
+      : `Continue the film into panel ${panelNumber} while preserving the approved subject, setting, lighting and style.`,
+    'Never show the storyboard grid, panel borders, labels, captions or multiple panels in the rendered shot.',
   ].join(' ')
 }
 
@@ -60,42 +77,10 @@ export function storyboardFramesForShot(params: {
   if (params.previousLastFrameUrl) {
     return { startFrameUrl: params.previousLastFrameUrl }
   }
-  return null
-}
-
-export interface StoryboardPromptPlan {
-  scenarioText: string
-}
-
-export function storyboardGrid(slotCount: number): { columns: number; rows: number } {
-  const slots = Math.max(1, Math.round(slotCount))
-  if (slots <= 3) return { columns: slots, rows: 1 }
-  if (slots <= 6) return { columns: 2, rows: Math.ceil(slots / 2) }
-  return { columns: 3, rows: Math.ceil(slots / 3) }
-}
-
-export function buildStoryboardSheetPrompt(params: {
-  plans: readonly StoryboardPromptPlan[]
-  durationSeconds: number
-  aspect: FilmAspect
-  allowText?: boolean
-}): string {
-  if (params.plans.length === 0) throw new Error('Storyboard has no slots')
-  const { columns, rows } = storyboardGrid(params.plans.length)
-  const panels = params.plans.map((plan, index) =>
-    `PANEL ${index + 1} (seconds ${index * 5}-${(index + 1) * 5}): ${plan.scenarioText.trim()}`,
-  )
-  return [
-    'Create ONE single cinematic storyboard contact-sheet image. Do not return separate images.',
-    `The finished image must contain exactly ${params.plans.length} equal panels arranged in a ${columns}-column by ${rows}-row grid, read left-to-right and top-to-bottom.`,
-    `This storyboard covers one continuous ${params.durationSeconds}-second film. Every panel is exactly one 5-second slot.`,
-    `Compose every panel for the final ${params.aspect} film frame while keeping the product, character, location, lighting, color grade and art direction visually consistent across all panels.`,
-    params.allowText
-      ? 'Separate panels with thin black dividers. Put a clear circular panel number in the top-left corner of each panel. Keep any requested in-scene text inside its own panel. No timestamps, watermarks, extra panels or duplicated panels.'
-      : 'Separate panels with thin black dividers. Put only a clear circular panel number in the top-left corner of each panel. No captions, prose, timestamps, watermarks, extra panels or duplicated panels.',
-    'Each panel must depict the corresponding moment below:',
-    ...panels,
-  ].join('\n')
+  // A storyboard is generated as one AI image. If continuity capture is not
+  // available, reuse that single approved sheet rather than inventing another
+  // generated frame for this slot.
+  return { startFrameUrl: params.storyboard.sheetUrl }
 }
 
 function panelDimensions(aspect: FilmAspect): { width: number; height: number } {
