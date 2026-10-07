@@ -771,6 +771,18 @@ function readStoredRecord<T>(key: string | null): Record<string, T> {
   }
 }
 
+// Card drag-order map: `manual-card-order:${userId}` holds a JSON
+// scope->order map. Entries are validated to be string arrays; corrupt or
+// malformed entries are dropped so one bad scope can't break the rest.
+function readManualOrderMap(storeKey: string | null): Record<string, string[]> {
+  const raw = readStoredRecord<unknown>(storeKey)
+  const map: Record<string, string[]> = {}
+  for (const [scope, order] of Object.entries(raw)) {
+    if (Array.isArray(order) && order.every((id) => typeof id === 'string')) map[scope] = order
+  }
+  return map
+}
+
 async function hydrateJobs(summaries: JobSummary[]) {
   const hydratedJobs = await Promise.all(
     summaries.map(async (summary) => {
@@ -2017,7 +2029,15 @@ export default function DashboardPage() {
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
+  const [manualOrderReadyKey, setManualOrderReadyKey] = useState<string | null>(null)
+  // True once the mount-time workspace restore (generatedVideos/userImages from
+  // the backend) has finished. The manual-order cleanup effect must not prune
+  // the persisted order until this is true: on reload the order loads
+  // synchronously from localStorage while cards hydrate asynchronously, and
+  // pruning against an empty/partial clip list would erase the saved order.
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
   const [trimSrc, setTrimSrc] = useState<string | null>(null)
   const [v2vJobId, setV2vJobId] = useState<string | null>(null)
@@ -3029,6 +3049,58 @@ export default function DashboardPage() {
   // its id is NOT a draft. Such projects are READ-ONLY: the user may watch,
   // download, and delete them, but cannot edit/resume/extend them.
   const isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')
+
+  // Keep each workspace/project/draft order isolated. Persisting by scope
+  // prevents a project reorder from scrambling the bare workspace while still
+  // making drag-and-drop survive a reload.
+  const manualOrderScope = selectedProjectId ?? activeDraftId ?? 'workspace'
+  // All scopes live inside ONE per-user map key (`manual-card-order:${userId}`)
+  // so the library sync layer — which only snapshots exact `${prefix}:${userId}`
+  // keys (see libraryState.ts TRACKED_PREFIXES) — hydrates and pushes card
+  // ordering across browsers/devices. Per-scope keys
+  // (`manual-card-order:${userId}:${scope}`) were never tracked and silently
+  // lost ordering on other devices; they are lazily migrated on first read.
+  const manualOrderStoreKey = userId ? `manual-card-order:${userId}` : null
+  // Opaque token identifying the loaded (store key, scope) pair; used only for
+  // the ready-guard below, never as a storage key.
+  const manualOrderScopeToken = manualOrderStoreKey ? `${manualOrderStoreKey}::${manualOrderScope}` : null
+  useEffect(() => {
+    setManualOrderReadyKey(null)
+    if (!manualOrderStoreKey || !userId) {
+      setManualOrder(null)
+      return
+    }
+    const map = readManualOrderMap(manualOrderStoreKey)
+    let order: string[] | null = map[manualOrderScope] ?? null
+    if (order == null) {
+      // One-time lazy migration from the legacy per-scope key format which the
+      // sync layer never tracked.
+      try {
+        const legacyRaw = window.localStorage.getItem(`${manualOrderStoreKey}:${manualOrderScope}`)
+        if (legacyRaw != null) {
+          const legacy = JSON.parse(legacyRaw) as unknown
+          if (Array.isArray(legacy) && legacy.every((id) => typeof id === 'string')) {
+            order = legacy
+            map[manualOrderScope] = legacy
+            window.localStorage.setItem(manualOrderStoreKey, JSON.stringify(map))
+          }
+          window.localStorage.removeItem(`${manualOrderStoreKey}:${manualOrderScope}`)
+        }
+      } catch { /* Migration best-effort only. */ }
+    }
+    setManualOrder(order)
+    setManualOrderReadyKey(`${manualOrderStoreKey}::${manualOrderScope}`)
+  }, [manualOrderStoreKey, manualOrderScope, userId])
+  useEffect(() => {
+    if (!manualOrderStoreKey || manualOrderScopeToken == null || manualOrderReadyKey !== manualOrderScopeToken) return
+    try {
+      const map = readManualOrderMap(manualOrderStoreKey)
+      if (manualOrder) map[manualOrderScope] = manualOrder
+      else delete map[manualOrderScope]
+      window.localStorage.setItem(manualOrderStoreKey, JSON.stringify(map))
+    } catch { /* Storage may be unavailable. */ }
+  }, [manualOrder, manualOrderStoreKey, manualOrderScope, manualOrderScopeToken, manualOrderReadyKey])
+  const effectiveManualOrder = manualOrderReadyKey != null && manualOrderReadyKey === manualOrderScopeToken ? manualOrder : null
 
   // Stable key for the current generation chain — used to persist/restore the
   // Continuity Mode state and scene memory per project chain.
@@ -4743,10 +4815,10 @@ export default function DashboardPage() {
       .sort(
         (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
       )
-    if (!manualOrder) return chronoAsc
+    if (!effectiveManualOrder) return chronoAsc
     const byId = new Map(chronoAsc.map((v) => [v.id, v]))
     const ordered: typeof chronoAsc = []
-    for (const id of manualOrder) {
+    for (const id of effectiveManualOrder) {
       const v = byId.get(id)
       if (v) {
         ordered.push(v)
@@ -4757,21 +4829,29 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, activeDraftId, mergedEntries, librarySavedJobs, activeJobIds])
+  }, [generatedVideos, effectiveManualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, activeDraftId, mergedEntries, librarySavedJobs, activeJobIds])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
+    const target = event.target
+    if (!(target instanceof Element) || !target.closest('[data-card-drag-handle="true"]')) {
+      event.preventDefault()
+      return
+    }
     setDraggingId(id)
+    setDragOverId(null)
     event.dataTransfer.effectAllowed = 'move'
     try { event.dataTransfer.setData('text/plain', id) } catch { /* noop */ }
   }
-  const handleCardDragOver = (event: React.DragEvent) => {
+  const handleCardDragOver = (targetId: string) => (event: React.DragEvent) => {
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
+    if (draggingId && draggingId !== targetId) setDragOverId(targetId)
   }
   const handleCardDrop = (targetId: string) => (event: React.DragEvent) => {
     event.preventDefault()
     const sourceId = draggingId || event.dataTransfer.getData('text/plain')
     setDraggingId(null)
+    setDragOverId(null)
     if (!sourceId || sourceId === targetId) return
     const currentIds = displayedClips.map((c) => c.id)
     const from = currentIds.indexOf(sourceId)
@@ -4782,7 +4862,10 @@ export default function DashboardPage() {
     next.splice(to, 0, sourceId)
     setManualOrder(next)
   }
-  const handleCardDragEnd = () => setDraggingId(null)
+  const handleCardDragEnd = () => {
+    setDraggingId(null)
+    setDragOverId(null)
+  }
 
 
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
@@ -4832,20 +4915,13 @@ export default function DashboardPage() {
       })),
     ]
 
-    // Selected projects and drafts have their sources exactly ordered already in
-    // `projectSourceJobs` / `projectSourceImages`. Re-sorting them ruins the saved
-    // drag-and-drop order from when the project was created.
-    if (selectedProjectId) {
-      return items
-    }
-
     const chronoAsc = items.sort(
       (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
     )
-    if (!manualOrder) return chronoAsc
+    if (!effectiveManualOrder) return chronoAsc
     const byId = new Map(chronoAsc.map((c) => [c.id, c]))
     const ordered: UnifiedClip[] = []
-    for (const id of manualOrder) {
+    for (const id of effectiveManualOrder) {
       const c = byId.get(id)
       if (c) {
         ordered.push(c)
@@ -4856,7 +4932,39 @@ export default function DashboardPage() {
       if (byId.has(c.id)) ordered.push(c)
     }
     return ordered
-  }, [displayedVideos, visibleUserImages, manualOrder])
+  }, [displayedVideos, visibleUserImages, effectiveManualOrder])
+
+  // A persisted custom order owns known IDs; brand-new uploads/generations are
+  // appended in chronological order and then persisted at the very end.
+  // Pruning/appending is gated on workspace hydration: the persisted order
+  // loads synchronously from localStorage on mount while generatedVideos and
+  // userImages hydrate asynchronously. Filtering the saved order against an
+  // empty/partial clip list would erase it, so not-yet-loaded IDs are retained
+  // until hydration finishes.
+  useEffect(() => {
+    if (!effectiveManualOrder || manualOrderReadyKey !== manualOrderScopeToken) return
+    if (!workspaceHydrated) return
+    const currentIds = displayedClips.map((clip) => clip.id)
+    const currentIdSet = new Set(currentIds)
+    const seen = new Set<string>()
+    const next = effectiveManualOrder.filter((id) => {
+      if (!currentIdSet.has(id) || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    for (const id of currentIds) {
+      if (!seen.has(id)) {
+        seen.add(id)
+        next.push(id)
+      }
+    }
+    if (
+      next.length !== effectiveManualOrder.length ||
+      next.some((id, index) => id !== effectiveManualOrder[index])
+    ) {
+      setManualOrder(next)
+    }
+  }, [displayedClips, effectiveManualOrder, manualOrderScopeToken, manualOrderReadyKey, workspaceHydrated])
 
   // Opening clip of the current film — its first frame seeds a cover. Use the
   // exact ordering rule the Final Film render uses (displayedClips: oldest
@@ -5119,6 +5227,13 @@ export default function DashboardPage() {
         }
       } catch (err) {
         console.error('Workspace restore failed', err)
+      } finally {
+        // Mark hydration complete whether it succeeded or failed: the
+        // manual-order cleanup effect waits on this flag before pruning the
+        // persisted order against the clip list. On failure the clip list is
+        // whatever is already in memory, and pruning proceeds against that
+        // rather than hanging forever.
+        if (!cancelled) setWorkspaceHydrated(true)
       }
     })()
     return () => { cancelled = true }
@@ -8458,7 +8573,7 @@ export default function DashboardPage() {
         image,
       })),
     ]
-    // Apply the same ordering rule as displayedClips: manualOrder first,
+    // Apply the same ordering rule as displayedClips: effectiveManualOrder first,
     // then chronological ASC for anything not in the manual list.
     const chronoAsc = approvedJobs
       ? [...baseClips]
@@ -8466,10 +8581,10 @@ export default function DashboardPage() {
           (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
         )
     let eligibleClips: UnifiedClip[] = chronoAsc
-    if (!approvedJobs && manualOrder) {
+    if (!approvedJobs && effectiveManualOrder) {
       const byId = new Map(chronoAsc.map((c) => [c.id, c]))
       const ordered: UnifiedClip[] = []
-      for (const id of manualOrder) {
+      for (const id of effectiveManualOrder) {
         const c = byId.get(id)
         if (c) {
           ordered.push(c)
@@ -11836,14 +11951,16 @@ export default function DashboardPage() {
                   return (
                     <Fragment key={`img-${img.id}`}>
                       <article
-                        draggable={!isReadOnlyProject}
+                        draggable
                         onDragStart={handleCardDragStart(clip.id)}
-                        onDragOver={handleCardDragOver}
+                        onDragOver={handleCardDragOver(clip.id)}
                         onDrop={handleCardDrop(clip.id)}
                         onDragEnd={handleCardDragEnd}
                         className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-border hover:bg-accent/55 ${
                           isPreviewSelected ? 'border-border bg-accent/60' : 'border-border bg-accent/35'
-                        } ${isDragging ? 'opacity-50' : ''}`}
+                        } ${isDragging ? 'opacity-50' : ''} ${
+                          dragOverId === clip.id ? 'border-accent-cool ring-1 ring-accent-cool/70' : ''
+                        }`}
                         role="button"
                         tabIndex={0}
                         aria-label="Preview uploaded image"
@@ -11885,18 +12002,24 @@ export default function DashboardPage() {
                           <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/90">
                             Uploaded image
                           </p>
-                          {!isReadOnlyProject && (
                           <div className="flex shrink-0 items-center gap-1.5">
                             <span
+                              draggable
+                              data-card-drag-handle="true"
                               onClick={(event) => event.stopPropagation()}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onMouseDown={(event) => event.stopPropagation()}
                               className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-muted-foreground transition hover:text-foreground/90 active:cursor-grabbing"
                               title="Drag to reorder"
                               aria-label="Drag to reorder"
                             >
                               <GripVertical className="h-4 w-4" aria-hidden="true" />
                             </span>
+                            {!isReadOnlyProject && (
+                            <>
                             <button
                               type="button"
+                              draggable={false}
                               onClick={(event) => {
                                 event.stopPropagation()
                                 handleUseImageAsStart(img.storage_path)
@@ -11909,6 +12032,7 @@ export default function DashboardPage() {
                             </button>
                             <button
                               type="button"
+                              draggable={false}
                               onClick={(event) => {
                                 event.stopPropagation()
                                 handleDeleteUserImage(img.id)
@@ -11919,12 +12043,15 @@ export default function DashboardPage() {
                             >
                               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
+                            </>
+                            )}
                           </div>
-                          )}
                         </div>
                         <div
                           className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground"
                           onClick={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onMouseDown={(event) => event.stopPropagation()}
                         >
                           <div className="inline-flex items-center gap-2">
                             <label htmlFor={`img-dur-${img.id}`}>Duration</label>
@@ -11984,14 +12111,16 @@ export default function DashboardPage() {
                 return (
                   <Fragment key={video.id}>
                   <article
-                    draggable={!isReadOnlyProject}
+                    draggable
                     onDragStart={handleCardDragStart(video.id)}
-                    onDragOver={handleCardDragOver}
+                    onDragOver={handleCardDragOver(video.id)}
                     onDrop={handleCardDrop(video.id)}
                     onDragEnd={handleCardDragEnd}
                     className={`relative w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-border hover:bg-accent/55 ${
                       isPreviewSelected ? 'border-border bg-accent/60' : 'border-border bg-accent/35'
-                    } ${isDragging ? 'opacity-50' : ''}`}
+                    } ${isDragging ? 'opacity-50' : ''} ${
+                      dragOverId === video.id ? 'border-accent-cool ring-1 ring-accent-cool/70' : ''
+                    }`}
                     role="button"
                     tabIndex={0}
                     aria-label={`Preview ${video.input_prompt}`}
@@ -12004,11 +12133,15 @@ export default function DashboardPage() {
                     }}
                   >
                     <div
+                      draggable={false}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
                       className="relative w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface-2"
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
                         <PlayableVideo
+                          draggable={false}
                           thumbnail
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={getCardVideoSrc(video.id, video.video.storage_path)}
@@ -12043,6 +12176,9 @@ export default function DashboardPage() {
                     <div className="mt-3 flex items-start justify-between gap-2">
                       <button
                         type="button"
+                        draggable={false}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onMouseDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
                           event.stopPropagation()
                           if (isReadOnlyProject || video.id.startsWith('merged-')) {
@@ -12057,9 +12193,14 @@ export default function DashboardPage() {
                       >
                         {video.input_prompt}
                       </button>
-                      {!isReadOnlyProject && (
-                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                      <div
+                        className="flex shrink-0 flex-wrap items-center justify-end gap-1"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onMouseDown={(event) => event.stopPropagation()}
+                      >
                         <span
+                          draggable
+                          data-card-drag-handle="true"
                           onClick={(event) => event.stopPropagation()}
                           className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-muted-foreground transition hover:text-foreground/90 active:cursor-grabbing"
                           title="Drag to reorder"
@@ -12067,6 +12208,8 @@ export default function DashboardPage() {
                         >
                           <GripVertical className="h-4 w-4" aria-hidden="true" />
                         </span>
+                        {!isReadOnlyProject && (
+                        <>
                         {status === 'processing' ? (
                           <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-accent-warm" aria-hidden="true" />
                         ) : status === 'completed' && video.video?.storage_path ? (
@@ -12209,8 +12352,9 @@ export default function DashboardPage() {
                         >
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
+                        </>
+                        )}
                       </div>
-                      )}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
