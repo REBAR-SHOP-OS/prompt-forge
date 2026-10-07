@@ -1772,7 +1772,7 @@ export default function DashboardPage() {
 
 
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
-  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
+  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 60 | 90 | 135>(5)
   // Continuity Mode — automatic per-chain card-to-card continuity for multi-card
   // durations. State is persisted per generation chain (see continuityChainKey).
   const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
@@ -7036,7 +7036,7 @@ export default function DashboardPage() {
 
       const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 1
       const perClipDuration: 5 | 10 | 15 =
-        (durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
+        durationSeconds <= 5 ? 5 : durationSeconds <= 10 ? 10 : 15
 
 
 
@@ -7392,7 +7392,9 @@ export default function DashboardPage() {
     // internal 5-second Wan slot waits for the previous clip and starts from its
     // captured last frame. Other multi-scene flows keep independent queueing.
     const isWizardSceneBatch = Array.isArray(opts?.perSceneImageUrls)
-    const requiresSequentialContinuity = isWizardSceneBatch && Boolean(opts?.storyboard)
+    const requiresSequentialContinuity = isWizardSceneBatch && (
+      Boolean(opts?.storyboard) || totalDuration >= 30
+    )
     const isIndependentSceneBatch = isWizardSceneBatch && !requiresSequentialContinuity
     const scenarioModel =
       continuityCharacterRef || activeProduct || hasPerSceneImages
@@ -7783,6 +7785,7 @@ export default function DashboardPage() {
     creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string },
     characterSheet?: boolean,
     correction?: string,
+    storyboardSheet?: boolean,
   ): Promise<string> {
     // Every grouped angle of the selected product folder, not just one picked
     // by round-robin — the full group is what should ground each generation.
@@ -7796,26 +7799,28 @@ export default function DashboardPage() {
     // the wizard's camera angle + visual theme so they are enforced in the
     // image, not just the initial text.
     let imagePrompt = sceneText
-    try {
-      const { data: pData, error: pErr } = await supabase.functions.invoke('write-image-prompt', {
-        body: {
-          existingPrompt: sceneText,
-          themeDescriptor: creative?.theme ?? '',
-          themeLabel: creative?.themeLabel ?? '',
-        },
-      })
-      if (!pErr) {
-        const written = (pData as { prompt?: unknown } | null)?.prompt
-        if (typeof written === 'string' && written.trim()) imagePrompt = written.trim()
+    if (!storyboardSheet) {
+      try {
+        const { data: pData, error: pErr } = await supabase.functions.invoke('write-image-prompt', {
+          body: {
+            existingPrompt: sceneText,
+            themeDescriptor: creative?.theme ?? '',
+            themeLabel: creative?.themeLabel ?? '',
+          },
+        })
+        if (!pErr) {
+          const written = (pData as { prompt?: unknown } | null)?.prompt
+          if (typeof written === 'string' && written.trim()) imagePrompt = written.trim()
+        }
+      } catch {
+        /* keep the raw scene text as the image prompt */
       }
-    } catch {
-      /* keep the raw scene text as the image prompt */
     }
     // Enforce the camera angle in the image prompt too (not just the scenario).
     if (creative?.cameraStyle) {
       imagePrompt = `${imagePrompt}\n\nCAMERA: ${creative.cameraStyle}`
     }
-    imagePrompt = appendPreviewQualityCorrection(imagePrompt, correction)
+    if (!storyboardSheet) imagePrompt = appendPreviewQualityCorrection(imagePrompt, correction)
     // When BOTH a product and a character are present, compose them into a
     // single frame the same way Product Ad does — via ai-image-edit with
     // every grouped product angle plus the character as visual references.
@@ -7910,6 +7915,26 @@ export default function DashboardPage() {
     setIsAutoFilming(true)
     setComposerError(null)
     setVideoColumnMessage('Queueing your approved scenes…')
+    const approvedScenario = scenes.join('\n\n')
+    setPromptText(approvedScenario)
+    if (options?.duration && [5, 10, 15, 30, 45, 60, 90, 135].includes(options.duration)) {
+      setDurationSeconds(options.duration as 5 | 10 | 15 | 30 | 45 | 60 | 90 | 135)
+    }
+    if (options?.aspect) setAspectRatio(options.aspect)
+    if (options?.storyboard?.sheetUrl) {
+      setGenerationMode('image-to-video')
+      setUploadTarget('Start')
+      setUploadedFiles([{
+        id: Date.now(),
+        name: `storyboard-${scenes.length}-slots.jpg`,
+        size: 0,
+        target: 'Start',
+        type: 'image/jpeg',
+        status: 'ready',
+        url: options.storyboard.sheetUrl,
+        error: null,
+      }])
+    }
     try {
       const approvedProduct: ProjectProduct | null = options?.identity?.productUrl
         ? {
@@ -11004,8 +11029,8 @@ export default function DashboardPage() {
         defaultAspect={aspectRatio}
         userId={userId}
         writeScenario={writeFilmScenario}
-        generateSceneImage={(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction) =>
-          generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction)
+        generateSceneImage={(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction, storyboardSheet) =>
+          generateFilmSceneImage(sceneText, aspect, productUrls, characterUrl, noText, creative, characterSheet, correction, Boolean(storyboardSheet))
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })

@@ -40,7 +40,7 @@ describe('Final Film flow contract', () => {
 
   it('chains every approved unified-storyboard slot while preserving other independent batches', () => {
     expect(dashboardSource).toContain(
-      'const requiresSequentialContinuity = isWizardSceneBatch && Boolean(opts?.storyboard)',
+      'const requiresSequentialContinuity = isWizardSceneBatch && (\n      Boolean(opts?.storyboard) || totalDuration >= 30\n    )',
     )
     expect(dashboardSource).toContain(
       'const isIndependentSceneBatch = isWizardSceneBatch && !requiresSequentialContinuity',
