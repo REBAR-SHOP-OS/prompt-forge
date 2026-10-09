@@ -22,15 +22,19 @@ export async function persistFinalFilmPoster(
   upload: PosterUploader,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string | null> {
-  if (!dataUrl || !/^data:image\/[a-z0-9.+-]+;base64,/i.test(dataUrl)) return null;
+  const mimeMatch = dataUrl?.match(/^data:(image\/[a-z0-9.+-]+);base64,/i);
+  if (!mimeMatch) return null;
   try {
     const response = await fetchImpl(dataUrl);
     if (!response.ok) return null;
-    const blob = await response.blob();
-    if (!blob.type.startsWith("image/")) return null;
-    const path = `${userId}/posters/${filmId}.${posterExtension(blob.type)}`;
+    const sourceBlob = await response.blob();
+    const contentType = mimeMatch[1].toLowerCase();
+    const blob = sourceBlob.type === contentType
+      ? sourceBlob
+      : new Blob([await sourceBlob.arrayBuffer()], { type: contentType });
+    const path = `${userId}/posters/${filmId}.${posterExtension(contentType)}`;
     const result = await upload(path, blob, {
-      contentType: blob.type || "image/jpeg",
+      contentType,
       upsert: true,
     });
     if (result.error) return null;
