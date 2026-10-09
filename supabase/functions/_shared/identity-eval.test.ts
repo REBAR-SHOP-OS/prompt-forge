@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ACTION_QUALITY_NOT_REPORTED,
   buildIdentityEvalPrompt,
   MAX_REFERENCE_IMAGES,
+  parseIdentityEvalResponse,
   selectEvaluatedSpecs,
   validateReferenceSpecs,
   type ReferenceSpec,
@@ -17,6 +19,58 @@ import {
 // "product" entries while keeping "character" capped at exactly one, and
 // selectEvaluatedSpecs narrows what identity-eval actually judges so a single
 // generated image is never held to an impossible multi-angle standard.
+
+describe('parseIdentityEvalResponse', () => {
+  it('coerces string boolean verdicts', () => {
+    const result = parseIdentityEvalResponse(JSON.stringify({
+      perReference: [
+        { present: 'true', match: 'false', reason: 'Identity differs.' },
+      ],
+      actionQuality: { passed: true, reason: 'Plausible.' },
+    }), 1)
+
+    expect(result?.perReference[0]).toMatchObject({ present: true, match: false })
+    expect(result?.passed).toBe(false)
+  })
+
+  it('coerces numeric boolean verdicts', () => {
+    const result = parseIdentityEvalResponse(JSON.stringify({
+      perReference: [
+        { present: 1, match: 0, reason: 'Identity differs.' },
+      ],
+      actionQuality: { passed: true, reason: 'Plausible.' },
+    }), 1)
+
+    expect(result?.perReference[0]).toMatchObject({ present: true, match: false })
+  })
+
+  it('parses fenced JSON with surrounding text and whitespace', () => {
+    const raw = `
+Reviewer output:
+\`\`\`json
+{"perReference":[{"present":true,"match":true,"reason":"Same identity."}],"actionQuality":{"passed":true,"reason":"Plausible."}}
+\`\`\`
+End of response.
+`
+
+    expect(parseIdentityEvalResponse(raw, 1)?.passed).toBe(true)
+  })
+
+  it('keeps a valid identity verdict when actionQuality is missing', () => {
+    const result = parseIdentityEvalResponse(JSON.stringify({
+      perReference: [
+        { present: true, match: true, reason: 'Same identity.' },
+      ],
+    }), 1)
+
+    expect(result?.actionQuality).toEqual({
+      passed: true,
+      reason: ACTION_QUALITY_NOT_REPORTED,
+    })
+    expect(result?.passed).toBe(true)
+  })
+})
+
 describe('validateReferenceSpecs', () => {
   it('accepts N product URLs plus one character URL, in deterministic product-first order', () => {
     const result = validateReferenceSpecs(

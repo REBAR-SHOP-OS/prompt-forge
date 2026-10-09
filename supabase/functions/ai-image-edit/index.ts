@@ -230,6 +230,7 @@ Deno.serve(async (req) => {
     const FALLBACK = "google/gemini-2.5-flash-image";
     const MAX_IDENTITY_ATTEMPTS = 2;
     const evalModel = "google/gemini-3-flash-preview";
+    const MAX_EVALUATOR_ATTEMPTS = 2;
     // Judge only the first product angle plus the character, never every
     // grouped angle — a single generated image can only visually show one
     // product angle, so evaluating the rest would fail spuriously. The extra
@@ -238,44 +239,71 @@ Deno.serve(async (req) => {
     const evalPrompt = buildIdentityEvalPrompt(evaluatedSpecs);
 
     async function evaluateIdentity(dataUrl: string) {
-      const evalContent: unknown[] = [
+      const baseEvalContent: unknown[] = [
         { type: "text", text: evalPrompt },
         { type: "text", text: "GENERATED_OUTPUT:" },
         { type: "image_url", image_url: { url: dataUrl } },
       ];
       for (let i = 0; i < evaluatedSpecs.length; i++) {
         const spec = evaluatedSpecs[i];
-        evalContent.push({ type: "text", text: `REF_${i + 1} (${spec.role.toUpperCase()}):` });
-        evalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url, userId) } });
+        baseEvalContent.push({ type: "text", text: `REF_${i + 1} (${spec.role.toUpperCase()}):` });
+        baseEvalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url, userId) } });
       }
-      const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: evalModel,
-          messages: [{ role: "user", content: evalContent }],
-        }),
-      });
-      if (evalResp.status === 429) {
-        return { verdict: "error" as const, outcome: null, status: 429, error: "Identity evaluator rate limit reached. Try again in a moment." };
+
+      for (let attempt = 1; attempt <= MAX_EVALUATOR_ATTEMPTS; attempt++) {
+        const evalContent = attempt === 1
+          ? baseEvalContent
+          : [
+              ...baseEvalContent,
+              {
+                type: "text",
+                text: "Your previous response was not a valid minified JSON object matching the exact schema. Output ONLY the JSON object now.",
+              },
+            ];
+        const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: evalModel,
+            response_format: { type: "json_object" },
+            messages: [{ role: "user", content: evalContent }],
+          }),
+        });
+        if (evalResp.status === 429) {
+          return { verdict: "error" as const, outcome: null, status: 429, error: "Identity evaluator rate limit reached. Try again in a moment." };
+        }
+        if (evalResp.status === 402) {
+          return { verdict: "error" as const, outcome: null, status: 402, error: "AI credits exhausted during identity evaluation." };
+        }
+        if (!evalResp.ok) {
+          console.error("ai-image-edit identity-eval gateway error", {
+            attempt,
+            status: evalResp.status,
+          });
+          await evalResp.body?.cancel().catch(() => {});
+          return { verdict: "error" as const, outcome: null, status: 502, error: "Identity evaluator gateway error" };
+        }
+        const evalData = await readJsonLoose(evalResp, "ai-image-edit-identity-eval");
+        const rawValue = evalData?.choices?.[0]?.message?.content;
+        const raw = typeof rawValue === "string" ? rawValue.trim() : "";
+        const outcome: IdentityEvalOutcome | null = raw
+          ? parseIdentityEvalResponse(raw, evaluatedSpecs.length)
+          : null;
+        const verdict = classifyEvalVerdict(outcome);
+        if (verdict !== "error") return { verdict, outcome };
+        console.warn("ai-image-edit invalid identity-eval output", {
+          attempt,
+          type: typeof rawValue,
+          length: typeof rawValue === "string" ? rawValue.length : 0,
+          finish: evalData?.choices?.[0]?.finish_reason ?? null,
+        });
       }
-      if (evalResp.status === 402) {
-        return { verdict: "error" as const, outcome: null, status: 402, error: "AI credits exhausted during identity evaluation." };
-      }
-      if (!evalResp.ok) {
-        const text = await evalResp.text().catch(() => "");
-        console.error("ai-image-edit identity-eval gateway error", evalResp.status, text);
-        return { verdict: "error" as const, outcome: null, status: 502, error: "Identity evaluator gateway error" };
-      }
-      const evalData = await readJsonLoose(evalResp, "ai-image-edit-identity-eval");
-      const raw = String(evalData?.choices?.[0]?.message?.content ?? "").trim();
-      const outcome: IdentityEvalOutcome | null = raw
-        ? parseIdentityEvalResponse(raw, evaluatedSpecs.length)
-        : null;
-      const verdict = classifyEvalVerdict(outcome);
-      return verdict === "error"
-        ? { verdict, outcome, status: 502, error: "Identity evaluator returned an invalid response" }
-        : { verdict, outcome };
+      return {
+        verdict: "error" as const,
+        outcome: null,
+        status: 502,
+        error: "Identity evaluator returned an invalid response",
+      };
     }
 
     async function generateOnce(model: string, reviewFeedback?: string) {

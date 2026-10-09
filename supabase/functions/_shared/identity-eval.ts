@@ -242,6 +242,18 @@ export const ACTION_QUALITY_NOT_REPORTED =
  * though identity was verified. The explicit reason and warning keep the
  * fallback observable.
  */
+function parseBooleanLike(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  if (value === 1) return true;
+  if (value === 0) return false;
+  return null;
+}
+
 function parseActionQuality(value: unknown): ActionQualityResult {
   if (typeof value === "object" && value !== null) {
     const action = value as Record<string, unknown>;
@@ -264,7 +276,11 @@ export function parseIdentityEvalResponse(
   raw: string,
   expectedCount: number,
 ): IdentityEvalOutcome | null {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?[ \t]*(?:\r?\n)?/i, "")
+    .replace(/(?:\r?\n)?[ \t]*```$/, "")
+    .trim();
   let parsed: { perReference?: unknown; actionQuality?: unknown };
   try {
     const start = cleaned.indexOf("{");
@@ -280,10 +296,12 @@ export function parseIdentityEvalResponse(
   for (const item of parsed.perReference) {
     if (typeof item !== "object" || item === null) return null;
     const o = item as Record<string, unknown>;
-    if (typeof o.present !== "boolean" || typeof o.match !== "boolean") return null;
+    const present = parseBooleanLike(o.present);
+    const match = parseBooleanLike(o.match);
+    if (present === null || match === null) return null;
     perReference.push({
-      present: o.present,
-      match: o.match,
+      present,
+      match,
       reason: typeof o.reason === "string" ? o.reason : "",
     });
   }
