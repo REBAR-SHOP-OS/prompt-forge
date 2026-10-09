@@ -100,6 +100,13 @@ function cloneDoc(doc: LibraryDoc): LibraryDoc {
   return { ...doc };
 }
 
+function trackedDoc(userId: string, doc: LibraryDoc): LibraryDoc {
+  const tracked = new Set(trackedKeysFor(userId));
+  return Object.fromEntries(
+    Object.entries(doc).filter(([key]) => tracked.has(key)),
+  );
+}
+
 function snapshotLocal(userId: string, storage: LibraryStorage): LibraryDoc {
   const doc: LibraryDoc = {};
   for (const key of trackedKeysFor(userId)) {
@@ -158,6 +165,15 @@ function sameEntry(left: LibraryDoc, right: LibraryDoc, key: string): boolean {
   return leftHasKey === rightHasKey && (!leftHasKey || left[key] === right[key]);
 }
 
+function differingKeys(left: LibraryDoc, right: LibraryDoc): string[] {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return Array.from(keys).filter((key) => !sameEntry(left, right, key));
+}
+
+function sameDoc(left: LibraryDoc, right: LibraryDoc): boolean {
+  return differingKeys(left, right).length === 0;
+}
+
 export function mergeLibraryDocs(
   userId: string,
   base: LibraryDoc,
@@ -210,7 +226,10 @@ export function createLibraryStateSync(
     }
 
     const latest = latestResult.value;
-    const latestPrepared = prepareForSync(latest.state ?? {}, "conflict-read");
+    const latestPrepared = prepareForSync(
+      trackedDoc(userId, latest.state ?? {}),
+      "conflict-read",
+    );
     if (!latestPrepared) return { status: "error" };
     const merged = mergeLibraryDocs(
       userId,
@@ -239,11 +258,25 @@ export function createLibraryStateSync(
       return { status: "conflict", conflictingKeys: [] };
     }
 
-    replaceLocalFromDoc(userId, mergedPrepared.state, storage);
+    const currentLocal = snapshotLocal(userId, storage);
     baselines.set(userId, {
       state: cloneDoc(mergedPrepared.state),
       version: latest.version + 1,
     });
+    if (!sameDoc(currentLocal, localState)) {
+      const rebased = mergeLibraryDocs(
+        userId,
+        localState,
+        currentLocal,
+        mergedPrepared.state,
+      );
+      if (rebased.conflictingKeys.length > 0) {
+        return { status: "conflict", conflictingKeys: rebased.conflictingKeys };
+      }
+      replaceLocalFromDoc(userId, rebased.state, storage);
+      return { status: "success" };
+    }
+    replaceLocalFromDoc(userId, mergedPrepared.state, storage);
     return { status: "success" };
   };
 
@@ -309,18 +342,18 @@ export function createLibraryStateSync(
 
       const row = readResult.value;
       if (row) {
-        const prepared = prepareForSync(row.state ?? {}, "hydrate");
+        const prepared = prepareForSync(
+          trackedDoc(userId, row.state ?? {}),
+          "hydrate",
+        );
         if (!prepared) return { status: "error" };
         if (preserveLocal && hasAnyLocal(userId, storage)) {
           const localPrepared = prepareForSync(snapshotLocal(userId, storage), "hydrate-recovery");
           if (!localPrepared) return { status: "error" };
-          const localSerialized = JSON.stringify(localPrepared.state);
-          const serverSerialized = JSON.stringify(prepared.state);
-          if (localSerialized !== serverSerialized) {
+          if (!sameDoc(localPrepared.state, prepared.state)) {
             return {
               status: "conflict",
-              conflictingKeys: Object.keys(localPrepared.state)
-                .filter((key) => !sameEntry(localPrepared.state, prepared.state, key)),
+              conflictingKeys: differingKeys(localPrepared.state, prepared.state),
             };
           }
         }
@@ -341,11 +374,21 @@ export function createLibraryStateSync(
           }
           version += 1;
         }
-        replaceLocalFromDoc(userId, prepared.state, storage);
+        const currentLocal = snapshotLocal(userId, storage);
         baselines.set(userId, {
           state: cloneDoc(prepared.state),
           version,
         });
+        if (
+          preserveLocal &&
+          !sameDoc(currentLocal, prepared.state)
+        ) {
+          return {
+            status: "conflict",
+            conflictingKeys: differingKeys(currentLocal, prepared.state),
+          };
+        }
+        replaceLocalFromDoc(userId, prepared.state, storage);
         return { status: "success" };
       }
 
@@ -386,7 +429,7 @@ export function createLibraryStateSync(
     const prepared = prepareForSync(localSnapshot, "keepalive");
     if (!prepared) return null;
     const localState = prepared.state;
-    if (JSON.stringify(localState) === JSON.stringify(baseline.state)) return null;
+    if (sameDoc(localState, baseline.state)) return null;
 
     const nextVersion = baseline.version + 1;
     const method = baseline.version === 0 ? "POST" : "PATCH";

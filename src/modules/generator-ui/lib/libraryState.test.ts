@@ -316,6 +316,47 @@ describe("library state synchronization", () => {
     expect(deviceB.getItem(approvedKey)).toBe('["device-b"]');
   });
 
+  it("does not overwrite a newer local edit that lands during conflict reconciliation", async () => {
+    const backend = new VersionedBackend({
+      state: {
+        [approvedKey]: '["initial"]',
+        [draftKey]: '["initial-draft"]',
+      },
+      version: 1,
+    });
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+    await sync.hydrate(userId);
+
+    backend.row = {
+      state: {
+        [approvedKey]: '["initial"]',
+        [draftKey]: '["server-draft"]',
+      },
+      version: 2,
+    };
+    storage.setItem(approvedKey, '["local-edit"]');
+
+    const update = backend.updateIfVersion.bind(backend);
+    vi.spyOn(backend, "updateIfVersion").mockImplementation(async (...args) => {
+      const result = await update(...args);
+      if (args[2] === 2 && result.status === "success") {
+        storage.setItem(approvedKey, '["newer-local-edit"]');
+      }
+      return result;
+    });
+
+    await expect(sync.push(userId)).resolves.toEqual({ status: "success" });
+    expect(storage.getItem(approvedKey)).toBe('["newer-local-edit"]');
+    expect(storage.getItem(draftKey)).toBe('["server-draft"]');
+    expect(JSON.parse(backend.row?.state[approvedKey] ?? "null")).toEqual(["local-edit"]);
+    expect(JSON.parse(backend.row?.state[draftKey] ?? "null")).toEqual(["server-draft"]);
+
+    await expect(sync.push(userId)).resolves.toEqual({ status: "success" });
+    expect(JSON.parse(backend.row?.state[approvedKey] ?? "null")).toEqual(["newer-local-edit"]);
+    expect(JSON.parse(backend.row?.state[draftKey] ?? "null")).toEqual(["server-draft"]);
+  });
+
   it("deduplicates an in-flight push and recovers on the next explicit push", async () => {
     let resolveFirstUpdate: (result: LibraryBackendResult<void>) => void = () => {};
     const backend: LibraryStateBackend = {
@@ -341,6 +382,41 @@ describe("library state synchronization", () => {
     await expect(firstPush).resolves.toEqual({ status: "error" });
     await expect(sync.push(userId)).resolves.toEqual({ status: "success" });
     expect(backend.updateIfVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats equivalent local and server documents as equal regardless of key order", async () => {
+    const backend = new VersionedBackend({
+      state: {
+        [draftKey]: '["same-draft"]',
+        [approvedKey]: '["same-video"]',
+      },
+      version: 3,
+    });
+    const storage = new MemoryStorage();
+    storage.setItem(approvedKey, '["same-video"]');
+    storage.setItem(draftKey, '["same-draft"]');
+    const sync = createLibraryStateSync(backend, storage);
+
+    await expect(sync.hydrate(userId, undefined, true)).resolves.toEqual({ status: "success" });
+    expect(sync.prepareKeepalive(userId)).toBeNull();
+  });
+
+  it("ignores legacy untracked server keys during recovery and preserves device-only local data", async () => {
+    const backend = new VersionedBackend({
+      state: {
+        [approvedKey]: '["same-video"]',
+        [coverDurationsKey]: '{"server":4}',
+      },
+      version: 3,
+    });
+    const storage = new MemoryStorage();
+    storage.setItem(approvedKey, '["same-video"]');
+    storage.setItem(coverDurationsKey, '{"device":8}');
+    const sync = createLibraryStateSync(backend, storage);
+
+    await expect(sync.hydrate(userId, undefined, true)).resolves.toEqual({ status: "success" });
+    expect(storage.getItem(coverDurationsKey)).toBe('{"device":8}');
+    expect(sync.prepareKeepalive(userId)).toBeNull();
   });
 
   it("reports a recovery conflict instead of overwriting local work created while offline", async () => {
