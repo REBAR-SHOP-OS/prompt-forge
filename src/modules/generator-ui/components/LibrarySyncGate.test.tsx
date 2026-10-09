@@ -6,6 +6,7 @@ import type { LibrarySyncResult } from "@/modules/generator-ui/lib/libraryState"
 const mocks = vi.hoisted(() => ({
   userId: "user-1" as string | null,
   hydrate: vi.fn(),
+  hasCache: vi.fn(),
   startSync: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ vi.mock("@/core/ui/LoadingScreen", () => ({
 }));
 
 vi.mock("@/modules/generator-ui/lib/libraryState", () => ({
+  hasUsableLocalLibraryCache: (...args: unknown[]) => mocks.hasCache(...args),
   hydrateLibraryFromServer: (...args: unknown[]) => mocks.hydrate(...args),
   startLibrarySync: (...args: unknown[]) => mocks.startSync(...args),
 }));
@@ -29,8 +31,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.userId = "user-1";
   mocks.hydrate.mockReset();
-  mocks.startSync.mockReset();
-  mocks.startSync.mockReturnValue(vi.fn());
+  mocks.hasCache.mockReset().mockReturnValue(false);
+  mocks.startSync.mockReset().mockReturnValue(vi.fn());
 });
 
 afterEach(() => {
@@ -38,34 +40,81 @@ afterEach(() => {
 });
 
 describe("LibrarySyncGate", () => {
-  it("retries a transient hydration failure with backoff before mounting once", async () => {
+  it("retries a transient hydration failure before mounting once", async () => {
     mocks.hydrate.mockResolvedValueOnce(failed).mockResolvedValueOnce(ok);
     render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
 
     expect(screen.getByText("Loading library")).toBeInTheDocument();
-    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
-    expect(mocks.hydrate).toHaveBeenCalledTimes(1);
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(mocks.hydrate).toHaveBeenCalledTimes(2);
     expect(mocks.startSync).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a final error and allows one manual retry without duplicate work", async () => {
+  it("uses valid local cache when initial hydration stays offline", async () => {
+    mocks.hydrate.mockResolvedValue(failed);
+    mocks.hasCache.mockReturnValue(true);
+    render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Using your saved library");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(mocks.startSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dashboard mounted when a background push fails", async () => {
+    let reportResult: ((result: LibrarySyncResult) => void) | undefined;
+    mocks.hydrate.mockResolvedValue(ok);
+    mocks.startSync.mockImplementation((_userId, callback) => {
+      reportResult = callback;
+      return vi.fn();
+    });
+    render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
+    await act(async () => {});
+
+    act(() => reportResult?.(failed));
+
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("retry in the background");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps a background conflict visible without unmounting local work", async () => {
+    const stop = vi.fn();
+    let reportResult: ((result: LibrarySyncResult) => void) | undefined;
+    mocks.hydrate.mockResolvedValue(ok);
+    mocks.startSync.mockImplementation((_userId, callback) => {
+      reportResult = callback;
+      return stop;
+    });
+    render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
+    await act(async () => {});
+
+    act(() => reportResult?.({ status: "conflict", conflictingKeys: ["key"] }));
+
+    expect(stop).not.toHaveBeenCalled();
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("not overwritten");
+  });
+
+  it("shows a retryable error only when hydration fails without local cache", async () => {
     mocks.hydrate.mockResolvedValue(failed);
     render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Library unavailable");
+    expect(screen.getByRole("alert")).toHaveTextContent("no saved device cache");
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(mocks.hydrate).toHaveBeenCalledTimes(3);
     expect(mocks.startSync).not.toHaveBeenCalled();
 
     mocks.hydrate.mockResolvedValue(ok);
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const retry = screen.getByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
     await act(async () => {});
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
@@ -93,7 +142,7 @@ describe("LibrarySyncGate", () => {
     expect(mocks.startSync).toHaveBeenCalledWith("user-2", expect.any(Function));
   });
 
-  it("makes pending hydration ineffective after unmount", async () => {
+  it("does not start sync after unmount while hydration is pending", async () => {
     let resolveHydration: (result: LibrarySyncResult) => void = () => {};
     mocks.hydrate.mockReturnValue(new Promise<LibrarySyncResult>((resolve) => {
       resolveHydration = resolve;
@@ -104,24 +153,5 @@ describe("LibrarySyncGate", () => {
     await act(async () => { resolveHydration(ok); });
 
     expect(mocks.startSync).not.toHaveBeenCalled();
-  });
-
-  it("stops sync and exposes a retryable conflict without mounting the dashboard", async () => {
-    const stop = vi.fn();
-    let reportIssue: ((result: LibrarySyncResult) => void) | undefined;
-    mocks.hydrate.mockResolvedValue(ok);
-    mocks.startSync.mockImplementation((_userId, callback) => {
-      reportIssue = callback;
-      return stop;
-    });
-    render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
-    await act(async () => {});
-
-    act(() => reportIssue?.({ status: "conflict", conflictingKeys: ["key"] }));
-
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("alert")).toHaveTextContent("Nothing was overwritten");
-    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
   });
 });

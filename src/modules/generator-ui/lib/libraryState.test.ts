@@ -8,6 +8,10 @@ import {
   type LibraryStateBackend,
   type LibraryStateRow,
 } from "./libraryState";
+import {
+  compactLibraryDocument,
+  MAX_LIBRARY_STATE_BYTES,
+} from "./libraryStateCompaction";
 
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {} }));
 
@@ -60,7 +64,138 @@ class VersionedBackend implements LibraryStateBackend {
 const userId = "user-1";
 const approvedKey = `approved-videos:${userId}`;
 const draftKey = `draft-entries:${userId}`;
+const mergedKey = `merged-videos:${userId}`;
 const coverDurationsKey = `project-cover-durations:${userId}`;
+
+
+describe("library state compaction", () => {
+  it("removes a large Base64 thumbnail while preserving film metadata and storage reference", () => {
+    const raw = JSON.stringify([{
+      id: "film-1",
+      input_prompt: "Final Film",
+      video: {
+        storage_path: "merged-videos/user-1/film.mp4",
+        thumbnail_url: `data:image/jpeg;base64,${"A".repeat(700_000)}`,
+      },
+    }]);
+
+    const result = compactLibraryDocument({ [mergedKey]: raw });
+    const films = JSON.parse(result.state[mergedKey]);
+
+    expect(result.withinBudget).toBe(true);
+    expect(result.byteSize).toBeLessThan(MAX_LIBRARY_STATE_BYTES);
+    expect(films[0]).toMatchObject({
+      id: "film-1",
+      input_prompt: "Final Film",
+      video: {
+        storage_path: "merged-videos/user-1/film.mp4",
+        thumbnail_url: null,
+      },
+    });
+  });
+
+  it("keeps metadata and uses a safe placeholder when no durable thumbnail reference exists", () => {
+    const result = compactLibraryDocument({
+      [draftKey]: JSON.stringify([{
+        id: "draft-1",
+        input_prompt: "Keep this project",
+        video: { storage_path: "", thumbnail_url: "data:image/png;base64,AAAA" },
+      }]),
+    });
+    const drafts = JSON.parse(result.state[draftKey]);
+
+    expect(drafts[0].id).toBe("draft-1");
+    expect(drafts[0].input_prompt).toBe("Keep this project");
+    expect(drafts[0].video.thumbnail_url).toBeNull();
+  });
+
+  it("applies the same inline-image contract across every tracked document shape", () => {
+    const result = compactLibraryDocument({
+      [`project-source-jobs:${userId}`]: JSON.stringify({
+        "film-1": [{ id: "clip-1", video: { thumbnail_url: "data:image/png;base64,AAAA" } }],
+      }),
+      [`project-source-images:${userId}`]: JSON.stringify({
+        "film-1": [{ id: "image-1", storage_path: "data:image/png;base64,BBBB" }],
+      }),
+    });
+
+    expect(JSON.stringify(result.state)).not.toContain("data:image");
+    expect(JSON.parse(result.state[`project-source-jobs:${userId}`])["film-1"][0].id)
+      .toBe("clip-1");
+    expect(JSON.parse(result.state[`project-source-images:${userId}`])["film-1"][0].id)
+      .toBe("image-1");
+  });
+
+  it("drops only cacheable state when metadata fits within the budget", () => {
+    const manualOrderKey = `manual-card-order:${userId}`;
+    const result = compactLibraryDocument({
+      [mergedKey]: JSON.stringify([{ id: "film-1" }]),
+      [manualOrderKey]: JSON.stringify({ library: ["film-1"] }),
+      [`preview-state:${userId}`]: JSON.stringify({ cache: "x".repeat(MAX_LIBRARY_STATE_BYTES) }),
+    });
+
+    expect(result.withinBudget).toBe(true);
+    expect(result.state[mergedKey]).toBeDefined();
+    expect(result.state[manualOrderKey]).toBeDefined();
+    expect(result.state[`preview-state:${userId}`]).toBeUndefined();
+  });
+
+  it("preserves durable thumbnail URLs and is idempotent", () => {
+    const document = {
+      [mergedKey]: JSON.stringify([{
+        id: "film-1",
+        video: {
+          storage_path: "merged-videos/user-1/film.mp4",
+          thumbnail_url: "merged-videos/user-1/posters/film-1.jpg",
+        },
+      }]),
+    };
+
+    const first = compactLibraryDocument(document);
+    const second = compactLibraryDocument(first.state);
+
+    expect(JSON.parse(first.state[mergedKey])[0].video.thumbnail_url)
+      .toBe("merged-videos/user-1/posters/film-1.jpg");
+    expect(second.state).toEqual(first.state);
+    expect(second.changed).toBe(false);
+  });
+
+  it("compacts legacy server state through CAS during hydration", async () => {
+    const backend = new VersionedBackend({
+      state: {
+        [mergedKey]: JSON.stringify([{
+          id: "film-1",
+          video: {
+            storage_path: "merged-videos/user-1/film.mp4",
+            thumbnail_url: `data:image/jpeg;base64,${"A".repeat(700_000)}`,
+          },
+        }]),
+      },
+      version: 3,
+    });
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+
+    await expect(sync.hydrate(userId)).resolves.toEqual({ status: "success" });
+
+    expect(backend.updateCount).toBe(1);
+    expect(backend.row?.version).toBe(4);
+    expect(JSON.stringify(backend.row?.state)).not.toContain("data:image");
+    expect(storage.getItem(mergedKey)).not.toContain("data:image");
+  });
+
+  it("never sends a still-oversized state to sync or keepalive", async () => {
+    const backend = new VersionedBackend({ state: {}, version: 2 });
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+    await sync.hydrate(userId);
+    storage.setItem(approvedKey, "x".repeat(MAX_LIBRARY_STATE_BYTES + 1));
+
+    await expect(sync.push(userId)).resolves.toEqual({ status: "error" });
+    expect(sync.prepareKeepalive(userId)).toBeNull();
+    expect(backend.updateCount).toBe(0);
+  });
+});
 
 describe("library state synchronization", () => {
   it("replaces the tracked cache exactly and removes stale keys", async () => {
@@ -206,6 +341,23 @@ describe("library state synchronization", () => {
     await expect(firstPush).resolves.toEqual({ status: "error" });
     await expect(sync.push(userId)).resolves.toEqual({ status: "success" });
     expect(backend.updateIfVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a recovery conflict instead of overwriting local work created while offline", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["server"]' },
+      version: 4,
+    });
+    const storage = new MemoryStorage();
+    storage.setItem(approvedKey, '["offline-local-edit"]');
+    const sync = createLibraryStateSync(backend, storage);
+
+    await expect(sync.hydrate(userId, undefined, true)).resolves.toEqual({
+      status: "conflict",
+      conflictingKeys: [approvedKey],
+    });
+    expect(storage.getItem(approvedKey)).toBe('["offline-local-edit"]');
+    expect(backend.updateCount).toBe(0);
   });
 
   it("does not let an aborted hydration mutate local state", async () => {
