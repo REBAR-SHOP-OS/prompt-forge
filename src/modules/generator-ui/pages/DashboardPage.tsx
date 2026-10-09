@@ -130,6 +130,8 @@ import { useDocumentLanguage } from '@/modules/generator-ui/hooks/useDocumentLan
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import { LibraryCardPreview } from '@/modules/generator-ui/components/LibraryCardPreview'
+import { writeCompactedLibraryValue } from '@/modules/generator-ui/lib/libraryStateCompaction'
+import { persistFinalFilmPoster } from '@/modules/generator-ui/lib/finalFilmPoster'
 import {
   resolveDraftLibraryPreview,
   type LibraryCardPreviewAsset,
@@ -2022,9 +2024,7 @@ export default function DashboardPage() {
 
   function persistLibrarySavedJobs(next: Record<string, JobDetail>) {
     if (!librarySavedJobsKey) return
-    try {
-      window.localStorage.setItem(librarySavedJobsKey, JSON.stringify(next))
-    } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, librarySavedJobsKey, next)
   }
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
@@ -2105,9 +2105,7 @@ export default function DashboardPage() {
 
   function persistProjectSourceJobs(next: Record<string, JobDetail[]>) {
     if (!projectSourceJobsKey) return
-    try {
-      window.localStorage.setItem(projectSourceJobsKey, JSON.stringify(next))
-    } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, projectSourceJobsKey, next)
   }
 
   // Per-project snapshot of the source images that were merged into each
@@ -2125,9 +2123,7 @@ export default function DashboardPage() {
   }, [projectSourceImagesKey])
   function persistProjectSourceImages(next: Record<string, UserImageItem[]>) {
     if (!projectSourceImagesKey) return
-    try {
-      window.localStorage.setItem(projectSourceImagesKey, JSON.stringify(next))
-    } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, projectSourceImagesKey, next)
   }
 
   // Contact / branding info burned as a text overlay onto the Final Film.
@@ -2523,9 +2519,7 @@ export default function DashboardPage() {
   }, [projectAudioKey])
   const persistProjectAudio = useCallback((next: Record<string, ProjectAudio>) => {
     if (!projectAudioKey) return
-    try {
-      window.localStorage.setItem(projectAudioKey, JSON.stringify(next))
-    } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, projectAudioKey, next)
   }, [projectAudioKey])
 
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
@@ -2616,15 +2610,15 @@ export default function DashboardPage() {
   }, [activeDraftIdKey])
   function persistDraftEntries(next: JobDetail[]) {
     if (!draftEntriesKey) return
-    try { window.localStorage.setItem(draftEntriesKey, JSON.stringify(next)) } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, draftEntriesKey, next)
   }
   function persistDraftSourceJobs(next: Record<string, JobDetail[]>) {
     if (!draftSourceJobsKey) return
-    try { window.localStorage.setItem(draftSourceJobsKey, JSON.stringify(next)) } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, draftSourceJobsKey, next)
   }
   function persistDraftSourceImages(next: Record<string, UserImageItem[]>) {
     if (!draftSourceImagesKey) return
-    try { window.localStorage.setItem(draftSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, draftSourceImagesKey, next)
   }
   function persistActiveDraftId(next: string | null) {
     if (!activeDraftIdKey) return
@@ -2685,14 +2679,14 @@ export default function DashboardPage() {
     setProjectSourceImages((previous) => {
       const next = updateGroups(previous)
       if (next !== previous && projectSourceImagesKey) {
-        try { window.localStorage.setItem(projectSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+        writeCompactedLibraryValue(window.localStorage, projectSourceImagesKey, next)
       }
       return next
     })
     setDraftSourceImages((previous) => {
       const next = updateGroups(previous)
       if (next !== previous && draftSourceImagesKey) {
-        try { window.localStorage.setItem(draftSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+        writeCompactedLibraryValue(window.localStorage, draftSourceImagesKey, next)
       }
       return next
     })
@@ -2799,14 +2793,14 @@ export default function DashboardPage() {
       // Drop any legacy workspace-wide cover so it can't leak across projects.
       if ('__workspace__' in safe) {
         delete (safe as Record<string, UserImageItem>)['__workspace__']
-        try { window.localStorage.setItem(coverImagesKey, JSON.stringify(safe)) } catch { /* ignore */ }
+        writeCompactedLibraryValue(window.localStorage, coverImagesKey, safe)
       }
       setCoverImages(safe)
     } catch { setCoverImages({}) }
   }, [coverImagesKey])
   function persistCoverImages(next: Record<string, UserImageItem>) {
     if (!coverImagesKey) return
-    try { window.localStorage.setItem(coverImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, coverImagesKey, next)
   }
   // Per-project cover duration (seconds) — how long the cover is held at the
   // start of the Final Film. Persisted alongside coverImages.
@@ -3528,7 +3522,7 @@ export default function DashboardPage() {
   const persistPendingEndAppends = useCallback((next: Record<string, string>) => {
     if (!pendingEndAppendsKey) return
     try {
-      window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify(next))
+      writeCompactedLibraryValue(window.localStorage, pendingEndAppendsKey, next)
     } catch { /* ignore */ }
   }, [pendingEndAppendsKey])
 
@@ -3539,7 +3533,7 @@ export default function DashboardPage() {
   const persistPendingStartPrepends = useCallback((next: Record<string, string>) => {
     if (!pendingStartPrependsKey) return
     try {
-      window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify(next))
+      writeCompactedLibraryValue(window.localStorage, pendingStartPrependsKey, next)
     } catch { /* ignore */ }
   }, [pendingStartPrependsKey])
 
@@ -3562,9 +3556,7 @@ export default function DashboardPage() {
 
   function persistMerged(next: JobDetail[]) {
     if (!mergedStorageKey) return
-    try {
-      window.localStorage.setItem(mergedStorageKey, JSON.stringify(next))
-    } catch { /* ignore */ }
+    writeCompactedLibraryValue(window.localStorage, mergedStorageKey, next)
   }
 
   // Prune dangling ids in approvedIds that have no backing entry in either
@@ -8937,16 +8929,24 @@ export default function DashboardPage() {
       setPreviewDismissed(false)
       setPreviewVideoId(null)
 
-      // Capture a durable poster frame from the merged blob so the Library
-      // card always shows a real preview, even if the merged video file later
-      // becomes unavailable in storage. Best-effort: null on failure.
+      const mergedId = `merged-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+      // Keep poster bytes out of localStorage/library JSON. The existing
+      // private merged-videos bucket stores the image; failure is non-fatal
+      // because LibraryCardPreview can fall back to the video itself.
       const posterDataUrl = await captureVideoPoster(mergeRes.blob)
+      const posterStorageRef = await persistFinalFilmPoster(
+        posterDataUrl,
+        userId,
+        mergedId,
+        MERGED_BUCKET,
+        (path, blob, options) =>
+          supabase.storage.from(MERGED_BUCKET).upload(path, blob, options),
+      )
 
       // Register the merged film in Your Library (left panel). This does NOT
       // touch Pending (generatedVideos); it only appends a JobDetail entry to
       // mergedEntries + approvedIds (persisted in localStorage), exactly like
       // saved library cards.
-      const mergedId = `merged-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
       const nowIso = new Date().toISOString()
       // Aggregate narration from source clips (in merge order) so the narration-review
       // panel can find the expected narration on this merged entry without querying clips.
@@ -8972,7 +8972,7 @@ export default function DashboardPage() {
         video: {
           id: mergedId,
           storage_path: publicUrl,
-          thumbnail_url: posterDataUrl,
+          thumbnail_url: posterStorageRef,
           aspect_ratio: mergedRatio,
           duration: null,
         },

@@ -6,6 +6,12 @@
 // localStorage stays as a fast cache; this module hydrates it on login and
 // pushes changes back (debounced) without touching the dashboard render logic.
 import { supabase } from "@/integrations/supabase/client";
+import {
+  compactLibraryDocument,
+  compactSerializedLibraryValue,
+  MAX_LIBRARY_STATE_BYTES,
+  type LibraryCompactionResult,
+} from "./libraryStateCompaction";
 
 // Per-user keys that make up the library layout. Stored as `${prefix}:${userId}`.
 // Device-only preferences (aspect ratio, preferred model) are intentionally
@@ -94,13 +100,44 @@ function cloneDoc(doc: LibraryDoc): LibraryDoc {
   return { ...doc };
 }
 
+function trackedDoc(userId: string, doc: LibraryDoc): LibraryDoc {
+  const tracked = new Set(trackedKeysFor(userId));
+  return Object.fromEntries(
+    Object.entries(doc).filter(([key]) => tracked.has(key)),
+  );
+}
+
 function snapshotLocal(userId: string, storage: LibraryStorage): LibraryDoc {
   const doc: LibraryDoc = {};
   for (const key of trackedKeysFor(userId)) {
     const raw = storage.getItem(key);
-    if (raw != null) doc[key] = raw;
+    if (raw == null) continue;
+    const compacted = compactSerializedLibraryValue(raw);
+    doc[key] = compacted.value;
+    if (compacted.changed) {
+      try {
+        storage.setItem(key, compacted.value);
+      } catch {
+        // The compacted server payload remains safe even if browser storage is unavailable.
+      }
+    }
   }
   return doc;
+}
+
+function prepareForSync(
+  state: LibraryDoc,
+  operation: string,
+  budgetBytes = MAX_LIBRARY_STATE_BYTES,
+): LibraryCompactionResult | null {
+  const compacted = compactLibraryDocument(state, budgetBytes);
+  if (compacted.withinBudget) return compacted;
+  console.warn("library-state sync skipped oversized state", {
+    operation,
+    byteSize: compacted.byteSize,
+    keyCount: compacted.keyCount,
+  });
+  return null;
 }
 
 function hasAnyLocal(userId: string, storage: LibraryStorage): boolean {
@@ -126,6 +163,15 @@ function sameEntry(left: LibraryDoc, right: LibraryDoc, key: string): boolean {
   const leftHasKey = Object.prototype.hasOwnProperty.call(left, key);
   const rightHasKey = Object.prototype.hasOwnProperty.call(right, key);
   return leftHasKey === rightHasKey && (!leftHasKey || left[key] === right[key]);
+}
+
+function differingKeys(left: LibraryDoc, right: LibraryDoc): string[] {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return Array.from(keys).filter((key) => !sameEntry(left, right, key));
+}
+
+function sameDoc(left: LibraryDoc, right: LibraryDoc): boolean {
+  return differingKeys(left, right).length === 0;
 }
 
 export function mergeLibraryDocs(
@@ -180,21 +226,29 @@ export function createLibraryStateSync(
     }
 
     const latest = latestResult.value;
+    const latestPrepared = prepareForSync(
+      trackedDoc(userId, latest.state ?? {}),
+      "conflict-read",
+    );
+    if (!latestPrepared) return { status: "error" };
     const merged = mergeLibraryDocs(
       userId,
       baseline.state,
       localState,
-      latest.state ?? {},
+      latestPrepared.state,
     );
     if (merged.conflictingKeys.length > 0) {
       return { status: "conflict", conflictingKeys: merged.conflictingKeys };
     }
 
+    const mergedPrepared = prepareForSync(merged.state, "conflict-write");
+    if (!mergedPrepared) return { status: "error" };
+
     // A conflict recovery gets one CAS against the freshly-read version. A
     // second race remains observable and retryable instead of busy-looping.
     const saved = await backend.updateIfVersion(
       userId,
-      merged.state,
+      mergedPrepared.state,
       latest.version,
       latest.version + 1,
     );
@@ -204,11 +258,25 @@ export function createLibraryStateSync(
       return { status: "conflict", conflictingKeys: [] };
     }
 
-    replaceLocalFromDoc(userId, merged.state, storage);
+    const currentLocal = snapshotLocal(userId, storage);
     baselines.set(userId, {
-      state: cloneDoc(merged.state),
+      state: cloneDoc(mergedPrepared.state),
       version: latest.version + 1,
     });
+    if (!sameDoc(currentLocal, localState)) {
+      const rebased = mergeLibraryDocs(
+        userId,
+        localState,
+        currentLocal,
+        mergedPrepared.state,
+      );
+      if (rebased.conflictingKeys.length > 0) {
+        return { status: "conflict", conflictingKeys: rebased.conflictingKeys };
+      }
+      replaceLocalFromDoc(userId, rebased.state, storage);
+      return { status: "success" };
+    }
+    replaceLocalFromDoc(userId, mergedPrepared.state, storage);
     return { status: "success" };
   };
 
@@ -223,7 +291,10 @@ export function createLibraryStateSync(
 
     pushInFlight.add(userId);
     try {
-      const localState = snapshotLocal(userId, storage);
+      const localSnapshot = snapshotLocal(userId, storage);
+      const localPrepared = prepareForSync(localSnapshot, "push");
+      if (!localPrepared) return { status: "error" };
+      const localState = localPrepared.state;
       const nextVersion = baseline.version + 1;
       const saved = baseline.version === 0
         ? await backend.insert(userId, localState, nextVersion)
@@ -252,6 +323,7 @@ export function createLibraryStateSync(
   const hydrate = async (
     userId: string,
     signal?: AbortSignal,
+    preserveLocal = false,
   ): Promise<LibrarySyncResult> => {
     if (!userId || aborted(signal)) return { status: "error" };
 
@@ -270,15 +342,60 @@ export function createLibraryStateSync(
 
       const row = readResult.value;
       if (row) {
-        replaceLocalFromDoc(userId, row.state ?? {}, storage);
+        const prepared = prepareForSync(
+          trackedDoc(userId, row.state ?? {}),
+          "hydrate",
+        );
+        if (!prepared) return { status: "error" };
+        if (preserveLocal && hasAnyLocal(userId, storage)) {
+          const localPrepared = prepareForSync(snapshotLocal(userId, storage), "hydrate-recovery");
+          if (!localPrepared) return { status: "error" };
+          if (!sameDoc(localPrepared.state, prepared.state)) {
+            return {
+              status: "conflict",
+              conflictingKeys: differingKeys(localPrepared.state, prepared.state),
+            };
+          }
+        }
+        let version = row.version ?? 0;
+        // Legacy inline thumbnails are compacted exactly once and persisted
+        // through the existing CAS contract before local cache replacement.
+        if (prepared.changed) {
+          const saved = await backend.updateIfVersion(
+            userId,
+            prepared.state,
+            version,
+            version + 1,
+          );
+          if (aborted(signal)) return { status: "error" };
+          if (saved.status === "error") return { status: "error" };
+          if (saved.status === "conflict") {
+            return { status: "conflict", conflictingKeys: [] };
+          }
+          version += 1;
+        }
+        const currentLocal = snapshotLocal(userId, storage);
         baselines.set(userId, {
-          state: cloneDoc(row.state ?? {}),
-          version: row.version ?? 0,
+          state: cloneDoc(prepared.state),
+          version,
         });
+        if (
+          preserveLocal &&
+          !sameDoc(currentLocal, prepared.state)
+        ) {
+          return {
+            status: "conflict",
+            conflictingKeys: differingKeys(currentLocal, prepared.state),
+          };
+        }
+        replaceLocalFromDoc(userId, prepared.state, storage);
         return { status: "success" };
       }
 
-      const localState = snapshotLocal(userId, storage);
+      const localSnapshot = snapshotLocal(userId, storage);
+      const localPrepared = prepareForSync(localSnapshot, "hydrate-insert");
+      if (!localPrepared) return { status: "error" };
+      const localState = localPrepared.state;
       if (hasAnyLocal(userId, storage)) {
         const inserted = await backend.insert(userId, localState, 1);
         if (aborted(signal)) return { status: "error" };
@@ -308,8 +425,11 @@ export function createLibraryStateSync(
     const baseline = baselines.get(userId);
     if (!userId || !baseline) return null;
 
-    const localState = snapshotLocal(userId, storage);
-    if (JSON.stringify(localState) === JSON.stringify(baseline.state)) return null;
+    const localSnapshot = snapshotLocal(userId, storage);
+    const prepared = prepareForSync(localSnapshot, "keepalive");
+    if (!prepared) return null;
+    const localState = prepared.state;
+    if (sameDoc(localState, baseline.state)) return null;
 
     const nextVersion = baseline.version + 1;
     const method = baseline.version === 0 ? "POST" : "PATCH";
@@ -382,12 +502,35 @@ function getBrowserSync() {
 export async function hydrateLibraryFromServer(
   userId: string,
   signal?: AbortSignal,
+  preserveLocal = false,
 ): Promise<LibrarySyncResult> {
-  return (await getBrowserSync()?.hydrate(userId, signal)) ?? { status: "error" };
+  return (await getBrowserSync()?.hydrate(userId, signal, preserveLocal)) ?? { status: "error" };
 }
 
 export async function pushLibraryToServer(userId: string): Promise<LibrarySyncResult> {
   return (await getBrowserSync()?.push(userId)) ?? { status: "error" };
+}
+
+export function hasUsableLocalLibraryCache(
+  userId: string,
+  storage?: LibraryStorage,
+): boolean {
+  const target = storage ?? (typeof window !== "undefined" ? window.localStorage : null);
+  if (!userId || !target) return false;
+  const compactedLocal = snapshotLocal(userId, target);
+  for (const key of trackedKeysFor(userId)) {
+    const raw = compactedLocal[key];
+    if (raw == null || raw.length === 0) continue;
+    try {
+      JSON.parse(raw);
+      return true;
+    } catch {
+      if (key.startsWith("active-draft-id:") || key.startsWith("selected-project:")) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 type SupabasePublicConfig = { supabaseUrl: string; supabaseKey: string };
@@ -423,22 +566,32 @@ export function sendLibraryKeepaliveRequest(
 }
 
 /**
- * Start watching localStorage for library changes and push them up (debounced).
- * The first failed/conflicted push is reported to the gate, which owns stopping
- * this watcher and showing the retry UI.
+ * Watch localStorage and push changes with bounded retries. Failures remain
+ * background-only so generation and editing can continue from the local cache.
  */
 export function startLibrarySync(
   userId: string,
-  onIssue?: (result: Exclude<LibrarySyncResult, { status: "success" }>) => void,
+  onResult?: (result: LibrarySyncResult) => void,
 ): () => void {
   if (!userId || typeof window === "undefined") return () => {};
 
-  let lastSerialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
+  const RETRY_BACKOFF_MS = [1_000, 3_000, 10_000] as const;
+  const fingerprint = () => {
+    const compacted = compactLibraryDocument(snapshotLocal(userId, window.localStorage));
+    return compacted.withinBudget
+      ? JSON.stringify(compacted.state)
+      : `oversized:${compacted.byteSize}:${compacted.keyCount}`;
+  };
+
+  let lastSerialized = fingerprint();
   let debounceTimer: number | undefined;
   let pushing = false;
   let stopped = false;
   let accessToken: string | null = null;
   let keepaliveSerialized: string | null = null;
+  let failedSerialized: string | null = null;
+  let blockedSerialized: string | null = null;
+  let retryCount = 0;
 
   void supabase.auth.getSession().then(({ data }) => {
     if (!stopped && data.session?.user.id === userId) {
@@ -451,54 +604,78 @@ export function startLibrarySync(
     accessToken = session?.user.id === userId ? session.access_token : null;
   });
 
-  const runPush = async () => {
-    if (pushing || stopped) return;
-    pushing = true;
-    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
-    const result = await pushLibraryToServer(userId);
-    pushing = false;
-    if (stopped) return;
-    if (result.status === "success") {
-      lastSerialized = serialized;
-    } else {
-      onIssue?.(result);
-    }
-  };
-
-  const schedulePush = () => {
-    if (pushing || stopped) return;
-    if (debounceTimer) window.clearTimeout(debounceTimer);
+  const schedulePush = (delayMs = 800) => {
+    if (pushing || stopped || debounceTimer) return;
     debounceTimer = window.setTimeout(() => {
       debounceTimer = undefined;
       void runPush();
-    }, 800);
+    }, delayMs);
+  };
+
+  const runPush = async () => {
+    if (pushing || stopped) return;
+    const serialized = fingerprint();
+    if (serialized === lastSerialized || serialized === blockedSerialized) return;
+    pushing = true;
+    const result = await pushLibraryToServer(userId);
+    pushing = false;
+    if (stopped) return;
+    onResult?.(result);
+    if (result.status === "success") {
+      lastSerialized = serialized;
+      failedSerialized = null;
+      blockedSerialized = null;
+      retryCount = 0;
+      return;
+    }
+
+    const current = fingerprint();
+    if (current !== serialized) {
+      failedSerialized = null;
+      blockedSerialized = null;
+      retryCount = 0;
+      schedulePush();
+      return;
+    }
+    if (failedSerialized !== serialized) {
+      failedSerialized = serialized;
+      retryCount = 0;
+    }
+    if (retryCount < RETRY_BACKOFF_MS.length) {
+      schedulePush(RETRY_BACKOFF_MS[retryCount]);
+      retryCount += 1;
+    } else {
+      // Do not retry the same failed payload forever. A later local change or
+      // browser online event creates a new bounded retry cycle.
+      blockedSerialized = serialized;
+    }
   };
 
   const tick = () => {
     if (document.visibilityState === "hidden") return;
-    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
-    if (serialized !== lastSerialized) schedulePush();
+    const serialized = fingerprint();
+    if (serialized !== failedSerialized && serialized !== blockedSerialized) {
+      retryCount = 0;
+    }
+    if (serialized !== lastSerialized && serialized !== blockedSerialized) schedulePush();
   };
 
   const intervalId = window.setInterval(tick, 1500);
 
   const flushAsync = () => {
-    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
-    if (serialized !== lastSerialized) void runPush();
+    const serialized = fingerprint();
+    if (serialized !== lastSerialized && serialized !== blockedSerialized) void runPush();
   };
 
   const flushKeepalive = () => {
-    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
+    const serialized = fingerprint();
     if (serialized === lastSerialized || serialized === keepaliveSerialized) return;
     keepaliveSerialized = serialized;
     const request = getBrowserSync()?.prepareKeepalive(userId);
     const config = supabase as unknown as SupabasePublicConfig;
-    if (request && sendLibraryKeepaliveRequest(request, accessToken, config)) {
-      return;
-    }
-    // Oversized payloads, missing sessions, and unsupported fetches fall back
-    // to the normal authenticated push. localStorage remains intact if the
-    // browser terminates before that best-effort request completes.
+    if (request && sendLibraryKeepaliveRequest(request, accessToken, config)) return;
+    // Oversized or unavailable keepalive requests never send their payload.
+    // A normal bounded retry is attempted without unmounting the dashboard.
     void runPush();
   };
 
@@ -506,15 +683,22 @@ export function startLibrarySync(
     if (document.visibilityState === "hidden") {
       flushKeepalive();
     } else {
-      // A page restored from the back-forward cache performs a normal push so
-      // the in-memory CAS baseline catches up with the keepalive write.
       keepaliveSerialized = null;
       flushAsync();
     }
   };
+  const onOnline = () => {
+    if (blockedSerialized === fingerprint()) {
+      blockedSerialized = null;
+      failedSerialized = null;
+      retryCount = 0;
+    }
+    schedulePush();
+  };
 
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("pagehide", flushKeepalive);
+  window.addEventListener("online", onOnline);
 
   return () => {
     stopped = true;
@@ -522,6 +706,7 @@ export function startLibrarySync(
     window.clearInterval(intervalId);
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("pagehide", flushKeepalive);
+    window.removeEventListener("online", onOnline);
     authSubscription.subscription.unsubscribe();
   };
 }

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 
+const SLOW_CONNECTION_DELAY_MS = 10_000;
+
 export default function LoadingScreen() {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
-    const id = window.setTimeout(() => setSlow(true), 4000);
+    const id = window.setTimeout(() => setSlow(true), SLOW_CONNECTION_DELAY_MS);
     return () => window.clearTimeout(id);
   }, []);
   return (
@@ -12,18 +14,11 @@ export default function LoadingScreen() {
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         <span className="text-sm">Loading…</span>
       </div>
-      {slow && (
-        <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground">
-          <span>Still connecting…</span>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="rounded-md border border-border px-3 py-1 text-xs transition hover:bg-muted"
-          >
-            Reload
-          </button>
-        </div>
-      )}
+      {slow ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          Still connecting… Your saved work will be used when available.
+        </p>
+      ) : null}
     </div>
   );
 }
