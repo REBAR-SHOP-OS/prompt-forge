@@ -283,7 +283,7 @@ Deno.serve(async (req) => {
           await evalResp.body?.cancel().catch(() => {});
           return { verdict: "error" as const, outcome: null, status: 502, error: "Identity evaluator gateway error" };
         }
-        const evalData = await readJsonLoose(evalResp, "ai-image-edit-identity-eval");
+        const evalData = await readJsonLoose(evalResp, "ai-image-edit-identity-eval", { suppressBody: true });
         const rawValue = evalData?.choices?.[0]?.message?.content;
         const raw = typeof rawValue === "string" ? rawValue.trim() : "";
         const outcome: IdentityEvalOutcome | null = raw
