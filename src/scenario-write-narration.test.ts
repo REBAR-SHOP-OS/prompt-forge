@@ -40,7 +40,8 @@ describe("scenario-write narration policy", () => {
     expect(prompt).toContain("no spoken words");
     expect(prompt).toContain("dialogue");
     expect(prompt).toContain("voiceover");
-    expect(prompt).toContain("Use the character in CHARACTER-ONLY shots by default");
+    expect(prompt).toContain("Use the character only in CHARACTER-ONLY shots");
+    expect(prompt).toContain("HARD INVARIANT \u2014 STRICT CHARACTER/PRODUCT SHOT SEPARATION");
     expect(prompt).toContain("without adding the product to those shots");
     expect(prompt).toContain("Do NOT include any narration");
     expect(prompt).not.toMatch(/SPOKESPERSON|SPEAKS directly|must talk|spoken lines/i);
@@ -60,7 +61,8 @@ describe("scenario-write narration policy", () => {
     const prompt = buildSystemPrompt(30, productWithCharacter, false, undefined, undefined, "en", true, "plan");
 
     expect(prompt).toContain("dedicated PRODUCT-ONLY shots");
-    expect(prompt).toContain("unless the user's brief explicitly requires that exact interaction");
+    expect(prompt).toContain("even if the user's brief requests it");
+    expect(prompt).not.toContain("unless the user's brief explicitly requires");
     expect(prompt).toContain('Output EXACTLY 6 plan blocks separated by the literal delimiter "===SCENE==="');
     expect(prompt).toContain("Camera coverage cycles across the film: wide → medium → close → wide → medium → close.");
     expect(prompt).toContain('Start each plan\'s narration on a NEW line with the exact label "Narration:"');

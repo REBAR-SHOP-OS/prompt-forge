@@ -21,7 +21,7 @@ describe("buildSystemPrompt - narration control", () => {
     const prompt = buildSystemPrompt(15, productAdWithCharacter, false, undefined, undefined, "en", false);
     // Character should still be featured
     expect(prompt).toContain("recurring human character");
-    expect(prompt).toContain("Use the character in CHARACTER-ONLY shots by default");
+    expect(prompt).toContain("Use the character only in CHARACTER-ONLY shots");
     // But must NOT speak
     expect(prompt).toContain("must remain SILENT");
     expect(prompt).toContain("no spoken words");
@@ -34,18 +34,36 @@ describe("buildSystemPrompt - narration control", () => {
     expect(prompt).not.toContain("Include the character's spoken lines");
   });
 
-  it("separates product and character by default and bans unrelated object contact", () => {
-    const prompt = buildSystemPrompt(15, productAdWithCharacter, false, undefined, undefined, "en", true);
+  it.each(["scene", "plan", "film"] as const)(
+    "enforces absolute character/product separation in %s mode",
+    (unit) => {
+      const prompt = buildSystemPrompt(
+        30,
+        productAdWithCharacter,
+        false,
+        undefined,
+        undefined,
+        "en",
+        true,
+        unit,
+      );
 
-    expect(prompt).toContain("dedicated PRODUCT-ONLY shots");
-    expect(prompt).toContain("Character-only and environment-only shots may be separate");
-    expect(prompt).toContain("do not put the character and product together in every shot");
-    expect(prompt).toContain("unless the user's brief explicitly requires that exact interaction");
-    expect(prompt).toContain("beside, against, attached to, touching, or interacting with unrelated structures or objects");
-    expect(prompt).toContain("never put a loose stirrup beside or against a completed reinforcement cage");
-    expect(prompt).not.toContain("interacting with the product");
-    expect(prompt).not.toContain("recognizable across every shot");
-  });
+      expect(prompt).toContain("HARD INVARIANT — STRICT CHARACTER/PRODUCT SHOT SEPARATION");
+      expect(prompt).toContain("PARALLEL MONTAGE");
+      expect(prompt).toContain("strictly CHARACTER-ONLY shots");
+      expect(prompt).toContain("strictly PRODUCT-ONLY HERO SHOTS");
+      expect(prompt).toContain("must NEVER appear in the same frame, panel, shot, scene beat, or composition");
+      expect(prompt).toContain('"holding the product"');
+      expect(prompt).toContain('"sliding the product"');
+      expect(prompt).toContain('"placing the product"');
+      expect(prompt).toContain('"touching the product"');
+      expect(prompt).toContain("Hands must never be attached to or reach toward the product");
+      expect(prompt).toContain("even if the user's brief requests it");
+      expect(prompt).toContain("with no character, person, or human hands visible");
+      expect(prompt).not.toContain("unless the user's brief explicitly requires");
+      expect(prompt).not.toContain("by default");
+    },
+  );
 
   it("narration=false includes no-narration format instruction", () => {
     const prompt = buildSystemPrompt(15, productAdWithCharacter, false, undefined, undefined, "en", false);
