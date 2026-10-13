@@ -48,13 +48,17 @@ export function previewBody(raw: string, max = 200): string {
 // Defaults to `any` so call sites keep the exact typing they had with `res.json()`.
 // deno-lint-ignore no-explicit-any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function readJsonLoose<T = any>(res: Response, label = "upstream"): Promise<T | null> {
+export async function readJsonLoose<T = any>(
+  res: Response,
+  label = "upstream",
+  options?: { suppressBody?: boolean },
+): Promise<T | null> {
   const result = await readJsonSafe<T>(res);
   if (result.ok === true) return result.data;
   console.error(`${label}: non-JSON response`, {
     status: res.status,
     contentType: result.contentType,
-    body: previewBody(result.raw),
+    ...(options?.suppressBody ? {} : { body: previewBody(result.raw) }),
   });
   return null;
 }
