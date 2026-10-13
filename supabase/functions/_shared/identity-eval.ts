@@ -257,8 +257,9 @@ function parseBooleanLike(value: unknown): boolean | null {
 function parseActionQuality(value: unknown): ActionQualityResult {
   if (typeof value === "object" && value !== null) {
     const action = value as Record<string, unknown>;
-    if (typeof action.passed === "boolean") {
-      return { passed: action.passed, reason: typeof action.reason === "string" ? action.reason : "" };
+    const passed = parseBooleanLike(action.passed);
+    if (passed !== null) {
+      return { passed, reason: typeof action.reason === "string" ? action.reason : "" };
     }
   }
   console.warn("identity-eval: reviewer omitted or malformed actionQuality; using the identity-only verdict");
