@@ -100,6 +100,7 @@ export function buildSystemPrompt(
   const planCount = planPolicy.planCount;
   const isAd = Boolean(productAd);
   const isCharacter = Boolean(characterSheet);
+  const adWithCharacter = isAd && Boolean(productAd?.characterImageUrl);
   const autoLine = autoFromImage
     ? "You are a world-class advertising creative director writing a persuasive, commercial-style scenario. The user provided ONLY a reference image and no written idea. First, carefully analyze the attached image — identify the main subject, setting, mood, colors, lighting, props, and overall style — then invent a compelling advertising scenario that is faithful to and inspired by what you see in the image, built to promote and sell that subject."
     : "";
@@ -110,10 +111,10 @@ export function buildSystemPrompt(
         productAd?.productDescription ? `Product details: ${productAd.productDescription}.` : "",
         "Build a varied film with dedicated PRODUCT-ONLY shots that promote the product by itself. Character-only and environment-only shots may be separate; the product does not need to appear in every shot.",
         "Never place the product beside, against, attached to, touching, or interacting with unrelated structures or objects. For example, never put a loose stirrup beside or against a completed reinforcement cage.",
-        productAd?.characterImageUrl
+        adWithCharacter
           ? [
-              "This commercial ALSO has a recurring human character provided as a SECOND attached image. Keep their face, hairstyle, wardrobe, and body type consistent whenever they appear, but do not put the character and product together in every shot.",
-              "Use the character in CHARACTER-ONLY shots by default. Do not make them hold, touch, present, or interact with the product unless the user's brief explicitly requires that exact interaction.",
+              "This commercial ALSO has a recurring human character provided as a SECOND attached image. Keep their face, hairstyle, wardrobe, and body type consistent whenever they appear. The character and product MUST NEVER share a shot.",
+              "Use the character only in CHARACTER-ONLY shots as a narrator, presenter, observer, or project engineer. The character may speak to the viewer, react through facial expression, look around the environment, or nod confidently, but may never physically interact with the product.",
               narration
                 ? "The character may act as a SPOKESPERSON/PRESENTER and SPEAK directly to the viewer in character-only shots. Their spoken lines may promote the product without the product being visible or held in the same shot."
                 : "The character must remain SILENT — no spoken words, dialogue, or voiceover. Communicate through character-only actions and expressions without adding the product to those shots.",
@@ -140,12 +141,20 @@ export function buildSystemPrompt(
       ? productLine
       : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
-  const adWithCharacter = isAd && Boolean(productAd?.characterImageUrl);
+  const characterProductSeparation = adWithCharacter
+    ? [
+        "HARD INVARIANT — STRICT CHARACTER/PRODUCT SHOT SEPARATION:",
+        "When both a character and product are selected, write the film as a PARALLEL MONTAGE alternating strictly CHARACTER-ONLY shots and strictly PRODUCT-ONLY HERO SHOTS. The character and product must NEVER appear in the same frame, panel, shot, scene beat, or composition.",
+        `NO PHYSICAL CONTACT: Never depict or describe the character or any human hand "holding the product", "sliding the product", "placing the product", "touching the product", inserting, installing, carrying, moving, presenting, or physically working on the product. Hands must never be attached to or reach toward the product, even if the user's brief requests it.`,
+        "Character-only shots may show the narrator, presenter, observer, or project engineer speaking to the viewer, reacting through facial expression, looking around the environment, or nodding confidently, with no product visible.",
+        "Product-only hero shots may show cinematic macro detail, isolated studio rotation, or the product already integrated into a finished, fully assembled structure, with no character, person, or human hands visible.",
+      ].join(" ")
+    : "";
   const narrationLabel = NARRATION_LABELS[outputLanguage] ?? NARRATION_LABELS.en;
   const narrationSpeaker = isCharacter
     ? "the lead character's spoken dialogue"
     : adWithCharacter
-      ? "a persuasive voiceover or the recurring character's spoken dialogue in a character-only shot; the character must not hold or touch the product by default"
+      ? "a persuasive voiceover or the recurring character's spoken dialogue in a character-only shot; the character must never hold or touch the product"
       : "a persuasive voiceover line that promotes the product";
 
   // ---------------------------------------------------------------------------
@@ -163,6 +172,7 @@ export function buildSystemPrompt(
       persona,
       businessLine,
       languageLine,
+      characterProductSeparation,
       `Write ONE unified, cohesive scenario for a ${duration}-second cinematic ${longForm}.`,
       "The scenario must have a clear beginning, middle, and payoff, with continuous visual progression and no repeated action.",
       `Plan the visual progression internally in ${planCount} consecutive 5-second beats, but DO NOT expose, number, label, list, or separate those beats in the response.`,
@@ -205,6 +215,7 @@ export function buildSystemPrompt(
       persona,
       businessLine,
       languageLine,
+      characterProductSeparation,
       `Given the user's brief, write a CONTINUOUS narrative scenario for a ${duration}-second cinematic ${longForm},`,
       `structured as ${numWord} sequential 5-second plans (shots) that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening plan is an attention-grabbing hook that establishes the subject and setting, the middle plans develop the story and build interest and desire, and the final plan delivers a defined payoff/resolution that ends on a strong, memorable note.",
@@ -252,6 +263,7 @@ export function buildSystemPrompt(
       persona,
       businessLine,
       languageLine,
+      characterProductSeparation,
       `Given the user's brief, write a CONTINUOUS narrative scenario for a ${duration}-second cinematic ${longForm},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
@@ -270,6 +282,7 @@ export function buildSystemPrompt(
     persona,
     businessLine,
     languageLine,
+    characterProductSeparation,
     `Given the user's brief, write a single cohesive ${singleForm}`,
     `suitable for a ${duration}-second cinematic video.`,
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
