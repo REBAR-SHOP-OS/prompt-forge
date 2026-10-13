@@ -44,6 +44,30 @@ describe('parseIdentityEvalResponse', () => {
     expect(result?.perReference[0]).toMatchObject({ present: true, match: false })
   })
 
+  it('keeps an explicit string action-quality failure as a failure', () => {
+    const result = parseIdentityEvalResponse(JSON.stringify({
+      perReference: [
+        { present: 'true', match: 'true', reason: 'Same identity.' },
+      ],
+      actionQuality: { passed: 'false', reason: 'Impossible action.' },
+    }), 1)
+
+    expect(result?.actionQuality.passed).toBe(false)
+    expect(result?.passed).toBe(false)
+  })
+
+  it('keeps an explicit numeric action-quality failure as a failure', () => {
+    const result = parseIdentityEvalResponse(JSON.stringify({
+      perReference: [
+        { present: 1, match: 1, reason: 'Same identity.' },
+      ],
+      actionQuality: { passed: 0, reason: 'Impossible action.' },
+    }), 1)
+
+    expect(result?.actionQuality.passed).toBe(false)
+    expect(result?.passed).toBe(false)
+  })
+
   it('parses fenced JSON with surrounding text and whitespace', () => {
     const raw = `
 Reviewer output:
