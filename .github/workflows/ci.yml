@@ -9,10 +9,18 @@ on:
 permissions:
   contents: read
 
+# One run per PR (or per pushed ref): a newer push to the same PR cancels the
+# superseded run. Pushes to main/agent branches are never cancelled.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
     name: Typecheck · Lint · Test · Build
     runs-on: ubuntu-latest
+    # Typical run is 2-3 min; fail a hung run instead of holding a runner for 6h.
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
