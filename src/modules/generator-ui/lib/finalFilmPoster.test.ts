@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { persistFinalFilmPoster, posterPathFromThumbnailRef } from "./finalFilmPoster";
+import { persistFinalFilmPoster } from "./finalFilmPoster";
 
 describe("persistFinalFilmPoster", () => {
   it("uploads an inline poster to existing storage and returns a small reference", async () => {
@@ -40,31 +40,5 @@ describe("persistFinalFilmPoster", () => {
       upload,
       fetchImpl,
     )).resolves.toBeNull();
-  });
-});
-
-describe("posterPathFromThumbnailRef", () => {
-  it("derives the poster object path from a persisted bucket-relative reference", () => {
-    expect(posterPathFromThumbnailRef("merged-videos/user-1/posters/film-1.jpg", "merged-videos"))
-      .toBe("user-1/posters/film-1.jpg");
-  });
-
-  it("derives the poster path from a full storage URL", () => {
-    expect(posterPathFromThumbnailRef(
-      "https://project.supabase.co/storage/v1/object/public/merged-videos/user-1/posters/film-1.png",
-      "merged-videos",
-    )).toBe("user-1/posters/film-1.png");
-  });
-
-  it("returns null for references that are not storage-backed posters", () => {
-    expect(posterPathFromThumbnailRef(null, "merged-videos")).toBeNull();
-    expect(posterPathFromThumbnailRef(undefined, "merged-videos")).toBeNull();
-    expect(posterPathFromThumbnailRef("data:image/jpeg;base64,AAAA", "merged-videos")).toBeNull();
-    // The video file itself is not a poster object.
-    expect(posterPathFromThumbnailRef("merged-videos/user-1/merged-123.mp4", "merged-videos"))
-      .toBeNull();
-    // A poster-shaped path in a different bucket is not ours to delete.
-    expect(posterPathFromThumbnailRef("other-bucket/user-1/posters/film-1.jpg", "merged-videos"))
-      .toBeNull();
   });
 });

@@ -43,38 +43,3 @@ export async function persistFinalFilmPoster(
     return null;
   }
 }
-
-/**
- * In-bucket storage path of the poster object referenced by a Final Film's
- * `video.thumbnail_url`, or null when the reference is not a storage-backed
- * poster (legacy inline data, blob/external URL, or a non-poster object in
- * the bucket). Deleting a merged film must remove this object as well as the
- * video file, or the poster leaks in the bucket with nothing referencing it.
- * Persisted references are bucket-relative (`<bucket>/<userId>/posters/…`);
- * full storage URLs are accepted for robustness.
- */
-export function posterPathFromThumbnailRef(
-  thumbnailUrl: string | null | undefined,
-  bucket: string,
-): string | null {
-  if (!thumbnailUrl) return null;
-  if (thumbnailUrl.startsWith("data:") || thumbnailUrl.startsWith("blob:")) return null;
-  let path: string | null = null;
-  const relativePrefix = `${bucket}/`;
-  if (thumbnailUrl.startsWith(relativePrefix)) {
-    path = thumbnailUrl.slice(relativePrefix.length);
-  } else {
-    const marker = `/${bucket}/`;
-    const markerIndex = thumbnailUrl.indexOf(marker);
-    if (markerIndex >= 0) {
-      path = thumbnailUrl.slice(markerIndex + marker.length).split(/[?#]/)[0];
-    }
-  }
-  if (!path) return null;
-  try {
-    path = decodeURIComponent(path);
-  } catch {
-    // Keep the raw path if it is not valid percent-encoding.
-  }
-  return path.includes("/posters/") ? path : null;
-}

@@ -3874,6 +3874,13 @@ export default function DashboardPage() {
             await supabase.storage.from(MERGED_BUCKET).remove([ref.path])
           }
         }
+        // Also purge the Final Film poster object: it lives beside the
+        // video as <userId>/posters/<filmId>.<ext> and is referenced only
+        // by video.thumbnail_url, so deleting the video alone leaks it.
+        const posterRef = parseStorageRef(mergedEntry?.video?.thumbnail_url)
+        if (posterRef?.bucket === MERGED_BUCKET && posterRef.path.includes('/posters/')) {
+          await supabase.storage.from(MERGED_BUCKET).remove([posterRef.path])
+        }
       } else {
         // Real job: permanently delete it on the server, which also removes
         // the video file(s) from Storage.
