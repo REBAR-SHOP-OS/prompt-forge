@@ -22,6 +22,14 @@ class MemoryStorage {
   removeItem(key: string) { this.values.delete(key); }
 }
 
+class QuotaStorage extends MemoryStorage {
+  readonly failing = new Set<string>();
+  setItem(key: string, value: string) {
+    if (this.failing.has(key)) throw new DOMException("quota exceeded", "QuotaExceededError");
+    super.setItem(key, value);
+  }
+}
+
 const success = <T>(value: T): LibraryBackendResult<T> => ({ status: "success", value });
 
 class VersionedBackend implements LibraryStateBackend {
@@ -616,6 +624,71 @@ describe("library state synchronization", () => {
       version: 2,
     });
     expect(Object.keys(backend.row?.state ?? {})).toEqual([approvedKey]);
+  });
+
+  it("fails closed when the hydrated cache cannot be installed, keeping the old baseline and the divergence", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]', [draftKey]: '["initial-draft"]' },
+      version: 1,
+    });
+    const deviceA = new QuotaStorage();
+    const deviceB = new MemoryStorage();
+    await createLibraryStateSync(backend, deviceA).hydrate(userId);
+    const syncB = createLibraryStateSync(backend, deviceB);
+    await syncB.hydrate(userId);
+
+    // Same-key divergence is recorded on device A.
+    deviceA.setItem(approvedKey, '["device-a"]');
+    deviceB.setItem(approvedKey, '["device-b"]');
+    await syncB.push(userId);
+    await expect(createLibraryStateSync(backend, deviceA).hydrate(userId, undefined, true))
+      .resolves.toEqual({ status: "conflict", conflictingKeys: [approvedKey] });
+
+    // Device B later agrees on that key and changes another, so the next
+    // recovery merges cleanly, but installing the merge hits the quota.
+    deviceB.setItem(approvedKey, '["device-a"]');
+    deviceB.setItem(draftKey, '["device-b-draft"]');
+    await syncB.push(userId);
+    deviceA.failing.add(draftKey);
+
+    const reloaded = createLibraryStateSync(backend, deviceA);
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual({ status: "error" });
+
+    expect(JSON.parse(deviceA.getItem(`library-baseline:${userId}`) ?? "null")?.version).toBe(1);
+    expect(deviceA.getItem(`library-diverged:${userId}`)).not.toBeNull();
+    expect(deviceA.getItem(approvedKey)).toBe('["device-a"]');
+    expect(deviceA.getItem(draftKey)).toBe('["initial-draft"]');
+    // Nothing can write the half-installed document over device B's work.
+    const writesBefore = backend.updateCount + backend.insertCount;
+    expect((await reloaded.push(userId)).status).not.toBe("success");
+    expect(reloaded.prepareKeepalive(userId)).toBeNull();
+    expect(backend.updateCount + backend.insertCount).toBe(writesBefore);
+
+    // Once storage recovers, the same recovery installs and agrees.
+    deviceA.failing.clear();
+    await expect(createLibraryStateSync(backend, deviceA).hydrate(userId, undefined, true))
+      .resolves.toEqual({ status: "success" });
+    expect(deviceA.getItem(draftKey)).toBe('["device-b-draft"]');
+    expect(JSON.parse(deviceA.getItem(`library-baseline:${userId}`) ?? "null")?.version).toBe(3);
+    expect(deviceA.getItem(`library-diverged:${userId}`)).toBeNull();
+  });
+
+  it("keeps a deliberate deletion of every local key across a reload", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]', [draftKey]: '["initial-draft"]' },
+      version: 1,
+    });
+    const storage = new MemoryStorage();
+    await createLibraryStateSync(backend, storage).hydrate(userId);
+    storage.removeItem(approvedKey);
+    storage.removeItem(draftKey);
+
+    const reloaded = createLibraryStateSync(backend, storage);
+    await expect(reloaded.hydrate(userId)).resolves.toEqual({ status: "success" });
+
+    expect(storage.getItem(approvedKey)).toBeNull();
+    expect(storage.getItem(draftKey)).toBeNull();
+    expect(backend.row).toEqual({ state: {}, version: 2 });
   });
 
   it("keeps merged server changes safe when a local edit during reconciliation conflicts with them", async () => {

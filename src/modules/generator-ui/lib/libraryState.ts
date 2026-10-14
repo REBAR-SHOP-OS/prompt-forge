@@ -182,19 +182,45 @@ function hasAnyLocal(userId: string, storage: LibraryStorage): boolean {
   return trackedKeysFor(userId).some((key) => storage.getItem(key) != null);
 }
 
-function replaceLocalFromDoc(userId: string, doc: LibraryDoc, storage: LibraryStorage) {
-  for (const key of trackedKeysFor(userId)) {
+// Installs `doc` as the tracked local cache and verifies every key landed.
+// Storage quota/security failures are not ignored: on any failure the previous
+// values are restored (best effort) and false is returned, so no caller can
+// record a baseline for a cache that was not actually installed.
+function installLocalDoc(userId: string, doc: LibraryDoc, storage: LibraryStorage): boolean {
+  const keys = trackedKeysFor(userId);
+  const previous = new Map<string, string | null>();
+  try {
+    for (const key of keys) previous.set(key, storage.getItem(key));
+  } catch {
+    return false;
+  }
+  const installed = keys.every((key) => {
     const value = doc[key];
+    const expected = typeof value === "string" ? value : null;
     try {
-      if (typeof value === "string") {
-        storage.setItem(key, value);
-      } else {
+      if (expected == null) {
         storage.removeItem(key);
+      } else {
+        storage.setItem(key, expected);
+      }
+      return storage.getItem(key) === expected;
+    } catch {
+      return false;
+    }
+  });
+  if (installed) return true;
+  for (const [key, value] of previous) {
+    try {
+      if (value == null) {
+        storage.removeItem(key);
+      } else {
+        storage.setItem(key, value);
       }
     } catch {
-      // Keep hydration best-effort for storage quota/security errors.
+      // Best effort: the baseline is not advanced either way.
     }
   }
+  return false;
 }
 
 function sameEntry(left: LibraryDoc, right: LibraryDoc, key: string): boolean {
@@ -258,21 +284,29 @@ export function createLibraryStateSync(
   const divergences = new Map<string, string[]>();
   const pushInFlight = new Set<string>();
 
-  const clearDivergence = (userId: string) => {
+  // Divergence marker writes are verified like cache installation. A marker
+  // that cannot be removed keeps blocking pushes (divergenceFor reads it back),
+  // so a failed clear reports failure instead of a settled sync.
+  const clearDivergence = (userId: string): boolean => {
     divergences.delete(userId);
     try {
       storage.removeItem(divergedKey(userId));
+      return storage.getItem(divergedKey(userId)) == null;
     } catch {
-      // The in-memory record is already cleared.
+      return false;
     }
   };
 
-  const recordDivergence = (userId: string, conflictingKeys: string[]) => {
+  // The in-memory record blocks pushes for this session even when the
+  // device-local marker cannot be persisted.
+  const recordDivergence = (userId: string, conflictingKeys: string[]): boolean => {
     divergences.set(userId, [...conflictingKeys]);
+    const serialized = JSON.stringify(conflictingKeys);
     try {
-      storage.setItem(divergedKey(userId), JSON.stringify(conflictingKeys));
+      storage.setItem(divergedKey(userId), serialized);
+      return storage.getItem(divergedKey(userId)) === serialized;
     } catch {
-      // The in-memory record still blocks pushes for this session.
+      return false;
     }
   };
 
@@ -291,11 +325,12 @@ export function createLibraryStateSync(
     }
   };
 
-  // Every success path records the newly agreed state through here. It is
-  // persisted device-locally so a reload can still three-way merge preserved
-  // local work against the true common ancestor; agreeing also settles any
-  // recorded divergence.
-  const setBaseline = (userId: string, baseline: LibraryBaseline) => {
+  // Every success path records the newly agreed state through here, and only
+  // after the matching local cache is verifiably installed. It is persisted
+  // device-locally so a reload can still three-way merge preserved local work
+  // against the true common ancestor; agreeing also settles any recorded
+  // divergence. Returns false when that divergence could not be cleared.
+  const setBaseline = (userId: string, baseline: LibraryBaseline): boolean => {
     const next = { state: cloneDoc(baseline.state), version: baseline.version };
     baselines.set(userId, next);
     try {
@@ -309,8 +344,17 @@ export function createLibraryStateSync(
         // Nothing more can be done with unavailable storage.
       }
     }
-    clearDivergence(userId);
+    return clearDivergence(userId);
   };
+
+  // Install the local cache first, then record the agreement. A failed or
+  // partial installation leaves the old baseline and any divergence in place,
+  // so a stale document can never become "current" against a newer version.
+  const adopt = (
+    userId: string,
+    baseline: LibraryBaseline,
+    localDoc: LibraryDoc = baseline.state,
+  ): boolean => installLocalDoc(userId, localDoc, storage) && setBaseline(userId, baseline);
 
   type ServerRead =
     | { status: "success"; row: LibraryBaseline | null }
@@ -424,13 +468,13 @@ export function createLibraryStateSync(
         // local document directly over the merged server changes.
         return { status: "conflict", conflictingKeys: rebased.conflictingKeys };
       }
-      setBaseline(userId, { state: mergedPrepared.state, version: savedVersion });
-      replaceLocalFromDoc(userId, rebased.state, storage);
-      return { status: "success" };
+      return adopt(userId, { state: mergedPrepared.state, version: savedVersion }, rebased.state)
+        ? { status: "success" }
+        : { status: "error" };
     }
-    setBaseline(userId, { state: mergedPrepared.state, version: savedVersion });
-    replaceLocalFromDoc(userId, mergedPrepared.state, storage);
-    return { status: "success" };
+    return adopt(userId, { state: mergedPrepared.state, version: savedVersion })
+      ? { status: "success" }
+      : { status: "error" };
   };
 
   const push = async (
@@ -469,8 +513,9 @@ export function createLibraryStateSync(
         return reconcileConflict(userId, baseline, localState, signal);
       }
 
-      setBaseline(userId, { state: localState, version: nextVersion });
-      return { status: "success" };
+      return setBaseline(userId, { state: localState, version: nextVersion })
+        ? { status: "success" }
+        : { status: "error" };
     } catch {
       return { status: "error" };
     } finally {
@@ -500,9 +545,13 @@ export function createLibraryStateSync(
         // Local work is preserved whenever it may hold unsynced changes: an
         // explicit recovery, an unresolved divergence, or a persisted
         // ancestor (whose three-way merge tells a stale cache from edits).
-        // Without one of these, the server state replaces the cache.
-        const preserving = preserveLocal || ancestor != null || divergence != null;
-        if (preserving && hasAnyLocal(userId, storage)) {
+        // Without one of these, the server state replaces the cache. With an
+        // ancestor or a divergence, an empty local document is reconciled
+        // too: deleting every key is a local change that must survive reload.
+        const preserving = ancestor != null
+          || divergence != null
+          || (preserveLocal && hasAnyLocal(userId, storage));
+        if (preserving) {
           const localPrepared = prepareForSync(snapshotLocal(userId, storage), "hydrate-recovery");
           if (!localPrepared) return { status: "error" };
           if (!sameDoc(localPrepared.state, row.state)) {
@@ -526,9 +575,7 @@ export function createLibraryStateSync(
             return reconciled;
           }
         }
-        setBaseline(userId, row);
-        replaceLocalFromDoc(userId, row.state, storage);
-        return { status: "success" };
+        return adopt(userId, row) ? { status: "success" } : { status: "error" };
       }
 
       const localSnapshot = snapshotLocal(userId, storage);
@@ -547,11 +594,13 @@ export function createLibraryStateSync(
             signal,
           );
         }
-        setBaseline(userId, { state: localState, version: 1 });
-      } else {
-        setBaseline(userId, { state: {}, version: 0 });
+        return setBaseline(userId, { state: localState, version: 1 })
+          ? { status: "success" }
+          : { status: "error" };
       }
-      return { status: "success" };
+      return setBaseline(userId, { state: {}, version: 0 })
+        ? { status: "success" }
+        : { status: "error" };
     } catch {
       return { status: "error" };
     }
@@ -584,8 +633,9 @@ export function createLibraryStateSync(
         if (aborted(signal)) return { status: "error" };
         if (inserted.status === "error") return { status: "error" };
         if (inserted.status === "conflict") return { status: "conflict", conflictingKeys: [] };
-        setBaseline(userId, { state: localState, version: 1 });
-        return { status: "success" };
+        return setBaseline(userId, { state: localState, version: 1 })
+          ? { status: "success" }
+          : { status: "error" };
       }
 
       const ancestor = readPersistedBaseline(userId, storage);
@@ -612,15 +662,15 @@ export function createLibraryStateSync(
         savedVersion = row.version + 1;
       }
 
-      setBaseline(userId, { state: resolvedPrepared.state, version: savedVersion });
       // Local edits that landed during the write are kept on top of the
       // resolved state; the next push syncs them from the new baseline.
       const currentLocal = snapshotLocal(userId, storage);
       const nextLocal = sameDoc(currentLocal, localState)
         ? resolvedPrepared.state
         : mergeLibraryDocs(userId, localState, currentLocal, resolvedPrepared.state, "local").state;
-      replaceLocalFromDoc(userId, nextLocal, storage);
-      return { status: "success" };
+      return adopt(userId, { state: resolvedPrepared.state, version: savedVersion }, nextLocal)
+        ? { status: "success" }
+        : { status: "error" };
     } catch {
       return { status: "error" };
     } finally {
@@ -643,9 +693,7 @@ export function createLibraryStateSync(
       const server = await readServer(userId, "resolve-server", signal);
       if (server.status !== "success") return server;
       const row = server.row ?? { state: {}, version: 0 };
-      setBaseline(userId, row);
-      replaceLocalFromDoc(userId, row.state, storage);
-      return { status: "success" };
+      return adopt(userId, row) ? { status: "success" } : { status: "error" };
     } catch {
       return { status: "error" };
     } finally {
