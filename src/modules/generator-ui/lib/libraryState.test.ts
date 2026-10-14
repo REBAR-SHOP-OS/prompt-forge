@@ -436,6 +436,96 @@ describe("library state synchronization", () => {
     expect(backend.updateCount).toBe(0);
   });
 
+  it("preserves offline work across a reload after a recovery conflict and reconciles it on retry", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["server"]' },
+      version: 4,
+    });
+    const storage = new MemoryStorage();
+    storage.setItem(approvedKey, '["offline-local-edit"]');
+
+    const firstSession = createLibraryStateSync(backend, storage);
+    await expect(firstSession.hydrate(userId, undefined, true)).resolves.toEqual({
+      status: "conflict",
+      conflictingKeys: [approvedKey],
+    });
+    expect(storage.getItem(approvedKey)).toBe('["offline-local-edit"]');
+
+    // A reload starts a brand-new sync instance with no in-memory baseline.
+    // Recovery hydration must surface the same conflict instead of replacing
+    // the preserved local work with the server state.
+    const reloaded = createLibraryStateSync(backend, storage);
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual({
+      status: "conflict",
+      conflictingKeys: [approvedKey],
+    });
+    expect(storage.getItem(approvedKey)).toBe('["offline-local-edit"]');
+    expect(backend.row?.state[approvedKey]).toBe('["server"]');
+
+    // The baseline recorded by the recovery hydration makes the conflict
+    // resolvable: an explicit push uploads the preserved local work instead
+    // of discarding it.
+    await expect(reloaded.push(userId)).resolves.toEqual({ status: "success" });
+    expect(backend.row?.state[approvedKey]).toBe('["offline-local-edit"]');
+    expect(backend.row?.version).toBe(5);
+  });
+
+  it("keeps merged server changes safe when a local edit during reconciliation conflicts with them", async () => {
+    const backend = new VersionedBackend({
+      state: {
+        [approvedKey]: '["initial"]',
+        [draftKey]: '["initial-draft"]',
+        [mergedKey]: '["initial-film"]',
+      },
+      version: 1,
+    });
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+    await sync.hydrate(userId);
+
+    // Another device advances the server: draft and merged-film keys change.
+    backend.row = {
+      state: {
+        [approvedKey]: '["initial"]',
+        [draftKey]: '["server-draft"]',
+        [mergedKey]: '["server-film"]',
+      },
+      version: 2,
+    };
+    storage.setItem(approvedKey, '["local-edit"]');
+
+    // During the reconciliation CAS, a newer local edit lands on the key the
+    // server also changed, so rebasing it onto the merged state conflicts.
+    const update = backend.updateIfVersion.bind(backend);
+    vi.spyOn(backend, "updateIfVersion").mockImplementation(async (...args) => {
+      const result = await update(...args);
+      if (args[2] === 2 && result.status === "success") {
+        storage.setItem(draftKey, '["racing-local-draft"]');
+      }
+      return result;
+    });
+
+    await expect(sync.push(userId)).resolves.toEqual({
+      status: "conflict",
+      conflictingKeys: [draftKey],
+    });
+    // The reconciliation CAS landed: the server holds the merged state.
+    expect(JSON.parse(backend.row?.state[mergedKey] ?? "null")).toEqual(["server-film"]);
+    // The racing local edit is preserved untouched.
+    expect(storage.getItem(draftKey)).toBe('["racing-local-draft"]');
+
+    // The next push must reconcile against the merged server state, never
+    // overwrite it with the stale local document: the merged-film change
+    // survives and the conflict stays visible.
+    await expect(sync.push(userId)).resolves.toEqual({
+      status: "conflict",
+      conflictingKeys: [draftKey],
+    });
+    expect(JSON.parse(backend.row?.state[mergedKey] ?? "null")).toEqual(["server-film"]);
+    expect(JSON.parse(backend.row?.state[draftKey] ?? "null")).toEqual(["server-draft"]);
+    expect(JSON.parse(backend.row?.state[approvedKey] ?? "null")).toEqual(["local-edit"]);
+  });
+
   it("does not let an aborted hydration mutate local state", async () => {
     let resolveRead: (result: LibraryBackendResult<LibraryStateRow | null>) => void = () => {};
     const backend: LibraryStateBackend = {

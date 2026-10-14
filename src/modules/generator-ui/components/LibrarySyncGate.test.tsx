@@ -6,6 +6,7 @@ import type { LibrarySyncResult } from "@/modules/generator-ui/lib/libraryState"
 const mocks = vi.hoisted(() => ({
   userId: "user-1" as string | null,
   hydrate: vi.fn(),
+  push: vi.fn(),
   hasCache: vi.fn(),
   startSync: vi.fn(),
 }));
@@ -21,6 +22,7 @@ vi.mock("@/core/ui/LoadingScreen", () => ({
 vi.mock("@/modules/generator-ui/lib/libraryState", () => ({
   hasUsableLocalLibraryCache: (...args: unknown[]) => mocks.hasCache(...args),
   hydrateLibraryFromServer: (...args: unknown[]) => mocks.hydrate(...args),
+  pushLibraryToServer: (...args: unknown[]) => mocks.push(...args),
   startLibrarySync: (...args: unknown[]) => mocks.startSync(...args),
 }));
 
@@ -31,6 +33,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.userId = "user-1";
   mocks.hydrate.mockReset();
+  mocks.push.mockReset().mockResolvedValue(ok);
   mocks.hasCache.mockReset().mockReturnValue(false);
   mocks.startSync.mockReset().mockReturnValue(vi.fn());
 });
@@ -153,5 +156,74 @@ describe("LibrarySyncGate", () => {
     await act(async () => { resolveHydration(ok); });
 
     expect(mocks.startSync).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a load-time conflict instead of stranding preserved local work", async () => {
+    const conflict: LibrarySyncResult = { status: "conflict", conflictingKeys: ["key"] };
+    mocks.hasCache.mockReturnValue(true);
+    mocks.hydrate.mockResolvedValue(conflict);
+    render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
+
+    await act(async () => {});
+
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(mocks.push).toHaveBeenCalledWith("user-1");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(mocks.startSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps preserved local work mounted across a reload after a recovery conflict", async () => {
+    const conflict: LibrarySyncResult = { status: "conflict", conflictingKeys: ["key"] };
+    mocks.hasCache.mockReturnValue(true);
+    mocks.hydrate.mockResolvedValue(conflict);
+    mocks.push.mockResolvedValue(conflict);
+
+    const first = render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
+    await act(async () => {});
+
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("not overwritten");
+    expect(screen.getByRole("button", { name: "Retry sync" })).toBeInTheDocument();
+    expect(mocks.startSync).not.toHaveBeenCalled();
+    first.unmount();
+
+    // Reload: the gate mounts again from the same saved library. The work is
+    // still there and the dashboard still opens from it — nothing is
+    // silently replaced by the server state.
+    render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
+    await act(async () => {});
+
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("not overwritten");
+
+    mocks.push.mockResolvedValue(ok);
+    fireEvent.click(screen.getByRole("button", { name: "Retry sync" }));
+    await act(async () => {});
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(mocks.startSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers sync when connectivity returns after background retries are exhausted", async () => {
+    mocks.hasCache.mockReturnValue(true);
+    mocks.hydrate.mockResolvedValue(failed);
+    render(<LibrarySyncGate><div>Dashboard</div></LibrarySyncGate>);
+
+    // Initial attempts (0ms, +500ms, +1.5s) plus background recovery
+    // attempts (+2s, +5s, +15s) all fail.
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(mocks.startSync).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("connection returns");
+    expect(screen.getByRole("button", { name: "Retry sync" })).toBeInTheDocument();
+
+    mocks.hydrate.mockResolvedValue(ok);
+    window.dispatchEvent(new Event("online"));
+    await act(async () => {});
+
+    expect(mocks.startSync).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

@@ -259,10 +259,6 @@ export function createLibraryStateSync(
     }
 
     const currentLocal = snapshotLocal(userId, storage);
-    baselines.set(userId, {
-      state: cloneDoc(mergedPrepared.state),
-      version: latest.version + 1,
-    });
     if (!sameDoc(currentLocal, localState)) {
       const rebased = mergeLibraryDocs(
         userId,
@@ -271,11 +267,26 @@ export function createLibraryStateSync(
         mergedPrepared.state,
       );
       if (rebased.conflictingKeys.length > 0) {
+        // The merged state is already saved on the server, but the local
+        // edit that landed during the CAS cannot be rebased onto it. Do NOT
+        // advance the baseline to the merged state here: keeping the old
+        // baseline makes the next push fail its CAS and re-enter
+        // reconciliation, which merges against the merged server state.
+        // Advancing the baseline first would let that push write the stale
+        // local document directly over the merged server changes.
         return { status: "conflict", conflictingKeys: rebased.conflictingKeys };
       }
+      baselines.set(userId, {
+        state: cloneDoc(mergedPrepared.state),
+        version: latest.version + 1,
+      });
       replaceLocalFromDoc(userId, rebased.state, storage);
       return { status: "success" };
     }
+    baselines.set(userId, {
+      state: cloneDoc(mergedPrepared.state),
+      version: latest.version + 1,
+    });
     replaceLocalFromDoc(userId, mergedPrepared.state, storage);
     return { status: "success" };
   };
@@ -347,16 +358,6 @@ export function createLibraryStateSync(
           "hydrate",
         );
         if (!prepared) return { status: "error" };
-        if (preserveLocal && hasAnyLocal(userId, storage)) {
-          const localPrepared = prepareForSync(snapshotLocal(userId, storage), "hydrate-recovery");
-          if (!localPrepared) return { status: "error" };
-          if (!sameDoc(localPrepared.state, prepared.state)) {
-            return {
-              status: "conflict",
-              conflictingKeys: differingKeys(localPrepared.state, prepared.state),
-            };
-          }
-        }
         let version = row.version ?? 0;
         // Legacy inline thumbnails are compacted exactly once and persisted
         // through the existing CAS contract before local cache replacement.
@@ -374,20 +375,29 @@ export function createLibraryStateSync(
           }
           version += 1;
         }
-        const currentLocal = snapshotLocal(userId, storage);
+        if (preserveLocal && hasAnyLocal(userId, storage)) {
+          const localPrepared = prepareForSync(snapshotLocal(userId, storage), "hydrate-recovery");
+          if (!localPrepared) return { status: "error" };
+          if (!sameDoc(localPrepared.state, prepared.state)) {
+            // Preserve the local work AND record the server baseline, so a
+            // later push can reconcile the preserved state. Returning a
+            // bare conflict without a baseline stranded the local work:
+            // no push could run, and the next non-preserving hydration
+            // silently replaced it with the server state.
+            baselines.set(userId, {
+              state: cloneDoc(prepared.state),
+              version,
+            });
+            return {
+              status: "conflict",
+              conflictingKeys: differingKeys(localPrepared.state, prepared.state),
+            };
+          }
+        }
         baselines.set(userId, {
           state: cloneDoc(prepared.state),
           version,
         });
-        if (
-          preserveLocal &&
-          !sameDoc(currentLocal, prepared.state)
-        ) {
-          return {
-            status: "conflict",
-            conflictingKeys: differingKeys(currentLocal, prepared.state),
-          };
-        }
         replaceLocalFromDoc(userId, prepared.state, storage);
         return { status: "success" };
       }

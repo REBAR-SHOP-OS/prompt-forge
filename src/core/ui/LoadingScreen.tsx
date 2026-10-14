@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 
 const SLOW_CONNECTION_DELAY_MS = 10_000;
 
-export default function LoadingScreen() {
+export interface LoadingScreenProps {
+  /**
+   * Optional slow-connection note for loaders that can fall back to local
+   * data (e.g. the library gate). The default copy stays neutral because
+   * this screen is also used on routes with no saved-work fallback.
+   */
+  slowMessage?: string;
+}
+
+export default function LoadingScreen({ slowMessage }: LoadingScreenProps = {}) {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const id = window.setTimeout(() => setSlow(true), SLOW_CONNECTION_DELAY_MS);
@@ -16,7 +25,7 @@ export default function LoadingScreen() {
       </div>
       {slow ? (
         <p className="text-xs text-muted-foreground" role="status">
-          Still connecting… Your saved work will be used when available.
+          {slowMessage ?? "Still connecting… This is taking longer than usual."}
         </p>
       ) : null}
     </div>
