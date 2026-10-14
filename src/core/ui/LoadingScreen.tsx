@@ -1,9 +1,20 @@
 import { useEffect, useState } from "react";
 
-export default function LoadingScreen() {
+const SLOW_CONNECTION_DELAY_MS = 10_000;
+
+export interface LoadingScreenProps {
+  /**
+   * Optional slow-connection note for loaders that can fall back to local
+   * data (e.g. the library gate). The default copy stays neutral because
+   * this screen is also used on routes with no saved-work fallback.
+   */
+  slowMessage?: string;
+}
+
+export default function LoadingScreen({ slowMessage }: LoadingScreenProps = {}) {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
-    const id = window.setTimeout(() => setSlow(true), 4000);
+    const id = window.setTimeout(() => setSlow(true), SLOW_CONNECTION_DELAY_MS);
     return () => window.clearTimeout(id);
   }, []);
   return (
@@ -12,18 +23,11 @@ export default function LoadingScreen() {
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         <span className="text-sm">Loading…</span>
       </div>
-      {slow && (
-        <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground">
-          <span>Still connecting…</span>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="rounded-md border border-border px-3 py-1 text-xs transition hover:bg-muted"
-          >
-            Reload
-          </button>
-        </div>
-      )}
+      {slow ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          {slowMessage ?? "Still connecting… This is taking longer than usual."}
+        </p>
+      ) : null}
     </div>
   );
 }

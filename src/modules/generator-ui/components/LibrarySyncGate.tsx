@@ -1,16 +1,24 @@
-// Ensures the per-user library layout is hydrated from the backend BEFORE the
-// dashboard mounts, so its localStorage-reading effects see synced data. While
-// hydrating it shows the loading screen; afterwards it keeps pushing changes up.
-import { ReactNode, useEffect, useState } from "react";
+// Hydrates the per-user library before the dashboard mounts when possible.
+// A valid local cache remains usable during transient backend failures; once the
+// dashboard is mounted, background sync issues never unmount it.
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/core/auth/auth-context";
 import LoadingScreen from "@/core/ui/LoadingScreen";
 import {
+  hasUsableLocalLibraryCache,
   hydrateLibraryFromServer,
+  resolveLibraryConflictWithLocal,
+  resolveLibraryConflictWithServer,
   startLibrarySync,
   type LibrarySyncResult,
 } from "@/modules/generator-ui/lib/libraryState";
 
-const HYDRATION_BACKOFF_MS = [250, 750] as const;
+const HYDRATION_BACKOFF_MS = [500, 1_500] as const;
+const BACKGROUND_HYDRATION_BACKOFF_MS = [2_000, 5_000, 15_000] as const;
+
+const CONFLICT_NOTICE = "Library changes need review. Your local work was not overwritten.";
+const SAVED_LIBRARY_NOTICE = "Using your saved library. Sync will continue in the background.";
+const OFFLINE_NOTICE = "Using your saved library. Sync will retry when your connection returns.";
 
 function waitForRetry(delayMs: number, signal: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
@@ -27,70 +35,199 @@ function waitForRetry(delayMs: number, signal: AbortSignal): Promise<boolean> {
 }
 
 type GateStatus = "loading" | "ready" | "error";
+type NoticeAction = "none" | "retry" | "resolve";
+type UnresolvedResult = Exclude<LibrarySyncResult, { status: "success" }>;
+
+interface NoticeActions {
+  retry: () => Promise<void>;
+  keepLocal: () => Promise<void>;
+  useSynced: () => Promise<void>;
+}
 
 export default function LibrarySyncGate({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const [status, setStatus] = useState<GateStatus>("loading");
   const [failure, setFailure] = useState<Exclude<LibrarySyncResult["status"], "success">>("error");
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [noticeAction, setNoticeAction] = useState<NoticeAction>("none");
   const [retryNonce, setRetryNonce] = useState(0);
+  const retryRequestedRef = useRef(false);
+  const actionsRef = useRef<NoticeActions | null>(null);
 
   useEffect(() => {
+    retryRequestedRef.current = false;
+    actionsRef.current = null;
+    setNoticeAction("none");
     if (!userId) {
       setStatus("loading");
+      setSyncNotice(null);
       return;
     }
 
     const controller = new AbortController();
     let stopSync: (() => void) | undefined;
+    let removeOnlineRetry: (() => void) | undefined;
+    let resolving = false;
+
+    const startBackgroundSync = () => {
+      if (stopSync) return;
+      stopSync = startLibrarySync(userId, (result) => {
+        if (controller.signal.aborted) return;
+        if (result.status === "success") {
+          removeOnlineRetry?.();
+          setSyncNotice(null);
+          setNoticeAction("none");
+          return;
+        }
+        setFailure(result.status);
+        if (result.status === "conflict") {
+          setSyncNotice(CONFLICT_NOTICE);
+          setNoticeAction("resolve");
+          return;
+        }
+        setSyncNotice("Working from this device. Library sync will retry in the background.");
+        setNoticeAction("none");
+      });
+    };
+
+    const hydrateWithBackoff = async (
+      delays: readonly number[],
+      initialAttempt: boolean,
+      preserveLocal = false,
+    ): Promise<LibrarySyncResult | null> => {
+      let result: LibrarySyncResult = { status: "error" };
+      for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+        if (!initialAttempt || attempt > 0) {
+          const delay = initialAttempt ? delays[attempt - 1] : delays[attempt];
+          if (delay == null || !(await waitForRetry(delay, controller.signal))) return null;
+        }
+        result = await hydrateLibraryFromServer(userId, controller.signal, preserveLocal);
+        if (controller.signal.aborted) return null;
+        if (result.status === "success" || result.status === "conflict") return result;
+      }
+      return result;
+    };
+
+    const armOnlineRetry = () => {
+      if (removeOnlineRetry) return;
+      const onOnline = () => { void attemptResolution(); };
+      window.addEventListener("online", onOnline);
+      removeOnlineRetry = () => {
+        window.removeEventListener("online", onOnline);
+        removeOnlineRetry = undefined;
+      };
+    };
+
+    const settleResolved = () => {
+      removeOnlineRetry?.();
+      setSyncNotice(null);
+      setNoticeAction("none");
+      startBackgroundSync();
+    };
+
+    // Every unresolved exit keeps the saved library usable, offers an action,
+    // and arms the online retry, so the notice never promises a retry that
+    // is not actually armed.
+    const showUnresolved = (result: UnresolvedResult) => {
+      setFailure(result.status);
+      if (result.status === "conflict") {
+        setSyncNotice(CONFLICT_NOTICE);
+        setNoticeAction("resolve");
+      } else {
+        setSyncNotice(OFFLINE_NOTICE);
+        setNoticeAction("retry");
+      }
+      armOnlineRetry();
+    };
+
+    const runResolution = async (resolve: () => Promise<LibrarySyncResult>) => {
+      if (resolving || controller.signal.aborted) return;
+      resolving = true;
+      try {
+        const result = await resolve();
+        if (controller.signal.aborted) return;
+        if (result.status === "success") {
+          settleResolved();
+          return;
+        }
+        showUnresolved(result);
+      } finally {
+        resolving = false;
+      }
+    };
+
+    // An automatic resolution attempt (retry button, connection return) is a
+    // recovery hydration only: it reconciles preserved local work against the
+    // persisted common ancestor and never pushes the local document over the
+    // server. Overwriting either side happens only from the explicit buttons.
+    const attemptResolution = () => runResolution(
+      () => hydrateLibraryFromServer(userId, controller.signal, true),
+    );
+    actionsRef.current = {
+      retry: attemptResolution,
+      keepLocal: () => runResolution(() => resolveLibraryConflictWithLocal(userId)),
+      useSynced: () => runResolution(() => resolveLibraryConflictWithServer(userId)),
+    };
 
     setStatus("loading");
-    (async () => {
-      let result: LibrarySyncResult = { status: "error" };
-      for (let attempt = 0; attempt <= HYDRATION_BACKOFF_MS.length; attempt += 1) {
-        if (attempt > 0) {
-          const shouldContinue = await waitForRetry(
-            HYDRATION_BACKOFF_MS[attempt - 1],
-            controller.signal,
-          );
-          if (!shouldContinue) return;
-        }
-
-        result = await hydrateLibraryFromServer(userId, controller.signal);
-        if (controller.signal.aborted) return;
-        if (result.status === "success") break;
-        // Conflicts need an explicit user retry; automatic retries are only
-        // for transient hydration errors.
-        if (result.status === "conflict") break;
-      }
-
-      if (result.status !== "success") {
-        setFailure(result.status);
-        setStatus("error");
+    setSyncNotice(null);
+    void (async () => {
+      // When a saved library exists on this device, hydrate in recovery mode:
+      // a diverged server state must surface as a conflict to resolve, never
+      // as a silent replacement of work a previous session preserved.
+      const hasCache = hasUsableLocalLibraryCache(userId);
+      const result = await hydrateWithBackoff(HYDRATION_BACKOFF_MS, true, hasCache);
+      if (!result || controller.signal.aborted) return;
+      if (result.status === "success") {
+        startBackgroundSync();
+        setStatus("ready");
         return;
       }
 
-      stopSync = startLibrarySync(userId, (issue) => {
+      if (hasCache) {
+        setStatus("ready");
+        if (result.status === "conflict") {
+          // Never resolve a conflict automatically: wait for the user.
+          showUnresolved(result);
+          return;
+        }
+
+        setFailure(result.status);
+        setSyncNotice(SAVED_LIBRARY_NOTICE);
+        const recovered = await hydrateWithBackoff(BACKGROUND_HYDRATION_BACKOFF_MS, false, true);
         if (controller.signal.aborted) return;
-        stopSync?.();
-        stopSync = undefined;
-        setFailure(issue.status);
-        setStatus("error");
-      });
-      setStatus("ready");
+        if (recovered?.status === "success") {
+          settleResolved();
+          return;
+        }
+        // Background retries are exhausted (null) or ended in a conflict, and
+        // background sync has not started, so promising that sync "will
+        // continue in the background" would be false.
+        showUnresolved(recovered ?? { status: "error" });
+        return;
+      }
+
+      setFailure(result.status);
+      setStatus("error");
     })();
 
     return () => {
       controller.abort();
       stopSync?.();
+      removeOnlineRetry?.();
     };
   }, [retryNonce, userId]);
 
-  if (status === "loading") return <LoadingScreen />;
+  if (status === "loading") {
+    return (
+      <LoadingScreen slowMessage="Still connecting… If this device has a saved library, it will open from that copy." />
+    );
+  }
   if (status === "error") {
     const message = failure === "conflict"
       ? "Library changes conflict with a newer version. Nothing was overwritten."
-      : "We couldn't load your library. Check your connection and try again.";
+      : "We couldn't load your library and no saved device cache was available. Check your connection and try again.";
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-6">
         <div className="max-w-md space-y-4 text-center" role="alert">
@@ -100,8 +237,8 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
             type="button"
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
             onClick={() => {
-              // Remove the actionable error state immediately so repeated
-              // clicks cannot start parallel retry effects.
+              if (retryRequestedRef.current) return;
+              retryRequestedRef.current = true;
               setStatus("loading");
               setRetryNonce((value) => value + 1);
             }}
@@ -112,5 +249,45 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  return <>{children}</>;
+
+  return (
+    <>
+      {syncNotice ? (
+        <div
+          className="fixed bottom-3 right-3 z-50 max-w-sm rounded-md border border-border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-sm"
+          role="status"
+        >
+          {syncNotice}
+          {noticeAction === "retry" ? (
+            <button
+              type="button"
+              className="ml-2 font-medium text-foreground underline"
+              onClick={() => { void actionsRef.current?.retry(); }}
+            >
+              Retry sync
+            </button>
+          ) : null}
+          {noticeAction === "resolve" ? (
+            <>
+              <button
+                type="button"
+                className="ml-2 font-medium text-foreground underline"
+                onClick={() => { void actionsRef.current?.keepLocal(); }}
+              >
+                Keep my work
+              </button>
+              <button
+                type="button"
+                className="ml-2 font-medium text-foreground underline"
+                onClick={() => { void actionsRef.current?.useSynced(); }}
+              >
+                Use synced version
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {children}
+    </>
+  );
 }
