@@ -8,10 +8,6 @@ on:
       - opened
       - reopened
       - synchronize
-      - ready_for_review
-  schedule:
-    # Keep every open PR branch current with main so branches never fall behind.
-    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 concurrency:
