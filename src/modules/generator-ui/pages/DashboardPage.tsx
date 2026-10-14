@@ -261,6 +261,7 @@ import { PromptOptimizerPopover, type PromptOptimizationRequest } from '@/module
 
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl, parseStorageRef } from '@/modules/generator-ui/lib/proxiedVideoUrl'
+import { purgeMergedFilmStorage } from '@/modules/generator-ui/lib/mergedFilmPurge'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
 import { spliceRegeneratedCard } from '@/modules/generator-ui/lib/regenerationOrder'
@@ -3862,25 +3863,18 @@ export default function DashboardPage() {
 
     try {
       if (isMerged) {
-        // Local-only entry: purge its file from merged-videos bucket if owned by us.
-        const url = mergedEntry?.video?.storage_path
-        if (url && userId) {
-          // Matches BOTH the legacy full-URL form and the bucket-relative
-          // "merged-videos/<path>" form persisted since #202. The old
-          // URL-only regex silently skipped the purge for new rows, orphaning
-          // the file in the private bucket.
-          const ref = parseStorageRef(url)
-          if (ref?.bucket === MERGED_BUCKET) {
-            await supabase.storage.from(MERGED_BUCKET).remove([ref.path])
-          }
-        }
-        // Also purge the Final Film poster object: it lives beside the
-        // video as <userId>/posters/<filmId>.<ext> and is referenced only
-        // by video.thumbnail_url, so deleting the video alone leaks it.
-        const posterRef = parseStorageRef(mergedEntry?.video?.thumbnail_url)
-        if (posterRef?.bucket === MERGED_BUCKET && posterRef.path.includes('/posters/')) {
-          await supabase.storage.from(MERGED_BUCKET).remove([posterRef.path])
-        }
+        // Local-only entry: purge its video file (if owned by us) and its
+        // Final Film poster from the merged-videos bucket. Storage reports
+        // failures in the returned error, so the helper rethrows them and
+        // the rollback below restores the card instead of orphaning objects.
+        await purgeMergedFilmStorage(
+          {
+            video: userId ? mergedEntry?.video?.storage_path : null,
+            poster: mergedEntry?.video?.thumbnail_url,
+          },
+          MERGED_BUCKET,
+          (paths) => supabase.storage.from(MERGED_BUCKET).remove(paths),
+        )
       } else {
         // Real job: permanently delete it on the server, which also removes
         // the video file(s) from Storage.
