@@ -96,6 +96,44 @@ function trackedKeysFor(userId: string): string[] {
   return TRACKED_PREFIXES.map((prefix) => `${prefix}:${userId}`);
 }
 
+// Device-local sync bookkeeping. These keys are deliberately NOT tracked: they
+// are never uploaded and never part of the synced document.
+//  - baseline: the last state this device and the server agreed on, plus its
+//    server version: the common ancestor for every three-way merge, kept
+//    across reloads.
+//  - diverged: an unresolved recovery divergence; local work must survive
+//    reloads until reconciliation merges it or the user resolves it.
+function baselineKey(userId: string): string {
+  return `library-baseline:${userId}`;
+}
+
+function divergedKey(userId: string): string {
+  return `library-diverged:${userId}`;
+}
+
+function readPersistedBaseline(
+  userId: string,
+  storage: LibraryStorage,
+): LibraryBaseline | null {
+  try {
+    const raw = storage.getItem(baselineKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { state?: unknown; version?: unknown } | null;
+    const version = parsed?.version;
+    const state = parsed?.state;
+    if (typeof version !== "number" || !Number.isInteger(version) || version < 0) return null;
+    if (!state || typeof state !== "object" || Array.isArray(state)) return null;
+    const doc: LibraryDoc = {};
+    for (const [key, value] of Object.entries(state)) {
+      if (typeof value !== "string") return null;
+      doc[key] = value;
+    }
+    return { state: trackedDoc(userId, doc), version };
+  } catch {
+    return null;
+  }
+}
+
 function cloneDoc(doc: LibraryDoc): LibraryDoc {
   return { ...doc };
 }
@@ -179,6 +217,9 @@ export function mergeLibraryDocs(
   base: LibraryDoc,
   local: LibraryDoc,
   server: LibraryDoc,
+  // An explicit user resolution ("keep my work") settles same-key conflicts
+  // in favor of local; without it they are reported and left out.
+  preferOnConflict?: "local",
 ): { state: LibraryDoc; conflictingKeys: string[] } {
   const state: LibraryDoc = {};
   const conflictingKeys: string[] = [];
@@ -188,6 +229,10 @@ export function mergeLibraryDocs(
     const serverChanged = !sameEntry(base, server, key);
 
     if (localChanged && serverChanged && !sameEntry(local, server, key)) {
+      if (preferOnConflict === "local") {
+        if (Object.prototype.hasOwnProperty.call(local, key)) state[key] = local[key];
+        continue;
+      }
       conflictingKeys.push(key);
       continue;
     }
@@ -210,7 +255,104 @@ export function createLibraryStateSync(
   storage: LibraryStorage,
 ) {
   const baselines = new Map<string, LibraryBaseline>();
+  const divergences = new Map<string, string[]>();
   const pushInFlight = new Set<string>();
+
+  const clearDivergence = (userId: string) => {
+    divergences.delete(userId);
+    try {
+      storage.removeItem(divergedKey(userId));
+    } catch {
+      // The in-memory record is already cleared.
+    }
+  };
+
+  const recordDivergence = (userId: string, conflictingKeys: string[]) => {
+    divergences.set(userId, [...conflictingKeys]);
+    try {
+      storage.setItem(divergedKey(userId), JSON.stringify(conflictingKeys));
+    } catch {
+      // The in-memory record still blocks pushes for this session.
+    }
+  };
+
+  const divergenceFor = (userId: string): string[] | null => {
+    const recorded = divergences.get(userId);
+    if (recorded) return [...recorded];
+    try {
+      const raw = storage.getItem(divergedKey(userId));
+      if (raw == null) return null;
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter((key): key is string => typeof key === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  };
+
+  // Every success path records the newly agreed state through here. It is
+  // persisted device-locally so a reload can still three-way merge preserved
+  // local work against the true common ancestor; agreeing also settles any
+  // recorded divergence.
+  const setBaseline = (userId: string, baseline: LibraryBaseline) => {
+    const next = { state: cloneDoc(baseline.state), version: baseline.version };
+    baselines.set(userId, next);
+    try {
+      storage.setItem(baselineKey(userId), JSON.stringify(next));
+    } catch {
+      // A stale persisted ancestor could mis-attribute changes after a
+      // reload. Drop it so recovery fails closed into a visible conflict.
+      try {
+        storage.removeItem(baselineKey(userId));
+      } catch {
+        // Nothing more can be done with unavailable storage.
+      }
+    }
+    clearDivergence(userId);
+  };
+
+  type ServerRead =
+    | { status: "success"; row: LibraryBaseline | null }
+    | Exclude<LibrarySyncResult, { status: "success" }>;
+
+  // Reads the server row as a tracked, compacted document. Legacy inline
+  // thumbnails are compacted exactly once and persisted through the CAS
+  // contract before any caller uses the state.
+  const readServer = async (
+    userId: string,
+    operation: string,
+    signal?: AbortSignal,
+  ): Promise<ServerRead> => {
+    const readResult = await backend.read(userId);
+    if (aborted(signal)) return { status: "error" };
+    if (readResult.status !== "success") {
+      return readResult.status === "conflict"
+        ? { status: "conflict", conflictingKeys: [] }
+        : { status: "error" };
+    }
+    const row = readResult.value;
+    if (!row) return { status: "success", row: null };
+
+    const prepared = prepareForSync(trackedDoc(userId, row.state ?? {}), operation);
+    if (!prepared) return { status: "error" };
+    let version = row.version ?? 0;
+    if (prepared.changed) {
+      const saved = await backend.updateIfVersion(
+        userId,
+        prepared.state,
+        version,
+        version + 1,
+      );
+      if (aborted(signal)) return { status: "error" };
+      if (saved.status === "error") return { status: "error" };
+      if (saved.status === "conflict") {
+        return { status: "conflict", conflictingKeys: [] };
+      }
+      version += 1;
+    }
+    return { status: "success", row: { state: prepared.state, version } };
+  };
 
   const reconcileConflict = async (
     userId: string,
@@ -244,18 +386,24 @@ export function createLibraryStateSync(
     const mergedPrepared = prepareForSync(merged.state, "conflict-write");
     if (!mergedPrepared) return { status: "error" };
 
-    // A conflict recovery gets one CAS against the freshly-read version. A
-    // second race remains observable and retryable instead of busy-looping.
-    const saved = await backend.updateIfVersion(
-      userId,
-      mergedPrepared.state,
-      latest.version,
-      latest.version + 1,
-    );
-    if (aborted(signal)) return { status: "error" };
-    if (saved.status === "error") return { status: "error" };
-    if (saved.status === "conflict") {
-      return { status: "conflict", conflictingKeys: [] };
+    // When the merge is exactly the server state (e.g. a stale cache with no
+    // local edits), adopt it without writing anything.
+    let savedVersion = latest.version;
+    if (!sameDoc(mergedPrepared.state, latestPrepared.state)) {
+      // A conflict recovery gets one CAS against the freshly-read version. A
+      // second race remains observable and retryable instead of busy-looping.
+      const saved = await backend.updateIfVersion(
+        userId,
+        mergedPrepared.state,
+        latest.version,
+        latest.version + 1,
+      );
+      if (aborted(signal)) return { status: "error" };
+      if (saved.status === "error") return { status: "error" };
+      if (saved.status === "conflict") {
+        return { status: "conflict", conflictingKeys: [] };
+      }
+      savedVersion = latest.version + 1;
     }
 
     const currentLocal = snapshotLocal(userId, storage);
@@ -276,17 +424,11 @@ export function createLibraryStateSync(
         // local document directly over the merged server changes.
         return { status: "conflict", conflictingKeys: rebased.conflictingKeys };
       }
-      baselines.set(userId, {
-        state: cloneDoc(mergedPrepared.state),
-        version: latest.version + 1,
-      });
+      setBaseline(userId, { state: mergedPrepared.state, version: savedVersion });
       replaceLocalFromDoc(userId, rebased.state, storage);
       return { status: "success" };
     }
-    baselines.set(userId, {
-      state: cloneDoc(mergedPrepared.state),
-      version: latest.version + 1,
-    });
+    setBaseline(userId, { state: mergedPrepared.state, version: savedVersion });
     replaceLocalFromDoc(userId, mergedPrepared.state, storage);
     return { status: "success" };
   };
@@ -295,6 +437,11 @@ export function createLibraryStateSync(
     userId: string,
     signal?: AbortSignal,
   ): Promise<LibrarySyncResult> => {
+    // An unresolved recovery divergence fails closed: only reconciliation or
+    // an explicit user resolution may write while local and server disagree.
+    const divergence = userId ? divergenceFor(userId) : null;
+    if (divergence) return { status: "conflict", conflictingKeys: divergence };
+
     const baseline = baselines.get(userId);
     if (!userId || !baseline || aborted(signal) || pushInFlight.has(userId)) {
       return { status: "error" };
@@ -322,7 +469,7 @@ export function createLibraryStateSync(
         return reconcileConflict(userId, baseline, localState, signal);
       }
 
-      baselines.set(userId, { state: cloneDoc(localState), version: nextVersion });
+      setBaseline(userId, { state: localState, version: nextVersion });
       return { status: "success" };
     } catch {
       return { status: "error" };
@@ -343,62 +490,44 @@ export function createLibraryStateSync(
     if (baselines.has(userId)) return push(userId, signal);
 
     try {
-      const readResult = await backend.read(userId);
-      if (aborted(signal)) return { status: "error" };
-      if (readResult.status !== "success") {
-        return readResult.status === "conflict"
-          ? { status: "conflict", conflictingKeys: [] }
-          : { status: "error" };
-      }
+      const server = await readServer(userId, "hydrate", signal);
+      if (server.status !== "success") return server;
 
-      const row = readResult.value;
+      const row = server.row;
       if (row) {
-        const prepared = prepareForSync(
-          trackedDoc(userId, row.state ?? {}),
-          "hydrate",
-        );
-        if (!prepared) return { status: "error" };
-        let version = row.version ?? 0;
-        // Legacy inline thumbnails are compacted exactly once and persisted
-        // through the existing CAS contract before local cache replacement.
-        if (prepared.changed) {
-          const saved = await backend.updateIfVersion(
-            userId,
-            prepared.state,
-            version,
-            version + 1,
-          );
-          if (aborted(signal)) return { status: "error" };
-          if (saved.status === "error") return { status: "error" };
-          if (saved.status === "conflict") {
-            return { status: "conflict", conflictingKeys: [] };
-          }
-          version += 1;
-        }
-        if (preserveLocal && hasAnyLocal(userId, storage)) {
+        const ancestor = readPersistedBaseline(userId, storage);
+        const divergence = divergenceFor(userId);
+        // Local work is preserved whenever it may hold unsynced changes: an
+        // explicit recovery, an unresolved divergence, or a persisted
+        // ancestor (whose three-way merge tells a stale cache from edits).
+        // Without one of these, the server state replaces the cache.
+        const preserving = preserveLocal || ancestor != null || divergence != null;
+        if (preserving && hasAnyLocal(userId, storage)) {
           const localPrepared = prepareForSync(snapshotLocal(userId, storage), "hydrate-recovery");
           if (!localPrepared) return { status: "error" };
-          if (!sameDoc(localPrepared.state, prepared.state)) {
-            // Preserve the local work AND record the server baseline, so a
-            // later push can reconcile the preserved state. Returning a
-            // bare conflict without a baseline stranded the local work:
-            // no push could run, and the next non-preserving hydration
-            // silently replaced it with the server state.
-            baselines.set(userId, {
-              state: cloneDoc(prepared.state),
-              version,
-            });
-            return {
-              status: "conflict",
-              conflictingKeys: differingKeys(localPrepared.state, prepared.state),
-            };
+          if (!sameDoc(localPrepared.state, row.state)) {
+            if (!ancestor) {
+              // The diverged work predates any recorded sync, so there is no
+              // common ancestor to merge against. Never fabricate one from the
+              // server state: stay visibly conflicted until the user decides.
+              const conflictingKeys = differingKeys(localPrepared.state, row.state);
+              recordDivergence(userId, conflictingKeys);
+              return { status: "conflict", conflictingKeys };
+            }
+            const reconciled = await reconcileConflict(
+              userId,
+              ancestor,
+              localPrepared.state,
+              signal,
+            );
+            if (reconciled.status === "conflict") {
+              recordDivergence(userId, reconciled.conflictingKeys);
+            }
+            return reconciled;
           }
         }
-        baselines.set(userId, {
-          state: cloneDoc(prepared.state),
-          version,
-        });
-        replaceLocalFromDoc(userId, prepared.state, storage);
+        setBaseline(userId, row);
+        replaceLocalFromDoc(userId, row.state, storage);
         return { status: "success" };
       }
 
@@ -418,13 +547,109 @@ export function createLibraryStateSync(
             signal,
           );
         }
-        baselines.set(userId, { state: cloneDoc(localState), version: 1 });
+        setBaseline(userId, { state: localState, version: 1 });
       } else {
-        baselines.set(userId, { state: {}, version: 0 });
+        setBaseline(userId, { state: {}, version: 0 });
       }
       return { status: "success" };
     } catch {
       return { status: "error" };
+    }
+  };
+
+  // Explicit "keep my work". Reconciles against the persisted ancestor when
+  // one exists, so the other device's non-conflicting changes survive and
+  // local wins only the keys that truly conflict. Without an ancestor it is
+  // the user's explicit choice to overwrite the synced copy with this one.
+  // Every write is CAS-guarded against the version just read.
+  const resolveWithLocal = async (
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<LibrarySyncResult> => {
+    if (!userId || aborted(signal) || pushInFlight.has(userId)) {
+      return { status: "error" };
+    }
+
+    pushInFlight.add(userId);
+    try {
+      const server = await readServer(userId, "resolve-local-read", signal);
+      if (server.status !== "success") return server;
+      const localPrepared = prepareForSync(snapshotLocal(userId, storage), "resolve-local");
+      if (!localPrepared) return { status: "error" };
+      const localState = localPrepared.state;
+
+      const row = server.row;
+      if (!row) {
+        const inserted = await backend.insert(userId, localState, 1);
+        if (aborted(signal)) return { status: "error" };
+        if (inserted.status === "error") return { status: "error" };
+        if (inserted.status === "conflict") return { status: "conflict", conflictingKeys: [] };
+        setBaseline(userId, { state: localState, version: 1 });
+        return { status: "success" };
+      }
+
+      const ancestor = readPersistedBaseline(userId, storage);
+      const resolved = ancestor
+        ? mergeLibraryDocs(userId, ancestor.state, localState, row.state, "local").state
+        : localState;
+      const resolvedPrepared = prepareForSync(resolved, "resolve-local-write");
+      if (!resolvedPrepared) return { status: "error" };
+
+      let savedVersion = row.version;
+      if (!sameDoc(resolvedPrepared.state, row.state)) {
+        const saved = await backend.updateIfVersion(
+          userId,
+          resolvedPrepared.state,
+          row.version,
+          row.version + 1,
+        );
+        if (aborted(signal)) return { status: "error" };
+        if (saved.status === "error") return { status: "error" };
+        if (saved.status === "conflict") {
+          // The server moved again; the divergence stays recorded.
+          return { status: "conflict", conflictingKeys: divergenceFor(userId) ?? [] };
+        }
+        savedVersion = row.version + 1;
+      }
+
+      setBaseline(userId, { state: resolvedPrepared.state, version: savedVersion });
+      // Local edits that landed during the write are kept on top of the
+      // resolved state; the next push syncs them from the new baseline.
+      const currentLocal = snapshotLocal(userId, storage);
+      const nextLocal = sameDoc(currentLocal, localState)
+        ? resolvedPrepared.state
+        : mergeLibraryDocs(userId, localState, currentLocal, resolvedPrepared.state, "local").state;
+      replaceLocalFromDoc(userId, nextLocal, storage);
+      return { status: "success" };
+    } catch {
+      return { status: "error" };
+    } finally {
+      pushInFlight.delete(userId);
+    }
+  };
+
+  // Explicit "use synced version": discards the diverged local copy and adopts
+  // the server document. Nothing is written to the server.
+  const resolveWithServer = async (
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<LibrarySyncResult> => {
+    if (!userId || aborted(signal) || pushInFlight.has(userId)) {
+      return { status: "error" };
+    }
+
+    pushInFlight.add(userId);
+    try {
+      const server = await readServer(userId, "resolve-server", signal);
+      if (server.status !== "success") return server;
+      const row = server.row ?? { state: {}, version: 0 };
+      setBaseline(userId, row);
+      replaceLocalFromDoc(userId, row.state, storage);
+      return { status: "success" };
+    } catch {
+      return { status: "error" };
+    } finally {
+      pushInFlight.delete(userId);
     }
   };
 
@@ -433,7 +658,7 @@ export function createLibraryStateSync(
     maxBytes = MAX_KEEPALIVE_BYTES,
   ): LibraryKeepaliveRequest | null => {
     const baseline = baselines.get(userId);
-    if (!userId || !baseline) return null;
+    if (!userId || !baseline || divergenceFor(userId)) return null;
 
     const localSnapshot = snapshotLocal(userId, storage);
     const prepared = prepareForSync(localSnapshot, "keepalive");
@@ -457,7 +682,7 @@ export function createLibraryStateSync(
     };
   };
 
-  return { hydrate, push, prepareKeepalive };
+  return { hydrate, push, prepareKeepalive, resolveWithLocal, resolveWithServer };
 }
 
 const supabaseBackend: LibraryStateBackend = {
@@ -519,6 +744,18 @@ export async function hydrateLibraryFromServer(
 
 export async function pushLibraryToServer(userId: string): Promise<LibrarySyncResult> {
   return (await getBrowserSync()?.push(userId)) ?? { status: "error" };
+}
+
+export async function resolveLibraryConflictWithLocal(
+  userId: string,
+): Promise<LibrarySyncResult> {
+  return (await getBrowserSync()?.resolveWithLocal(userId)) ?? { status: "error" };
+}
+
+export async function resolveLibraryConflictWithServer(
+  userId: string,
+): Promise<LibrarySyncResult> {
+  return (await getBrowserSync()?.resolveWithServer(userId)) ?? { status: "error" };
 }
 
 export function hasUsableLocalLibraryCache(

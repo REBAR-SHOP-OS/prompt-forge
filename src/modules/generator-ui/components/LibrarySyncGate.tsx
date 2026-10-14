@@ -7,7 +7,8 @@ import LoadingScreen from "@/core/ui/LoadingScreen";
 import {
   hasUsableLocalLibraryCache,
   hydrateLibraryFromServer,
-  pushLibraryToServer,
+  resolveLibraryConflictWithLocal,
+  resolveLibraryConflictWithServer,
   startLibrarySync,
   type LibrarySyncResult,
 } from "@/modules/generator-ui/lib/libraryState";
@@ -34,6 +35,14 @@ function waitForRetry(delayMs: number, signal: AbortSignal): Promise<boolean> {
 }
 
 type GateStatus = "loading" | "ready" | "error";
+type NoticeAction = "none" | "retry" | "resolve";
+type UnresolvedResult = Exclude<LibrarySyncResult, { status: "success" }>;
+
+interface NoticeActions {
+  retry: () => Promise<void>;
+  keepLocal: () => Promise<void>;
+  useSynced: () => Promise<void>;
+}
 
 export default function LibrarySyncGate({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -41,15 +50,15 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<GateStatus>("loading");
   const [failure, setFailure] = useState<Exclude<LibrarySyncResult["status"], "success">>("error");
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
-  const [noticeActionAvailable, setNoticeActionAvailable] = useState(false);
+  const [noticeAction, setNoticeAction] = useState<NoticeAction>("none");
   const [retryNonce, setRetryNonce] = useState(0);
   const retryRequestedRef = useRef(false);
-  const resolveRef = useRef<(() => Promise<void>) | null>(null);
+  const actionsRef = useRef<NoticeActions | null>(null);
 
   useEffect(() => {
     retryRequestedRef.current = false;
-    resolveRef.current = null;
-    setNoticeActionAvailable(false);
+    actionsRef.current = null;
+    setNoticeAction("none");
     if (!userId) {
       setStatus("loading");
       setSyncNotice(null);
@@ -59,19 +68,26 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     let stopSync: (() => void) | undefined;
     let removeOnlineRetry: (() => void) | undefined;
+    let resolving = false;
 
     const startBackgroundSync = () => {
       if (stopSync) return;
       stopSync = startLibrarySync(userId, (result) => {
         if (controller.signal.aborted) return;
         if (result.status === "success") {
+          removeOnlineRetry?.();
           setSyncNotice(null);
+          setNoticeAction("none");
           return;
         }
         setFailure(result.status);
-        setSyncNotice(result.status === "conflict"
-          ? CONFLICT_NOTICE
-          : "Working from this device. Library sync will retry in the background.");
+        if (result.status === "conflict") {
+          setSyncNotice(CONFLICT_NOTICE);
+          setNoticeAction("resolve");
+          return;
+        }
+        setSyncNotice("Working from this device. Library sync will retry in the background.");
+        setNoticeAction("none");
       });
     };
 
@@ -93,39 +109,66 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
       return result;
     };
 
-    // A recovery conflict leaves local work preserved locally with a server
-    // baseline recorded by the hydration. Reconcile it with an explicit push
-    // (which three-way merges against the latest server state) instead of
-    // stranding it behind a notice with no way forward.
-    const attemptResolution = async (): Promise<void> => {
-      const settled = await hydrateLibraryFromServer(userId, controller.signal, true);
-      if (controller.signal.aborted) return;
-      if (settled.status === "success") {
-        removeOnlineRetry?.();
-        setSyncNotice(null);
-        setNoticeActionAvailable(false);
-        startBackgroundSync();
-        return;
+    const armOnlineRetry = () => {
+      if (removeOnlineRetry) return;
+      const onOnline = () => { void attemptResolution(); };
+      window.addEventListener("online", onOnline);
+      removeOnlineRetry = () => {
+        window.removeEventListener("online", onOnline);
+        removeOnlineRetry = undefined;
+      };
+    };
+
+    const settleResolved = () => {
+      removeOnlineRetry?.();
+      setSyncNotice(null);
+      setNoticeAction("none");
+      startBackgroundSync();
+    };
+
+    // Every unresolved exit keeps the saved library usable, offers an action,
+    // and arms the online retry, so the notice never promises a retry that
+    // is not actually armed.
+    const showUnresolved = (result: UnresolvedResult) => {
+      setFailure(result.status);
+      if (result.status === "conflict") {
+        setSyncNotice(CONFLICT_NOTICE);
+        setNoticeAction("resolve");
+      } else {
+        setSyncNotice(OFFLINE_NOTICE);
+        setNoticeAction("retry");
       }
-      if (settled.status === "conflict") {
-        const pushed = await pushLibraryToServer(userId);
+      armOnlineRetry();
+    };
+
+    const runResolution = async (resolve: () => Promise<LibrarySyncResult>) => {
+      if (resolving || controller.signal.aborted) return;
+      resolving = true;
+      try {
+        const result = await resolve();
         if (controller.signal.aborted) return;
-        if (pushed.status === "success") {
-          removeOnlineRetry?.();
-          setSyncNotice(null);
-          setNoticeActionAvailable(false);
-          startBackgroundSync();
+        if (result.status === "success") {
+          settleResolved();
           return;
         }
-        setFailure("conflict");
-        setSyncNotice(CONFLICT_NOTICE);
-        setNoticeActionAvailable(true);
-        return;
+        showUnresolved(result);
+      } finally {
+        resolving = false;
       }
-      setSyncNotice(OFFLINE_NOTICE);
-      setNoticeActionAvailable(true);
     };
-    resolveRef.current = attemptResolution;
+
+    // An automatic resolution attempt (retry button, connection return) is a
+    // recovery hydration only: it reconciles preserved local work against the
+    // persisted common ancestor and never pushes the local document over the
+    // server. Overwriting either side happens only from the explicit buttons.
+    const attemptResolution = () => runResolution(
+      () => hydrateLibraryFromServer(userId, controller.signal, true),
+    );
+    actionsRef.current = {
+      retry: attemptResolution,
+      keepLocal: () => runResolution(() => resolveLibraryConflictWithLocal(userId)),
+      useSynced: () => runResolution(() => resolveLibraryConflictWithServer(userId)),
+    };
 
     setStatus("loading");
     setSyncNotice(null);
@@ -143,36 +186,25 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
       }
 
       if (hasCache) {
-        setFailure(result.status);
-        setSyncNotice(result.status === "conflict" ? CONFLICT_NOTICE : SAVED_LIBRARY_NOTICE);
         setStatus("ready");
         if (result.status === "conflict") {
-          await attemptResolution();
+          // Never resolve a conflict automatically: wait for the user.
+          showUnresolved(result);
           return;
         }
 
+        setFailure(result.status);
+        setSyncNotice(SAVED_LIBRARY_NOTICE);
         const recovered = await hydrateWithBackoff(BACKGROUND_HYDRATION_BACKOFF_MS, false, true);
         if (controller.signal.aborted) return;
         if (recovered?.status === "success") {
-          startBackgroundSync();
-          setSyncNotice(null);
+          settleResolved();
           return;
         }
-        if (recovered?.status === "conflict") {
-          setFailure("conflict");
-          setSyncNotice(CONFLICT_NOTICE);
-          await attemptResolution();
-          return;
-        }
-        // Background retries are exhausted and background sync has not
-        // started, so promising that sync "will continue in the background"
-        // would be false. Keep the saved library usable, retry when
-        // connectivity returns, and offer a manual retry in the notice.
-        setSyncNotice(OFFLINE_NOTICE);
-        setNoticeActionAvailable(true);
-        const onOnline = () => { void attemptResolution(); };
-        window.addEventListener("online", onOnline);
-        removeOnlineRetry = () => window.removeEventListener("online", onOnline);
+        // Background retries are exhausted (null) or ended in a conflict, and
+        // background sync has not started, so promising that sync "will
+        // continue in the background" would be false.
+        showUnresolved(recovered ?? { status: "error" });
         return;
       }
 
@@ -226,14 +258,32 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
           role="status"
         >
           {syncNotice}
-          {noticeActionAvailable ? (
+          {noticeAction === "retry" ? (
             <button
               type="button"
               className="ml-2 font-medium text-foreground underline"
-              onClick={() => { void resolveRef.current?.(); }}
+              onClick={() => { void actionsRef.current?.retry(); }}
             >
               Retry sync
             </button>
+          ) : null}
+          {noticeAction === "resolve" ? (
+            <>
+              <button
+                type="button"
+                className="ml-2 font-medium text-foreground underline"
+                onClick={() => { void actionsRef.current?.keepLocal(); }}
+              >
+                Keep my work
+              </button>
+              <button
+                type="button"
+                className="ml-2 font-medium text-foreground underline"
+                onClick={() => { void actionsRef.current?.useSynced(); }}
+              >
+                Use synced version
+              </button>
+            </>
           ) : null}
         </div>
       ) : null}

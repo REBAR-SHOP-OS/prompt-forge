@@ -436,38 +436,186 @@ describe("library state synchronization", () => {
     expect(backend.updateCount).toBe(0);
   });
 
-  it("preserves offline work across a reload after a recovery conflict and reconciles it on retry", async () => {
+  it("reconciles preserved local edits against newer server state using the persisted baseline", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]', [draftKey]: '["initial-draft"]' },
+      version: 1,
+    });
+    const deviceA = new MemoryStorage();
+    const deviceB = new MemoryStorage();
+    await createLibraryStateSync(backend, deviceA).hydrate(userId);
+    const syncB = createLibraryStateSync(backend, deviceB);
+    await syncB.hydrate(userId);
+
+    // Device A edits while offline; device B saves a disjoint edit meanwhile.
+    deviceA.setItem(approvedKey, '["device-a"]');
+    deviceB.setItem(draftKey, '["device-b-draft"]');
+    await expect(syncB.push(userId)).resolves.toEqual({ status: "success" });
+
+    // Device A reloads: a new sync instance with only the persisted baseline.
+    const reloaded = createLibraryStateSync(backend, deviceA);
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual({ status: "success" });
+
+    expect(backend.row).toEqual({
+      state: { [approvedKey]: '["device-a"]', [draftKey]: '["device-b-draft"]' },
+      version: 3,
+    });
+    expect(deviceA.getItem(approvedKey)).toBe('["device-a"]');
+    expect(deviceA.getItem(draftKey)).toBe('["device-b-draft"]');
+  });
+
+  it("takes the newer server state when the saved cache is simply stale", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]', [draftKey]: '["initial-draft"]' },
+      version: 1,
+    });
+    const deviceA = new MemoryStorage();
+    const deviceB = new MemoryStorage();
+    await createLibraryStateSync(backend, deviceA).hydrate(userId);
+    const syncB = createLibraryStateSync(backend, deviceB);
+    await syncB.hydrate(userId);
+    deviceB.setItem(approvedKey, '["device-b"]');
+    deviceB.removeItem(draftKey);
+    await syncB.push(userId);
+    const serverAfterB = structuredClone(backend.row);
+
+    // Device A reopens with its unchanged, now stale, cache.
+    const reloaded = createLibraryStateSync(backend, deviceA);
+    const updatesBefore = backend.updateCount;
+    const insertsBefore = backend.insertCount;
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual({ status: "success" });
+
+    expect(backend.updateCount).toBe(updatesBefore);
+    expect(backend.insertCount).toBe(insertsBefore);
+    expect(backend.row).toEqual(serverAfterB);
+    expect(deviceA.getItem(approvedKey)).toBe('["device-b"]');
+    expect(deviceA.getItem(draftKey)).toBeNull();
+
+    // Pushing afterwards has nothing stale left to write over device B's work.
+    await expect(reloaded.push(userId)).resolves.toEqual({ status: "success" });
+    expect(JSON.parse(backend.row?.state[approvedKey] ?? "null")).toEqual(["device-b"]);
+    expect(backend.row?.state[draftKey]).toBeUndefined();
+  });
+
+  it("keeps same-key divergence a visible conflict until the user keeps the local copy", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]', [draftKey]: '["initial-draft"]' },
+      version: 1,
+    });
+    const deviceA = new MemoryStorage();
+    const deviceB = new MemoryStorage();
+    await createLibraryStateSync(backend, deviceA).hydrate(userId);
+    const syncB = createLibraryStateSync(backend, deviceB);
+    await syncB.hydrate(userId);
+    deviceA.setItem(approvedKey, '["device-a"]');
+    deviceB.setItem(approvedKey, '["device-b"]');
+    deviceB.setItem(draftKey, '["device-b-draft"]');
+    await syncB.push(userId);
+
+    const reloaded = createLibraryStateSync(backend, deviceA);
+    const conflict = { status: "conflict", conflictingKeys: [approvedKey] };
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual(conflict);
+    const writesBefore = backend.updateCount + backend.insertCount;
+
+    // Nothing writes while the divergence is unresolved, not even a push, and
+    // a later non-recovery hydration does not replace the local work.
+    await expect(reloaded.push(userId)).resolves.toEqual(conflict);
+    const afterReload = createLibraryStateSync(backend, deviceA);
+    await expect(afterReload.hydrate(userId)).resolves.toEqual(conflict);
+    expect(backend.updateCount + backend.insertCount).toBe(writesBefore);
+    expect(backend.row?.state[approvedKey]).toBe('["device-b"]');
+    expect(deviceA.getItem(approvedKey)).toBe('["device-a"]');
+
+    // Keeping the local copy wins the conflicting key; device B's
+    // non-conflicting draft change survives.
+    await expect(afterReload.resolveWithLocal(userId)).resolves.toEqual({ status: "success" });
+    expect(backend.row).toEqual({
+      state: { [approvedKey]: '["device-a"]', [draftKey]: '["device-b-draft"]' },
+      version: 3,
+    });
+    expect(deviceA.getItem(approvedKey)).toBe('["device-a"]');
+    expect(deviceA.getItem(draftKey)).toBe('["device-b-draft"]');
+
+    deviceA.setItem(draftKey, '["after-resolution"]');
+    await expect(afterReload.push(userId)).resolves.toEqual({ status: "success" });
+    expect(backend.row?.version).toBe(4);
+  });
+
+  it("discards the diverged local copy only on an explicit use-synced resolution", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]' },
+      version: 1,
+    });
+    const deviceA = new MemoryStorage();
+    const deviceB = new MemoryStorage();
+    await createLibraryStateSync(backend, deviceA).hydrate(userId);
+    const syncB = createLibraryStateSync(backend, deviceB);
+    await syncB.hydrate(userId);
+    deviceA.setItem(approvedKey, '["device-a"]');
+    deviceB.setItem(approvedKey, '["device-b"]');
+    await syncB.push(userId);
+    const serverAfterB = structuredClone(backend.row);
+
+    const reloaded = createLibraryStateSync(backend, deviceA);
+    const conflict = { status: "conflict", conflictingKeys: [approvedKey] };
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual(conflict);
+    // Retrying the recovery does not discard anything either.
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual(conflict);
+    expect(deviceA.getItem(approvedKey)).toBe('["device-a"]');
+
+    const writesBefore = backend.updateCount + backend.insertCount;
+    await expect(reloaded.resolveWithServer(userId)).resolves.toEqual({ status: "success" });
+    expect(deviceA.getItem(approvedKey)).toBe('["device-b"]');
+    expect(backend.row).toEqual(serverAfterB);
+    expect(backend.updateCount + backend.insertCount).toBe(writesBefore);
+
+    // Resolved: normal syncing resumes from the adopted server state.
+    deviceA.setItem(approvedKey, '["device-a-next"]');
+    await expect(reloaded.push(userId)).resolves.toEqual({ status: "success" });
+    expect(backend.row?.state[approvedKey]).toBe('["device-a-next"]');
+  });
+
+  it("never fabricates a baseline for diverged work that predates any recorded sync", async () => {
     const backend = new VersionedBackend({
       state: { [approvedKey]: '["server"]' },
       version: 4,
     });
     const storage = new MemoryStorage();
     storage.setItem(approvedKey, '["offline-local-edit"]');
+    const conflict = { status: "conflict", conflictingKeys: [approvedKey] };
 
     const firstSession = createLibraryStateSync(backend, storage);
-    await expect(firstSession.hydrate(userId, undefined, true)).resolves.toEqual({
-      status: "conflict",
-      conflictingKeys: [approvedKey],
-    });
-    expect(storage.getItem(approvedKey)).toBe('["offline-local-edit"]');
+    await expect(firstSession.hydrate(userId, undefined, true)).resolves.toEqual(conflict);
+    await expect(firstSession.push(userId)).resolves.toEqual(conflict);
+    expect(firstSession.prepareKeepalive(userId)).toBeNull();
 
-    // A reload starts a brand-new sync instance with no in-memory baseline.
-    // Recovery hydration must surface the same conflict instead of replacing
-    // the preserved local work with the server state.
+    // A reload, even one that does not ask to preserve local data, keeps the
+    // diverged work and the conflict; it neither adopts nor overwrites.
     const reloaded = createLibraryStateSync(backend, storage);
-    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual({
-      status: "conflict",
-      conflictingKeys: [approvedKey],
-    });
-    expect(storage.getItem(approvedKey)).toBe('["offline-local-edit"]');
-    expect(backend.row?.state[approvedKey]).toBe('["server"]');
+    await expect(reloaded.hydrate(userId)).resolves.toEqual(conflict);
+    await expect(reloaded.hydrate(userId, undefined, true)).resolves.toEqual(conflict);
+    await expect(reloaded.push(userId)).resolves.toEqual(conflict);
 
-    // The baseline recorded by the recovery hydration makes the conflict
-    // resolvable: an explicit push uploads the preserved local work instead
-    // of discarding it.
-    await expect(reloaded.push(userId)).resolves.toEqual({ status: "success" });
-    expect(backend.row?.state[approvedKey]).toBe('["offline-local-edit"]');
-    expect(backend.row?.version).toBe(5);
+    expect(storage.getItem(approvedKey)).toBe('["offline-local-edit"]');
+    expect(storage.getItem(`library-baseline:${userId}`)).toBeNull();
+    expect(backend.row).toEqual({ state: { [approvedKey]: '["server"]' }, version: 4 });
+    expect(backend.updateCount).toBe(0);
+    expect(backend.insertCount).toBe(0);
+  });
+
+  it("persists the agreed baseline device-locally without syncing it", async () => {
+    const backend = new VersionedBackend({ state: { [approvedKey]: '["initial"]' }, version: 1 });
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+    await sync.hydrate(userId);
+    storage.setItem(approvedKey, '["changed"]');
+    await sync.push(userId);
+
+    expect(JSON.parse(storage.getItem(`library-baseline:${userId}`) ?? "null")).toEqual({
+      state: { [approvedKey]: '["changed"]' },
+      version: 2,
+    });
+    expect(Object.keys(backend.row?.state ?? {})).toEqual([approvedKey]);
   });
 
   it("keeps merged server changes safe when a local edit during reconciliation conflicts with them", async () => {
