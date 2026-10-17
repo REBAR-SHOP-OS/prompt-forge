@@ -1,4 +1,4 @@
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 const workflow = readFileSync(path.resolve('.github/workflows/pr-drift-sync.yml'), 'utf8')
 const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash'
+const step = 'Measure drift and report'
 
 // Preserve the shell indentation that GitHub receives after YAML block dedenting.
 function scriptFor(name: string): string {
@@ -22,30 +23,45 @@ function scriptFor(name: string): string {
 }
 
 describe('PR drift sync shell', () => {
-  it.each(['Sync with main if behind', 'Sync each PR branch with main'])('parses %s', (step) => {
+  it(`parses ${step}`, () => {
     const result = spawnSync(bash, ['-n'], { input: scriptFor(step), encoding: 'utf8' })
     expect(result.error).toBeUndefined()
     expect(result.status, result.stderr).toBe(0)
   })
 
-  it.each([
-    { prs: '', behind: 0, pushes: 0 },
-    { prs: '233 agent/test\n', behind: 0, pushes: 0 },
-    { prs: '233 agent/test\n234 agent/second\n', behind: 2, pushes: 2 },
-  ])('processes scheduled branches without network: $pushes pushes', ({ prs, behind, pushes }) => {
+  it('reports drift without network and never pushes', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pr-drift-sync-'))
     try {
-      writeFileSync(path.join(dir, 'prs.txt'), prs)
-      const mock = `git() {\n  if [ "$1" = rev-list ]; then printf '${behind}\\t1\\n'; return; fi\n  printf '%s\\n' "$*" >> calls.txt\n}\n`
+      const summary = path.join(dir, 'summary.md')
+      const mock = `git() {\n  printf '%s\\n' "$*" >> calls.txt\n  if [ "$1" = rev-list ]; then printf '2\\t1\\n'; fi\n}\n`
       const result = spawnSync(bash, ['-s'], {
-        input: mock + scriptFor('Sync each PR branch with main'), cwd: dir, encoding: 'utf8',
+        input: mock + scriptFor(step), cwd: dir, encoding: 'utf8',
+        env: {
+          ...process.env,
+          PR_NUMBER: '233',
+          HEAD_SHA: 'test-sha',
+          HEAD_REF: 'agent/test',
+          GITHUB_STEP_SUMMARY: summary.replace(/\\/g, '/'),
+        },
       })
       expect(result.error).toBeUndefined()
       expect(result.status, result.stderr).toBe(0)
-      const calls = prs ? readFileSync(path.join(dir, 'calls.txt'), 'utf8') : ''
-      expect(calls.split('\n').filter((line) => line.startsWith('push '))).toHaveLength(pushes)
+      const report = readFileSync(summary, 'utf8')
+      expect(report).toContain('**2** commit(s) behind')
+      expect(report).toContain('**1** ahead')
+      const calls = readFileSync(path.join(dir, 'calls.txt'), 'utf8').split('\n').filter(Boolean)
+      expect(calls.some((line) => line.startsWith('rev-list '))).toBe(true)
+      // The mock answers rev-list identically for any operands, so pin the PR ref and comparison direction.
+      expect(calls.some((line) => line.startsWith('fetch origin refs/pull/233/head'))).toBe(true)
+      expect(calls.some((line) => line.startsWith('rev-list') && line.includes('origin/main...test-sha'))).toBe(true)
+      expect(calls.filter((line) => line.startsWith('push'))).toHaveLength(0)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('workflow carries no push or write-permission markers', () => {
+    expect(workflow).not.toContain('push origin')
+    expect(workflow).not.toContain('contents: write')
   })
 })
