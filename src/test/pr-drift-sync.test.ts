@@ -51,13 +51,16 @@ describe('PR drift sync shell', () => {
       expect(report).toContain('**1** ahead')
       const calls = readFileSync(path.join(dir, 'calls.txt'), 'utf8').split('\n').filter(Boolean)
       expect(calls.some((line) => line.startsWith('rev-list '))).toBe(true)
+      // The mock answers rev-list identically for any operands, so pin the PR ref and comparison direction.
+      expect(calls.some((line) => line.startsWith('fetch origin refs/pull/233/head'))).toBe(true)
+      expect(calls.some((line) => line.startsWith('rev-list') && line.includes('origin/main...test-sha'))).toBe(true)
       expect(calls.filter((line) => line.startsWith('push'))).toHaveLength(0)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it('workflow cannot push', () => {
+  it('workflow carries no push or write-permission markers', () => {
     expect(workflow).not.toContain('push origin')
     expect(workflow).not.toContain('contents: write')
   })
