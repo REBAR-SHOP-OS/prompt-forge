@@ -24,6 +24,27 @@ describe("persistFinalFilmPoster", () => {
       expect.any(Blob),
       { contentType: "image/jpeg", upsert: true },
     );
+    // "AAAA" decodes to exactly 3 zero bytes; guards against uploading wrong bytes.
+    const uploadedBlob = upload.mock.calls[0][1] as Blob;
+    expect(uploadedBlob.size).toBe(3);
+    expect(uploadedBlob.type).toBe("image/jpeg");
+  });
+
+  it("returns null without uploading when the data URL payload is malformed", async () => {
+    const upload = vi.fn().mockResolvedValue({ error: null });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new Blob(["poster"], { type: "image/jpeg" }), { status: 200 }),
+    );
+
+    await expect(persistFinalFilmPoster(
+      "data:image/jpeg;base64,%%%invalid%%%",
+      "user-1",
+      "film-1",
+      "merged-videos",
+      upload,
+      fetchImpl,
+    )).resolves.toBeNull();
+    expect(upload).not.toHaveBeenCalled();
   });
 
   it("keeps Final Film creation non-fatal when poster persistence fails", async () => {
