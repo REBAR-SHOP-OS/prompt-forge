@@ -27,11 +27,17 @@ export async function persistFinalFilmPoster(
   try {
     const response = await fetchImpl(dataUrl);
     if (!response.ok) return null;
-    const sourceBlob = await response.blob();
     const contentType = mimeMatch[1].toLowerCase();
-    const blob = sourceBlob.type === contentType
-      ? sourceBlob
-      : new Blob([await sourceBlob.arrayBuffer()], { type: contentType });
+    // Decode bytes from the data URL itself, not response.blob(): host
+    // Response/Blob interop is not faithful for data URLs (jsdom stringifies
+    // Blob bodies and its Blob lacks arrayBuffer), while the data URL is this
+    // function's actual input and decodes byte-exact regardless of the host
+    // Response/Blob behavior. Percent-decode first, as fetch did, so a
+    // percent-encoded base64 payload still decodes.
+    const payload = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    const binary = atob(payload.includes("%") ? decodeURIComponent(payload) : payload);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    const blob = new Blob([bytes], { type: contentType });
     const path = `${userId}/posters/${filmId}.${posterExtension(contentType)}`;
     const result = await upload(path, blob, {
       contentType,
