@@ -254,7 +254,7 @@ async function loadVideo(url: string, withAudio: boolean, clipLabel?: string): P
   return v
 }
 
-export async function loadImage(url: string, clipLabel?: string): Promise<HTMLImageElement> {
+async function loadImage(url: string, clipLabel?: string): Promise<HTMLImageElement> {
   return await new Promise((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'

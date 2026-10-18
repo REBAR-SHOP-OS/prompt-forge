@@ -790,7 +790,7 @@ export async function hydrateLibraryFromServer(
   return (await getBrowserSync()?.hydrate(userId, signal, preserveLocal)) ?? { status: "error" };
 }
 
-export async function pushLibraryToServer(userId: string): Promise<LibrarySyncResult> {
+async function pushLibraryToServer(userId: string): Promise<LibrarySyncResult> {
   return (await getBrowserSync()?.push(userId)) ?? { status: "error" };
 }
 

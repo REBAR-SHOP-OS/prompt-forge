@@ -16,7 +16,7 @@
 
 export type OccasionCategory = 'canada' | 'international' | 'religious'
 
-export type OccasionSource = 'fixed' | 'computed' | 'verified'
+type OccasionSource = 'fixed' | 'computed' | 'verified'
 
 export interface Occasion {
   title: string
@@ -183,17 +183,6 @@ export const VERIFIED: Record<string, Occasion> = {
   '2027-10-29': { title: 'Diwali', category: 'religious', major: true, source: 'verified' },
   '2027-12-25': { title: 'Hanukkah (Begins)', category: 'religious', major: true, source: 'verified' },
 }
-
-/**
- * Deliberately NOT listed above: Ramadan (start), Rosh Hashanah, Yom Kippur,
- * Passover, Holi, Vesak, Vaisakhi. They belong in the three allowed
- * categories, but this change refuses to introduce dates that no human on the
- * team has verified - that is the exact failure mode being removed. Add them
- * by hand, with a source, and extend the tests in the same PR.
- */
-export const PENDING_VERIFICATION: readonly string[] = [
-  'Ramadan (Begins)', 'Rosh Hashanah', 'Yom Kippur', 'Passover (Begins)', 'Holi', 'Vesak', 'Vaisakhi',
-]
 
 /* ------------------------------------------------------------------ */
 /* Queries. Day and month read the SAME three tables, which is what    */

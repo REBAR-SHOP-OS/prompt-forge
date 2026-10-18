@@ -3,7 +3,7 @@
 // start frames can opt into "contain" so the complete product stays visible.
 
 export type AspectRatio = '1:1' | '9:16' | '16:9'
-export type ImageAspectFit = 'cover' | 'contain'
+type ImageAspectFit = 'cover' | 'contain'
 
 export type NormalizeImageAspectOptions = {
   fit?: ImageAspectFit

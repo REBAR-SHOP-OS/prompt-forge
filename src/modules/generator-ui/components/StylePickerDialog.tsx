@@ -380,5 +380,3 @@ export function StylePickerDialog({
     </Dialog>
   )
 }
-
-export default StylePickerDialog

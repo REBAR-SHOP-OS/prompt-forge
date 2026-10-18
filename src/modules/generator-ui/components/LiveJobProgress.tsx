@@ -38,5 +38,3 @@ export function LiveJobProgress({ job, children }: Props) {
 
   return <>{children(getJobProgressPercent(job))}</>
 }
-
-export default LiveJobProgress

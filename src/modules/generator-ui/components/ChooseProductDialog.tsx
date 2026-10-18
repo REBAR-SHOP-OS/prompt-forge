@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog'
 
 export const CHOOSE_PRODUCT_TITLE = 'Choose a product'
-export const CHOOSE_PRODUCT_DESCRIPTION =
+const CHOOSE_PRODUCT_DESCRIPTION =
   'Select a product folder. Its saved angles will rotate across the film scenes.'
 
 import type { ProductIdentityCategory, ProductIdentityCategoryId } from '@/modules/generator-ui/lib/productIdentity'

@@ -310,5 +310,3 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     </div>
   )
 })
-
-export default PreviewSoundtrackWaveforms

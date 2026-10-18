@@ -63,7 +63,7 @@ import {
   type ProductIdentityCategoryId,
 } from '@/modules/generator-ui/lib/productIdentity'
 
-export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+export type { FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 
 const DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
@@ -156,7 +156,7 @@ export interface FilmIdentity {
   characterName?: string | null
 }
 
-export interface IdentityRef {
+interface IdentityRef {
   id: string
   url: string
   urls?: string[]
@@ -168,7 +168,7 @@ export interface IdentityRef {
   name?: string | null
 }
 
-export interface IdentitySnapshot {
+interface IdentitySnapshot {
   product?: IdentityRef
   character?: IdentityRef
 }
@@ -180,7 +180,7 @@ export interface FilmCreative {
   themeLabel?: string
 }
 
-export interface MakeFilmWizardDialogProps {
+interface MakeFilmWizardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPrompt: string
@@ -193,7 +193,7 @@ export interface MakeFilmWizardDialogProps {
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; isPlanBased?: boolean; identity?: FilmIdentity; creative?: FilmCreative; storyboard?: ApprovedStoryboardSnapshot }) => void
 }
 
-export function MakeFilmWizardDialog({
+function MakeFilmWizardDialog({
   open,
   onOpenChange,
   initialPrompt,

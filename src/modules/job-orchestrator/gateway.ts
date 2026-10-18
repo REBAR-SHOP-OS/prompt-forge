@@ -7,7 +7,7 @@
 import { ApiError, request } from "@/core/api/client";
 import type { CreateJobInput, CreateJobResult, JobDetail, JobSummary } from "./contract";
 
-export const JOB_ORCHESTRATOR_CONTRACT_VERSION = "v1" as const;
+const JOB_ORCHESTRATOR_CONTRACT_VERSION = "v1" as const;
 
 // In-flight de-dupe: if multiple callers ask for the same Job at the same
 // time (e.g. polling loop + preview re-render), share one network request.

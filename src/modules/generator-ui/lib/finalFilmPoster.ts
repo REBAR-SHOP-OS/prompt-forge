@@ -1,4 +1,4 @@
-export interface PosterUploadResult {
+interface PosterUploadResult {
   error: { message?: string } | null;
 }
 

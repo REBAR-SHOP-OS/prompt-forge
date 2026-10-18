@@ -207,5 +207,3 @@ export function VideoWithSoundtrack({
     </div>
   )
 }
-
-export default VideoWithSoundtrack

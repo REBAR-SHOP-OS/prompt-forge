@@ -67,7 +67,7 @@ export function getScenarioDurationPolicy(durationSeconds: number): ScenarioDura
 //   5→1, 10→2, 15→3, 30→6, 45→9, 60→12, 90→18, 135→27
 // ---------------------------------------------------------------------------
 
-export type PlanCoverage = "wide" | "medium" | "close";
+type PlanCoverage = "wide" | "medium" | "close";
 
 export interface PlanDurationPolicy {
   durationSeconds: number;
@@ -93,7 +93,7 @@ function clipDurationsFor(durationSeconds: number): number[] {
  * Multi-card films (30/45/60/90/135) are all 15s cards, so coverage cycles
  * wide → medium → close across the whole film.
  */
-export function computePlanCoverage(durationSeconds: number): PlanCoverage[] {
+function computePlanCoverage(durationSeconds: number): PlanCoverage[] {
   const coverage: PlanCoverage[] = [];
   for (const card of clipDurationsFor(durationSeconds)) {
     if (card === 5) coverage.push("medium");
@@ -176,7 +176,7 @@ export function parsePlanScenarios(raw: string, durationSeconds: number): string
   return [];
 }
 
-export function assessPlanScenarios(plans: string[], durationSeconds: number): ScenarioQualityIssue[] {
+function assessPlanScenarios(plans: string[], durationSeconds: number): ScenarioQualityIssue[] {
   const policy = getPlanDurationPolicy(durationSeconds);
   const issues: ScenarioQualityIssue[] = [];
 
@@ -201,7 +201,7 @@ export function assessPlanScenarios(plans: string[], durationSeconds: number): S
   return issues;
 }
 
-export function buildPlanCorrectiveRetryInstruction(durationSeconds: number, issues: ScenarioQualityIssue[], previousAttempt?: string): string {
+function buildPlanCorrectiveRetryInstruction(durationSeconds: number, issues: ScenarioQualityIssue[], previousAttempt?: string): string {
   const policy = getPlanDurationPolicy(durationSeconds);
   const delimiterRule = policy.planCount > 1
     ? ` Return exactly ${policy.planCount} plans separated only by ${SCENE_DELIMITER} on its own line.`
@@ -288,7 +288,7 @@ function stripQuotes(value: string): string {
   return value.replace(/^["'`]+|["'`]+$/g, "").trim();
 }
 
-export function parseScenarioScenes(raw: string, durationSeconds: number): string[] {
+function parseScenarioScenes(raw: string, durationSeconds: number): string[] {
   const cleaned = stripQuotes(raw);
   if (!cleaned) return [];
 

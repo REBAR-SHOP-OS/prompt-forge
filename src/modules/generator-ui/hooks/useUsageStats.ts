@@ -33,11 +33,11 @@ export const PER_CLIP_USD = {
   wan: 0.15,
 } as const
 
-export function todayIso() {
+function todayIso() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-export function isoForDate(d: Date) {
+function isoForDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 export function fmtUsd(n: number) { return `$${n.toFixed(2)}` }

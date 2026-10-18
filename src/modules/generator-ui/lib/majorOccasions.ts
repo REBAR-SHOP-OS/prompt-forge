@@ -9,17 +9,7 @@
 //
 // Do not add dates here. Add them to `occasions.ts` and cover them with tests.
 
-export type {
-  OccasionCategory,
-  Occasion,
-  DatedOccasion,
-  UpcomingMajorOccasion,
-} from './occasions'
-
 export {
   getMajorOccasionForDate,
   getUpcomingMajorOccasion,
 } from './occasions'
-
-/** @deprecated Use `Occasion` from `./occasions`. */
-export type { Occasion as MajorOccasion } from './occasions'

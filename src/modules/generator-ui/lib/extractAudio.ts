@@ -3,7 +3,7 @@ import { getFFmpeg } from './transcodeToMp4'
 
 // Base64 expands bytes by roughly one third. Leave headroom below the 25 MB
 // gateway request limit for JSON and request metadata.
-export const MAX_TRANSCRIPT_AUDIO_BYTES = 18 * 1024 * 1024
+const MAX_TRANSCRIPT_AUDIO_BYTES = 18 * 1024 * 1024
 
 function inputExtension(blob: Blob): string {
   if (blob.type.includes('webm')) return 'webm'

@@ -12,7 +12,6 @@
 
 export type FilmDuration = 5 | 10 | 15 | 30 | 45 | 60 | 90 | 135
 export type FilmAspect = '16:9' | '9:16' | '1:1'
-export type Ratio = '9:16' | '1:1' | '16:9'
 
 /** Per-clip durations the job contract allows (5 | 10 | 15). */
 export type ClipDuration = 5 | 10 | 15
@@ -189,7 +188,7 @@ export function narrationWordBudget(clipSeconds: number, withNarration: boolean)
 }
 
 /** A product or character selection carried through the wizard. */
-export interface FilmSubject {
+interface FilmSubject {
   id: string
   title: string | null
   url: string
