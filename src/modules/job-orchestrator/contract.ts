@@ -27,7 +27,7 @@ export interface JobSummary {
   status_message?: string | null;
 }
 
-export interface JobVideo {
+interface JobVideo {
   id: string;
   storage_path: string;
   thumbnail_url: string | null;
@@ -73,10 +73,4 @@ export interface CreateJobResult {
   providerKey: string;
   resolvedModel: string;
   requestId: string;
-}
-
-export interface JobApi {
-  listMyJobs(): Promise<JobSummary[]>;
-  createJob(input: CreateJobInput): Promise<CreateJobResult>;
-  getJob(jobId: string): Promise<JobDetail>;
 }

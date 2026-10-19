@@ -277,5 +277,3 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
     />
   );
 }
-
-export default PlayableVideo;

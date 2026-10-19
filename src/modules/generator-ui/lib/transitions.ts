@@ -1,8 +1,8 @@
 import type { TransitionId, TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 
-export type TransitionGroup = 'Basic' | 'Movement' | 'Reveal' | 'Dynamic'
+type TransitionGroup = 'Basic' | 'Movement' | 'Reveal' | 'Dynamic'
 
-export interface TransitionOption {
+interface TransitionOption {
   id: TransitionId
   label: string
   description: string

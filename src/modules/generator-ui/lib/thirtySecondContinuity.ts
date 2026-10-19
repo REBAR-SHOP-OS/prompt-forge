@@ -1,4 +1,4 @@
-export const THIRTY_SECOND_SCENE_COUNT = 2
+const THIRTY_SECOND_SCENE_COUNT = 2
 
 export class SequentialContinuityError extends Error {
   readonly cause: unknown

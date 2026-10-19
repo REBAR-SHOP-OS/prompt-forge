@@ -57,10 +57,6 @@ function pickMimeType(): string {
   return 'video/webm'
 }
 
-export function mimeTypeToExtension(mt: string): 'mp4' | 'webm' {
-  return mt.startsWith('video/mp4') ? 'mp4' : 'webm'
-}
-
 /** Sort, clamp to [0,duration], drop empties, merge overlaps. */
 export function normalizeCuts(cuts: CutRange[], duration: number): CutRange[] {
   const cleaned = cuts

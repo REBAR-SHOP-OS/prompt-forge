@@ -24,7 +24,7 @@ export const DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 40 }
  * corrected position, while any other stored value (a real custom position)
  * is preserved untouched.
  */
-export const LEGACY_DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 24 }
+const LEGACY_DEFAULT_OFFSET: PreviewOffset = { x: 0, y: 24 }
 
 /** Small safety margin (px) kept between the preview frame and the viewport edge. */
 export const SAFE_MARGIN = 8

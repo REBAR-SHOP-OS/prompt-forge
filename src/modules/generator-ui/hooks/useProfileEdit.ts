@@ -11,12 +11,6 @@ const AVATARS_BUCKET = 'avatars'
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
-export interface ProfileEditState {
-  firstName: string
-  lastName: string
-  avatarUrl: string | null
-}
-
 export type SaveStatus = 'idle' | 'saving' | 'success' | 'error'
 
 /** Extract a human-readable message from a Supabase error (a plain object) or a thrown Error. */

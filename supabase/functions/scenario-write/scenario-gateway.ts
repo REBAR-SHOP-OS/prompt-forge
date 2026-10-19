@@ -1,4 +1,4 @@
-export type ScenarioGatewayStage = "initial" | "retry" | "semantic-judge";
+type ScenarioGatewayStage = "initial" | "retry" | "semantic-judge";
 
 export interface ScenarioGatewayContext {
   durationSeconds: number;

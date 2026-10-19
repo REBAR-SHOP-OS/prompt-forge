@@ -51,7 +51,7 @@ const CORE_VERSION = '0.12.6'
 const REMOTE_BASE = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/esm`
 
 /** Best-effort stringify so we never propagate "[object Object]" or non-Error throws. */
-export function stringifyAny(e: unknown): string {
+function stringifyAny(e: unknown): string {
   if (e instanceof Error) return e.message || e.name || 'Error'
   if (typeof e === 'string') return e
   if (typeof e === 'number' || typeof e === 'boolean') return String(e)
@@ -138,7 +138,7 @@ export async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 /** Force-reload the core after a failed exec — releases the WASM heap. */
-export async function resetFFmpeg(): Promise<FFmpeg> {
+async function resetFFmpeg(): Promise<FFmpeg> {
   try { ffmpegSingleton?.terminate() } catch { /* ignore */ }
   ffmpegSingleton = null
   loadingPromise = null
@@ -315,9 +315,4 @@ export async function ensureMp4(
   new Uint8Array(ab).set(u8)
   const out = new Blob([ab], { type: 'video/mp4' })
   return { blob: out, mimeType: 'video/mp4', extension: 'mp4' }
-}
-
-/** Pre-warm the ffmpeg core (optional). */
-export function preloadMp4Transcoder(): void {
-  void getFFmpeg().catch(() => { /* noop — will retry on demand */ })
 }

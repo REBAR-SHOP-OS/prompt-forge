@@ -93,5 +93,3 @@ export function StylePreviewCard({
     </Popover>
   )
 }
-
-export default StylePreviewCard

@@ -1,5 +1,3 @@
-import type { FilmAspect } from './makeFilmWizard'
-
 export interface ApprovedStoryboardSnapshot {
   revision: number
   sheetUrl: string
@@ -82,75 +80,4 @@ export function storyboardFramesForShot(params: {
   // available, reuse that single approved sheet rather than inventing another
   // generated frame for this slot.
   return { startFrameUrl: params.storyboard.sheetUrl }
-}
-
-function panelDimensions(aspect: FilmAspect): { width: number; height: number } {
-  if (aspect === '9:16') return { width: 360, height: 640 }
-  if (aspect === '1:1') return { width: 512, height: 512 }
-  return { width: 640, height: 360 }
-}
-
-async function loadDrawable(url: string): Promise<ImageBitmap | HTMLImageElement> {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`Could not load storyboard panel (${response.status})`)
-  const blob = await response.blob()
-  if (typeof createImageBitmap === 'function') return createImageBitmap(blob)
-
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(blob)
-    const image = new Image()
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl)
-      resolve(image)
-    }
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl)
-      reject(new Error('Could not decode storyboard panel'))
-    }
-    image.src = objectUrl
-  })
-}
-
-export async function buildStoryboardSheetBlob(
-  imageUrls: readonly string[],
-  aspect: FilmAspect,
-): Promise<Blob> {
-  if (imageUrls.length === 0) throw new Error('Storyboard has no images')
-  const { width: panelWidth, height: panelHeight } = panelDimensions(aspect)
-  const columns = Math.min(3, imageUrls.length)
-  const rows = Math.ceil(imageUrls.length / columns)
-  const canvas = document.createElement('canvas')
-  canvas.width = columns * panelWidth
-  canvas.height = rows * panelHeight
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Storyboard canvas is unavailable')
-  context.fillStyle = '#000'
-  context.fillRect(0, 0, canvas.width, canvas.height)
-
-  const drawables = await Promise.all(imageUrls.map(loadDrawable))
-  drawables.forEach((drawable, index) => {
-    const sourceWidth = drawable.width
-    const sourceHeight = drawable.height
-    const scale = Math.min(panelWidth / sourceWidth, panelHeight / sourceHeight)
-    const width = sourceWidth * scale
-    const height = sourceHeight * scale
-    const cellX = (index % columns) * panelWidth
-    const cellY = Math.floor(index / columns) * panelHeight
-    context.drawImage(
-      drawable,
-      cellX + (panelWidth - width) / 2,
-      cellY + (panelHeight - height) / 2,
-      width,
-      height,
-    )
-    if ('close' in drawable && typeof drawable.close === 'function') drawable.close()
-  })
-
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error('Could not encode storyboard sheet'))),
-      'image/jpeg',
-      0.92,
-    )
-  })
 }

@@ -7,7 +7,7 @@
 // continuity text is embedded in the saved prompt, so jobs stay debuggable and
 // repeatable.
 
-export type ContinuationSource = 'previous-final-frame' | 'best-clear-frame'
+type ContinuationSource = 'previous-final-frame' | 'best-clear-frame'
 
 export interface SceneMemory {
   character: string
@@ -16,7 +16,7 @@ export interface SceneMemory {
   lastState: string
 }
 
-export interface CharacterRef {
+interface CharacterRef {
   id: string
   url: string
   title: string | null

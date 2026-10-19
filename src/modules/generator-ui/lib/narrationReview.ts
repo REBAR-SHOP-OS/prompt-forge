@@ -4,7 +4,7 @@ import { normalizeForCompare } from './narration'
 
 export type TimestampedWord = { word: string; start: number; end: number }
 
-export type NarrationIssue = {
+type NarrationIssue = {
   startSeconds: number
   endSeconds: number
   /** Exact text spoken in this time range (may be empty string for missing-only spans). */
@@ -17,7 +17,7 @@ export type NarrationIssue = {
   kind: 'missing' | 'extra' | 'changed'
 }
 
-export type NarrationReviewStatus =
+type NarrationReviewStatus =
   | 'pass'          // on-film narration matches expected well enough
   | 'issues'        // one or more problems found
   | 'no-narration'  // no expected narration to compare against

@@ -5,7 +5,7 @@
 import { request } from "@/core/api/client";
 import type { RoutePreviewInput, RoutePreviewResult } from "./contract";
 
-export const EXTERNAL_API_ADAPTER_CONTRACT_VERSION = "v1" as const;
+const EXTERNAL_API_ADAPTER_CONTRACT_VERSION = "v1" as const;
 
 export interface LocalVideoStatusResult {
   status: "configured" | "not_configured" | "unreachable";

@@ -1,4 +1,4 @@
-export type PreviewShotCriterion = {
+type PreviewShotCriterion = {
   passed: boolean
   reason: string
 }
@@ -23,7 +23,7 @@ export type PreviewShotContext = {
   productName?: string
 }
 
-export const MAX_PREVIEW_SHOT_ATTEMPTS = 3
+const MAX_PREVIEW_SHOT_ATTEMPTS = 3
 
 export class PreviewShotQualityError extends Error {
   constructor(message: string, readonly imageUrl: string) {

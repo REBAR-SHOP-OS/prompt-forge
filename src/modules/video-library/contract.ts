@@ -8,7 +8,3 @@ export interface VideoSummary {
   duration: number | null;
   created_at: string;
 }
-
-export interface VideoApi {
-  listMyVideos(): Promise<VideoSummary[]>;
-}

@@ -11,7 +11,7 @@ import type { Me } from "@/core/api/types";
 import { externalApiAdapterGateway } from "@/modules/external-api-adapter/gateway";
 import type { RoutePreviewInput, RoutePreviewResult } from "@/modules/external-api-adapter/contract";
 
-export const GENERATOR_UI_CONTRACT_VERSION = "v1" as const;
+const GENERATOR_UI_CONTRACT_VERSION = "v1" as const;
 
 export const generatorUiGateway = {
   contractVersion: GENERATOR_UI_CONTRACT_VERSION,

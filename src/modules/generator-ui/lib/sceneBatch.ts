@@ -33,7 +33,7 @@ export class GlobalSceneBatchError extends Error {
   }
 }
 
-export function isGlobalSceneBatchError(error: unknown): boolean {
+function isGlobalSceneBatchError(error: unknown): boolean {
   return error instanceof ApiError && (
     error.status === 401 ||
     error.status === 402 ||

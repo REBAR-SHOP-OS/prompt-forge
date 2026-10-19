@@ -5,7 +5,7 @@
 import { request } from "@/core/api/client";
 import type { VideoSummary } from "./contract";
 
-export const VIDEO_LIBRARY_CONTRACT_VERSION = "v1" as const;
+const VIDEO_LIBRARY_CONTRACT_VERSION = "v1" as const;
 
 export const videoLibraryGateway = {
   contractVersion: VIDEO_LIBRARY_CONTRACT_VERSION,

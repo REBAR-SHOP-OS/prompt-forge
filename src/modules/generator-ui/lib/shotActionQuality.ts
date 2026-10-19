@@ -1,4 +1,4 @@
-export type ShotActionCriterion = {
+type ShotActionCriterion = {
   passed: boolean
   reason: string
 }
@@ -19,7 +19,7 @@ export type ShotActionQualityCandidate = {
   videoUrl: string
 }
 
-export type ShotActionQualityResult = {
+type ShotActionQualityResult = {
   jobId: string
   shotIndex: number
   status: 'passed' | 'failed' | 'error'
@@ -51,7 +51,7 @@ const CRITERIA = [
   'plannedActionFaithfulness',
 ] as const
 
-export function normalizeShotActionQualityEvaluation(value: unknown): ShotActionQualityEvaluation | null {
+function normalizeShotActionQualityEvaluation(value: unknown): ShotActionQualityEvaluation | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
   const normalized = {} as Record<(typeof CRITERIA)[number], ShotActionCriterion>

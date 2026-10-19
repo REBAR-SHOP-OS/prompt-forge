@@ -6,13 +6,12 @@
  * billable rates — the backend computes actual spend.
  */
 
-export type ModelQualityTier = 'standard' | 'high' | 'best'
-export type ModelCostTier = 'free' | 'low' | 'medium' | 'high'
-export type ModelStatus = 'available' | 'degraded' | 'unavailable'
-export type GenerationMode = 't2v' | 'i2v'
-export type ProviderKey = 'wan' | 'flow' | 'local'
+type ModelQualityTier = 'standard' | 'high' | 'best'
+type ModelCostTier = 'free' | 'low' | 'medium' | 'high'
+type GenerationMode = 't2v' | 'i2v'
+type ProviderKey = 'wan' | 'flow' | 'local'
 
-export interface ModelBadge {
+interface ModelBadge {
   kind: 'recommended' | 'fast' | 'best-quality' | 'cost'
   label: string
 }
