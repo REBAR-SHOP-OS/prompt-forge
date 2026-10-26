@@ -19,6 +19,8 @@ export interface JobSummary {
   requested_aspect_ratio?: string | null;
   /** Durable per-project group id; all clips in one draft project share it. */
   draft_group_id?: string | null;
+  /** Owner of the job; differs from the viewer for shared (read-only) items. */
+  user_id?: string;
   created_at: string;
   updated_at?: string;
   /** 0-100 estimated render progress; null when unknown/terminal-failed. */

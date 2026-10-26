@@ -10,8 +10,12 @@ const VIDEO_LIBRARY_CONTRACT_VERSION = "v1" as const;
 export const videoLibraryGateway = {
   contractVersion: VIDEO_LIBRARY_CONTRACT_VERSION,
 
-  listMyVideos: async (limit?: number): Promise<VideoSummary[]> => {
-    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+  /** includeShared also returns read-only videos from owners who shared their library with you. */
+  listMyVideos: async (limit?: number, includeShared = false): Promise<VideoSummary[]> => {
+    const params = new URLSearchParams();
+    if (limit) params.set("limit", String(limit));
+    if (includeShared) params.set("shared", "1");
+    const qs = params.toString() ? `?${params}` : "";
     const r = await request<{ items: VideoSummary[] }>(`/videos-list${qs}`);
     return r.items ?? [];
   },

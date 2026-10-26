@@ -333,6 +333,8 @@ type UploadedFile = {
 
 export type UserImageItem = {
   id: string
+  /** Owner; differs from the viewer for shared (read-only) items. */
+  user_id?: string
   storage_path: string
   created_at: string
   still_duration_seconds: number
@@ -352,7 +354,7 @@ type ProductFolderTarget = {
   storageFolderId: string | null
 }
 
-const USER_IMAGE_ROW_SELECT = 'id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id'
+const USER_IMAGE_ROW_SELECT = 'id, user_id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id'
 
 type UnifiedClip =
   | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
@@ -360,6 +362,8 @@ type UnifiedClip =
 
 type UserAudioItem = {
   id: string
+  /** Owner; differs from the viewer for shared (read-only) items. */
+  user_id?: string
   storage_path: string
   kind: 'music' | 'voiceover'
   name: string | null
@@ -1356,7 +1360,7 @@ export default function DashboardPage() {
     }
   }
   const handleDeleteUserAudio = async (item: UserAudioItem) => {
-    if (!userId) return
+    if (!userId || refuseIfShared(item.id)) return
     setArchiveAudio((curr) => curr.filter((a) => a.id !== item.id))
     try {
       await supabase
@@ -1650,25 +1654,45 @@ export default function DashboardPage() {
     }
   }, [userId, loadProductFolders])
 
+  // Library sharing: owners who shared their library with this user (read-only).
+  // Ids of items the viewer does not own are tracked so edit/delete is refused.
+  const visibleOwnerIdsRef = useRef<{ userId: string; ids: string[] } | null>(null)
+  const sharedItemIdsRef = useRef<Set<string>>(new Set())
+  const loadVisibleOwnerIds = async (): Promise<string[]> => {
+    if (!userId) return []
+    if (visibleOwnerIdsRef.current?.userId === userId) return visibleOwnerIdsRef.current.ids
+    const { data, error } = await supabase.rpc('visible_owner_ids')
+    const ids = new Set<string>([userId])
+    if (!error && Array.isArray(data)) for (const id of data) if (typeof id === 'string' && id) ids.add(id)
+    if (error) console.warn('[library-share] owner lookup failed, showing own items only', error)
+    visibleOwnerIdsRef.current = { userId, ids: [...ids] }
+    return visibleOwnerIdsRef.current.ids
+  }
+  const refuseIfShared = (id: string): boolean => {
+    if (!sharedItemIdsRef.current.has(id)) return false
+    if (typeof window !== 'undefined') window.alert('This item was shared with you as read-only. Only its owner can change or delete it.')
+    return true
+  }
+
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
       const [jobs, videos, imagesRes, audioRes] = await Promise.all([
-        jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
-        videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
+        jobOrchestratorGateway.listMyJobs(200, true).catch(() => [] as JobSummary[]),
+        videoLibraryGateway.listMyVideos(200, true).catch(() => [] as VideoSummary[]),
         userId
           ? supabase
               .from('generator_user_images')
               .select(USER_IMAGE_ROW_SELECT)
-              .eq('user_id', userId)
+              .in('user_id', await loadVisibleOwnerIds())
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : Promise.resolve({ data: [] as UserImageItem[] }),
         userId
           ? supabase
               .from('generator_user_audio')
-              .select('id, storage_path, kind, name, duration_seconds, created_at')
-              .eq('user_id', userId)
+              .select('id, user_id, storage_path, kind, name, duration_seconds, created_at')
+              .in('user_id', await loadVisibleOwnerIds())
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : Promise.resolve({ data: [] as UserAudioItem[] }),
@@ -1695,6 +1719,13 @@ export default function DashboardPage() {
         }),
       )
       setArchiveAudio(withUrls)
+      const shared = new Set<string>()
+      const notMine = (owner?: string) => !!owner && owner !== userId
+      for (const j of jobs) if (notMine(j.user_id)) shared.add(j.id)
+      for (const v of videos) if (notMine(v.user_id)) { shared.add(v.id); shared.add(v.job_id) }
+      for (const i of allImages) if (notMine(i.user_id)) shared.add(i.id)
+      for (const a of audioRows) if (notMine(a.user_id)) shared.add(a.id)
+      sharedItemIdsRef.current = shared
     } finally {
       setArchiveLoading(false)
     }
@@ -1702,6 +1733,7 @@ export default function DashboardPage() {
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
   const [playerFilm, setPlayerFilm] = useState<{ jobId: string; storagePath: string; poster: string | null; title: string } | null>(null)
   const handleDeleteArchiveJob = async (jobId: string) => {
+    if (refuseIfShared(jobId)) return
     setDeletingArchiveId(jobId)
     try {
       await jobOrchestratorGateway.deleteJob(jobId)
@@ -3629,6 +3661,7 @@ export default function DashboardPage() {
   }
 
   async function deleteCardConfirmed(jobId: string) {
+    if (refuseIfShared(jobId)) return
 
     // Draft project card: permanently delete the underlying clips/images
     // server-side, then drop the local snapshot, and tombstone the ids so
@@ -5548,7 +5581,7 @@ export default function DashboardPage() {
   }
 
   const renameProductPhoto = async (imageId: string) => {
-    if (!userId) return
+    if (!userId || refuseIfShared(imageId)) return
     const nextTitle = renameProductValue.trim().slice(0, 100) || null
     try {
       const { error } = await supabase
@@ -5582,7 +5615,7 @@ export default function DashboardPage() {
 
   // Persist the per-image AI description. Called on blur so typing stays smooth.
   const saveProductDescription = async (imageId: string) => {
-    if (!userId) return
+    if (!userId || refuseIfShared(imageId)) return
     const draft = productDescDraft[imageId]
     if (draft === undefined) return
     const current = archiveProductImages.find((i) => i.id === imageId)?.description ?? ''
@@ -5608,6 +5641,7 @@ export default function DashboardPage() {
   }
 
   const handleDeleteUserImage = async (imageId: string) => {
+    if (refuseIfShared(imageId)) return
     unmarkActiveImages([imageId])
     if (!userId) return
     const prev = userImages

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   usedMonth: 5000,
   lifetimeSpend: 12000,
   lifetimeSpendCount: 40,
+  sharedSpend: 0,
   completedJobs: 12,
   // query builders
   maybeSingle: vi.fn(),
