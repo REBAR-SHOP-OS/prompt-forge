@@ -3661,6 +3661,7 @@ export default function DashboardPage() {
   }
 
   async function deleteCardConfirmed(jobId: string) {
+    if (refuseIfShared(jobId)) return
 
     // Draft project card: permanently delete the underlying clips/images
     // server-side, then drop the local snapshot, and tombstone the ids so
