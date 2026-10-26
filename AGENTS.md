@@ -59,3 +59,5 @@ If identity is wrong, unknown, or unavailable, stop before writing.
   files, local checks, GitHub checks, risk, rollback, and approval still needed.
 - If deploy/publish is requested, use the Core
   `AGENT-DEPLOYMENT-HANDOFF.md` packet and stop at Sattar's production gate.
+
+- Cross-user library access goes only through `public.library_shares` + `can_view_owner()` / `visible_owner_ids()`; shared viewers get SELECT-only policies and the client refuses edit/delete of non-owned items. Why: keeps sharing revocable by one row and never grants write access to another user's data.
