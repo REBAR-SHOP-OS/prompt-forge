@@ -63,8 +63,12 @@ async function recoverCreateTimeout(input: CreateJobInput): Promise<CreateJobRes
 export const jobOrchestratorGateway = {
   contractVersion: JOB_ORCHESTRATOR_CONTRACT_VERSION,
 
-  listMyJobs: async (limit?: number): Promise<JobSummary[]> => {
-    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+  /** includeShared also returns read-only jobs from owners who shared their library with you. */
+  listMyJobs: async (limit?: number, includeShared = false): Promise<JobSummary[]> => {
+    const params = new URLSearchParams();
+    if (limit) params.set("limit", String(limit));
+    if (includeShared) params.set("shared", "1");
+    const qs = params.toString() ? `?${params}` : "";
     const r = await request<{ items: JobSummary[] }>(`/jobs-list${qs}`);
     return r.items ?? [];
   },

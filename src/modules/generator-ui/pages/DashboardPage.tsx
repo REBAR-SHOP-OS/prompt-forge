@@ -352,7 +352,7 @@ type ProductFolderTarget = {
   storageFolderId: string | null
 }
 
-const USER_IMAGE_ROW_SELECT = 'id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id'
+const USER_IMAGE_ROW_SELECT = 'id, user_id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id'
 
 type UnifiedClip =
   | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
@@ -360,6 +360,8 @@ type UnifiedClip =
 
 type UserAudioItem = {
   id: string
+  /** Owner; differs from the viewer for shared (read-only) items. */
+  user_id?: string
   storage_path: string
   kind: 'music' | 'voiceover'
   name: string | null
@@ -1654,21 +1656,21 @@ export default function DashboardPage() {
     setArchiveLoading(true)
     try {
       const [jobs, videos, imagesRes, audioRes] = await Promise.all([
-        jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
-        videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
+        jobOrchestratorGateway.listMyJobs(200, true).catch(() => [] as JobSummary[]),
+        videoLibraryGateway.listMyVideos(200, true).catch(() => [] as VideoSummary[]),
         userId
           ? supabase
               .from('generator_user_images')
               .select(USER_IMAGE_ROW_SELECT)
-              .eq('user_id', userId)
+              .in('user_id', await loadVisibleOwnerIds())
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : Promise.resolve({ data: [] as UserImageItem[] }),
         userId
           ? supabase
               .from('generator_user_audio')
-              .select('id, storage_path, kind, name, duration_seconds, created_at')
-              .eq('user_id', userId)
+              .select('id, user_id, storage_path, kind, name, duration_seconds, created_at')
+              .in('user_id', await loadVisibleOwnerIds())
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : Promise.resolve({ data: [] as UserAudioItem[] }),
