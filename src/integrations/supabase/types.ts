@@ -847,6 +847,24 @@ export type Database = {
           },
         ]
       }
+      library_shares: {
+        Row: {
+          created_at: string
+          owner_id: string
+          viewer_id: string
+        }
+        Insert: {
+          created_at?: string
+          owner_id: string
+          viewer_id: string
+        }
+        Update: {
+          created_at?: string
+          owner_id?: string
+          viewer_id?: string
+        }
+        Relationships: []
+      }
       mp4_export_jobs: {
         Row: {
           created_at: string
@@ -980,6 +998,7 @@ export type Database = {
         Args: { _daily: number; _monthly: number; _user_id: string }
         Returns: undefined
       }
+      can_view_owner: { Args: { _owner: string }; Returns: boolean }
       claim_ai_image_request: {
         Args: {
           _credit_cost?: number
@@ -1133,6 +1152,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      visible_owner_ids: { Args: never; Returns: string[] }
     }
     Enums: {
       app_role: "user" | "admin"
