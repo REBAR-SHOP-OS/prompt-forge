@@ -12,5 +12,6 @@ export interface VideoSummary {
 }
 
 export interface VideoLibraryService {
-  listMyVideos(userId: string, client: SupabaseClient, limit?: number): Promise<VideoSummary[]>;
+  /** includeShared adds owners who shared their library with the caller (read-only). */
+  listMyVideos(userId: string, client: SupabaseClient, limit?: number, includeShared?: boolean): Promise<VideoSummary[]>;
 }

@@ -1,16 +1,18 @@
 // Job Orchestrator — service implementation.
 import type { SupabaseClient } from "../../core/supabase.ts";
 import type { CreateJobInput, JobDetail, JobService, JobSummary } from "./contract.ts";
+import { resolveVisibleOwnerIds } from "../../core/visible-owners.ts";
 
 const JOB_COLUMNS =
   "id, status, input_prompt, narration_text, provider_key, model_key, provider_job_id, client_request_id, provider_start_claimed_at, provider_start_attempts, provider_start_last_error, first_frame_url, last_frame_url, reference_image_urls, requested_duration, requested_aspect_ratio, draft_group_id, created_at, updated_at";
 
 export const jobService: JobService = {
-  async listMyJobs(userId, client, limit = 20) {
+  async listMyJobs(userId, client, limit = 20, includeShared = false) {
+    const owners = includeShared ? await resolveVisibleOwnerIds(userId, client) : [userId];
     const { data, error } = await client
       .from("generator_generation_jobs")
-      .select(JOB_COLUMNS)
-      .eq("user_id", userId)
+      .select(`${JOB_COLUMNS}, user_id`)
+      .in("user_id", owners)
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) throw new Error(`jobs lookup failed: ${error.message}`);

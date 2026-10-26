@@ -55,7 +55,8 @@ export interface CreateJobInput {
 }
 
 export interface JobService {
-  listMyJobs(userId: string, client: SupabaseClient, limit?: number): Promise<JobSummary[]>;
+  /** includeShared adds owners who shared their library with the caller (read-only). */
+  listMyJobs(userId: string, client: SupabaseClient, limit?: number, includeShared?: boolean): Promise<JobSummary[]>;
   getMyJob(userId: string, jobId: string, client: SupabaseClient): Promise<JobDetail | null>;
   createJob(svc: SupabaseClient, input: CreateJobInput): Promise<string>;
   claimProviderStart(svc: SupabaseClient, userId: string, jobId: string, staleAfterSeconds?: number): Promise<boolean>;
