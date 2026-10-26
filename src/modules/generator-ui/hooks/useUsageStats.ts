@@ -20,6 +20,8 @@ export interface UsageStats {
   lifetimeSpend: number
   lifetimeSpendCount: number
   completedJobs: number
+  /** Credits spent by owners who shared their library with this user (never charged to this user). */
+  sharedSpend: number
 }
 
 export interface DayCell {
@@ -75,6 +77,19 @@ export function useUsageStats(enabled: boolean) {
       if (spendRes.error) throw spendRes.error
       if (jobsRes.error) throw jobsRes.error
 
+      let sharedSpend = 0
+      try {
+        const { data: ownerIds } = await supabase.rpc('visible_owner_ids')
+        const others = (Array.isArray(ownerIds) ? ownerIds : []).filter((id): id is string => typeof id === 'string' && id !== user.id)
+        if (others.length > 0) {
+          const { data: sharedRows } = await supabase.from('billing_credit_transactions')
+            .select('amount').in('user_id', others).eq('type', 'spend')
+          sharedSpend = ((sharedRows ?? []) as Array<{ amount: number }>).reduce((s, r) => s + Math.abs(r.amount || 0), 0)
+        }
+      } catch (shareErr) {
+        console.warn('shared usage load failed', shareErr)
+      }
+
       const spendRows = (spendRes.data ?? []) as Array<{ amount: number }>
       const lifetimeSpend = spendRows.reduce((s, r) => s + Math.abs(r.amount || 0), 0)
       const quota = quotaRes.data
@@ -92,6 +107,7 @@ export function useUsageStats(enabled: boolean) {
         lifetimeSpend,
         lifetimeSpendCount: spendRows.length,
         completedJobs: jobsRes.count ?? 0,
+        sharedSpend,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load usage')

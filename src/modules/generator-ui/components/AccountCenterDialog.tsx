@@ -245,6 +245,13 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
                     <div className="text-lg font-semibold tabular-nums">{stats.lifetimeSpend.toLocaleString()}</div>
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Lifetime credits spent</div>
                   </div>
+                  {stats.sharedSpend > 0 && (
+                    <div className="rounded-md border border-border bg-accent/20 p-3">
+                      <Coins className="mb-1 h-4 w-4 text-muted-foreground" />
+                      <div className="text-lg font-semibold tabular-nums">{stats.sharedSpend.toLocaleString()}</div>
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Credits spent in shared libraries</div>
+                    </div>
+                  )}
                   <div className="rounded-md border border-border bg-accent/20 p-3">
                     <Film className="mb-1 h-4 w-4 text-muted-foreground" />
                     <div className="text-lg font-semibold tabular-nums">{stats.completedJobs}</div>
