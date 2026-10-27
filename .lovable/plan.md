@@ -41,3 +41,20 @@ Scope: this is an audit only. No code, database, storage or publish changes. Eve
 ## Next steps (if approved, still read-only)
 - Read the stored business profile contact values.
 - Pull still frames from the 3 body clips to check geometry and look for fake text.
+
+## Addendum: can MCP or API routes reach Radin's media without a browser login? (read-only findings)
+
+1) **Listing and signed links**
+- The MCP server `prompt-forge-mcp` (the `mcp` function) has 4 tools, all read-only: `list_jobs`, `get_job`, `list_videos`, `get_credit_balance`. Callers must sign in through OAuth (issuer `https://<ref>.supabase.co/auth/v1`, audience `authenticated`).
+- `list_videos` has no "shared" option. It does not filter by owner itself, so the library-sharing rules decide what comes back: Sattar's token returns his rows plus Radin's. It returns storage paths and thumbnail URLs only. **No MCP tool creates signed links.**
+- `GET /videos-list?shared=1&limit=N` (needs a user session token) lists shared videos the same way. It also returns paths only, not signed links.
+- `video-proxy` checks that the caller is signed in, then streams the file. I have not yet confirmed whether it also checks who owns the file. Treat it as unverified, not as an approved way to fetch the files.
+- Limitation: no supported route returns temporary signed links for `user-videos` files. Note that Radin's merged-video paths sit in `merged-videos` (some stored as full public URLs), not in `user-videos`.
+
+2) **Remix or merge**
+- No MCP tool can create a merged or remix video. Merging (the Final Film) runs only inside the browser, which is the WebCodecs path. The closest server-side calls are `jobs-create` (new clips, which spend credits) and `jobs-update-edited-video` (owner-only). Neither one merges videos.
+
+3) **Safest next step**
+- Add one read-only MCP tool, `get_shared_video_url`, built on OAuth. It would call the existing `can_view_owner` check, then issue a short-lived (for example 10 minute) signed link for the requested video asset.
+- Keep merging in the app. A server-side merge tool would need a new rendering setup, and that would break the rule against reintroducing ffmpeg.wasm in the merge path, so it is not recommended.
+- Note on auth: OAuth on the backend has to be switched on and the app republished before any outside caller can use the MCP server. I have not checked whether OAuth is on.
