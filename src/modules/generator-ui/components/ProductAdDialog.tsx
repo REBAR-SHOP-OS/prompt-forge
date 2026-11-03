@@ -760,7 +760,6 @@ export default function ProductAdDialog({
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
         .select('id, storage_path, title, category')
-        .eq('user_id', userId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
@@ -846,7 +845,6 @@ export default function ProductAdDialog({
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
         .select('id, storage_path, title, category')
-        .eq('user_id', userId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
