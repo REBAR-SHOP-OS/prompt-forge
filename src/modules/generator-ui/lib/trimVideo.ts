@@ -165,13 +165,13 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-interface CaptureCapableVideo extends HTMLVideoElement {
+type CaptureCapableVideo = Omit<HTMLVideoElement, 'captureStream'> & {
   captureStream?: () => MediaStream
   mozCaptureStream?: () => MediaStream
 }
 
 function captureStreamFromVideo(video: HTMLVideoElement): MediaStream {
-  const v = video as CaptureCapableVideo
+  const v = video as unknown as CaptureCapableVideo
   if (typeof v.captureStream === 'function') return v.captureStream()
   if (typeof v.mozCaptureStream === 'function') return v.mozCaptureStream()
   throw new Error('Video.captureStream is not supported in this browser')
