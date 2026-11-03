@@ -356,7 +356,6 @@ function MakeFilmWizardDialog({
         .from('generator_user_images')
         .select('id, storage_path, title')
         .eq('category', 'product')
-        .eq('user_id', userId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
@@ -390,7 +389,6 @@ function MakeFilmWizardDialog({
         supabase
           .from('generator_user_images')
           .select(columns)
-          .eq('user_id', userId)
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
       )

@@ -1583,7 +1583,6 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('product_folders')
         .select('storage_folder_id, name')
-        .eq('user_id', userId)
         .order('created_at', { ascending: false })
       if (error) throw error
       setProductFolders(
@@ -1608,7 +1607,8 @@ export default function DashboardPage() {
         supabase
           .from('generator_user_images')
           .select(USER_IMAGE_ROW_SELECT)
-          .eq('user_id', userId)
+          // Company-wide catalog: every signed-in user sees every product
+          // (RLS allows reads); edits stay owner-only via refuseIfShared.
           .eq('category', 'product')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
@@ -1618,6 +1618,9 @@ export default function DashboardPage() {
       if (error) throw error
 
       const signedProducts = await signUserImageRows(((data ?? []) as UserImageItem[]))
+      for (const product of signedProducts) {
+        if (product.user_id && product.user_id !== userId) sharedItemIdsRef.current.add(product.id)
+      }
       setArchiveProductImages((prev) => mergeUserImageRows(prev, signedProducts))
       setProductDescDraft((prev) => {
         let changed = false
@@ -1725,6 +1728,7 @@ export default function DashboardPage() {
       for (const v of videos) if (notMine(v.user_id)) { shared.add(v.id); shared.add(v.job_id) }
       for (const i of allImages) if (notMine(i.user_id)) shared.add(i.id)
       for (const a of audioRows) if (notMine(a.user_id)) shared.add(a.id)
+      for (const id of sharedItemIdsRef.current) shared.add(id)
       sharedItemIdsRef.current = shared
     } finally {
       setArchiveLoading(false)
