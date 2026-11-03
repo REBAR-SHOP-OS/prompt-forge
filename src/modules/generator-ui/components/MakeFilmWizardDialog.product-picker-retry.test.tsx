@@ -52,7 +52,6 @@ beforeEach(() => {
       return {
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
               is: vi.fn(() => ({
                 order: vi.fn(async () => ({
                   data: [
@@ -61,7 +60,6 @@ beforeEach(() => {
                   error: null,
                 })),
               })),
-            })),
           })),
         })),
       }
@@ -283,7 +281,6 @@ describe('Product Picker image retry', () => {
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
                 is: vi.fn(() => ({
                   order: vi.fn(async () => ({
                     data: [
@@ -293,7 +290,6 @@ describe('Product Picker image retry', () => {
                     error: null,
                   })),
                 })),
-              })),
             })),
           })),
         }
