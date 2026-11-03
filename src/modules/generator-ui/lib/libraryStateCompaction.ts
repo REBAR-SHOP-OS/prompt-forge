@@ -27,8 +27,12 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
-function isInlineImage(value: unknown): value is string {
-  return typeof value === "string" && /^data:image\/[a-z0-9.+-]+;base64,/i.test(value.trim());
+// Any base64 media payload (image, video, audio) embedded in the library
+// document. These belong in storage, never in the synced layout: a single
+// inline MP4 is megabytes and blocks the whole library from loading.
+function isInlineMedia(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^data:(image|video|audio)\/[a-z0-9.+-]+;base64,/i.test(value.trim());
 }
 
 function isDurableReference(value: unknown): value is string {
@@ -39,8 +43,8 @@ function isDurableReference(value: unknown): value is string {
 }
 
 function compactJsonValue(value: unknown, property?: string, parent?: Record<string, unknown>): unknown {
-  if (isInlineImage(value)) {
-    if (property === "thumbnail_url") return null;
+  if (isInlineMedia(value)) {
+    if (property === "thumbnail_url" || property === "storage_path") return null;
     if ((property === "url" || property === "src") && isDurableReference(parent?.storage_path)) {
       return parent?.storage_path;
     }
@@ -61,7 +65,7 @@ function compactJsonValue(value: unknown, property?: string, parent?: Record<str
 }
 
 export function compactSerializedLibraryValue(raw: string): { value: string; changed: boolean } {
-  if (isInlineImage(raw)) return { value: "", changed: true };
+  if (isInlineMedia(raw)) return { value: "", changed: true };
   try {
     const compacted = JSON.stringify(compactJsonValue(JSON.parse(raw)));
     return { value: compacted, changed: compacted !== raw };
