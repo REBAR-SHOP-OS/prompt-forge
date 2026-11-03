@@ -1583,7 +1583,6 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('product_folders')
         .select('storage_folder_id, name')
-        .eq('user_id', userId)
         .order('created_at', { ascending: false })
       if (error) throw error
       setProductFolders(
@@ -1608,7 +1607,8 @@ export default function DashboardPage() {
         supabase
           .from('generator_user_images')
           .select(USER_IMAGE_ROW_SELECT)
-          .eq('user_id', userId)
+          // Company-wide catalog: every signed-in user sees every product
+          // (RLS allows reads); edits stay owner-only via refuseIfShared.
           .eq('category', 'product')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
@@ -1618,6 +1618,9 @@ export default function DashboardPage() {
       if (error) throw error
 
       const signedProducts = await signUserImageRows(((data ?? []) as UserImageItem[]))
+      for (const product of signedProducts) {
+        if (product.user_id && product.user_id !== userId) sharedItemIdsRef.current.add(product.id)
+      }
       setArchiveProductImages((prev) => mergeUserImageRows(prev, signedProducts))
       setProductDescDraft((prev) => {
         let changed = false
