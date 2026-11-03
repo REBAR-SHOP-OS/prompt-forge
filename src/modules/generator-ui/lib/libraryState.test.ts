@@ -102,6 +102,23 @@ describe("library state compaction", () => {
     });
   });
 
+  it("strips an inline Base64 MP4 stored as a video path so a 4.8 MB library loads again", () => {
+    const inlineVideo = `data:video/mp4;base64,${"A".repeat(3_000_000)}`;
+    const result = compactLibraryDocument({
+      [draftKey]: JSON.stringify([{
+        id: "draft-video",
+        input_prompt: "Keep this draft",
+        video: { id: "asset-1", storage_path: inlineVideo, thumbnail_url: null },
+      }]),
+    });
+    const drafts = JSON.parse(result.state[draftKey]);
+
+    expect(result.withinBudget).toBe(true);
+    expect(drafts[0].id).toBe("draft-video");
+    expect(drafts[0].video.id).toBe("asset-1");
+    expect(drafts[0].video.storage_path).toBe("");
+  });
+
   it("keeps metadata and uses a safe placeholder when no durable thumbnail reference exists", () => {
     const result = compactLibraryDocument({
       [draftKey]: JSON.stringify([{

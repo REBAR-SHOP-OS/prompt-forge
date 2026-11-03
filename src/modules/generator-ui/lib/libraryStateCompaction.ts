@@ -44,7 +44,7 @@ function isDurableReference(value: unknown): value is string {
 
 function compactJsonValue(value: unknown, property?: string, parent?: Record<string, unknown>): unknown {
   if (isInlineMedia(value)) {
-    if (property === "thumbnail_url" || property === "storage_path") return null;
+    if (property === "thumbnail_url") return null;
     if ((property === "url" || property === "src") && isDurableReference(parent?.storage_path)) {
       return parent?.storage_path;
     }
