@@ -1728,6 +1728,7 @@ export default function DashboardPage() {
       for (const v of videos) if (notMine(v.user_id)) { shared.add(v.id); shared.add(v.job_id) }
       for (const i of allImages) if (notMine(i.user_id)) shared.add(i.id)
       for (const a of audioRows) if (notMine(a.user_id)) shared.add(a.id)
+      for (const id of sharedItemIdsRef.current) shared.add(id)
       sharedItemIdsRef.current = shared
     } finally {
       setArchiveLoading(false)
