@@ -102,6 +102,28 @@ export default function AuthForm({ mode }: Props) {
     }
   }
 
+  async function onForgot() {
+    setError(null);
+    setInfo(null);
+    const parsed = schema.shape.email.safeParse(email);
+    if (!parsed.success) {
+      setError("Enter your email above, then click Forgot password.");
+      return;
+    }
+    setResending(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      setInfo("If that account exists, a reset link has been sent.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setResending(false);
+    }
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-2">
@@ -138,6 +160,12 @@ export default function AuthForm({ mode }: Props) {
         >
           {resending ? "Sending…" : "Resend confirmation email"}
         </Button>
+      )}
+      {mode === "login" && (
+        <button type="button" onClick={onForgot} disabled={resending}
+          className="block w-full text-center text-sm text-muted-foreground underline">
+          Forgot password?
+        </button>
       )}
       {mode === "signup" && (
         <p className="text-center text-sm text-muted-foreground">

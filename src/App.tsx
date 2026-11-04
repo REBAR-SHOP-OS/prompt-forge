@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/core/ui/ThemeProvider'
 import DashboardPage from './modules/generator-ui/pages/DashboardPage'
 import LoginPage from './pages/auth/LoginPage'
 import OAuthConsent from './pages/auth/OAuthConsent'
+import ResetPasswordPage from './pages/auth/ResetPasswordPage'
 import LoadingScreen from '@/core/ui/LoadingScreen'
 import RootErrorBoundary from '@/core/ui/RootErrorBoundary'
 import LibrarySyncGate from '@/modules/generator-ui/components/LibrarySyncGate'
@@ -13,10 +14,15 @@ const isOAuthConsentPath = () =>
   typeof window !== 'undefined' &&
   window.location.pathname.replace(/\/+$/, '') === '/.lovable/oauth/consent'
 
+const isResetPasswordPath = () =>
+  typeof window !== 'undefined' &&
+  window.location.pathname.replace(/\/+$/, '') === '/reset-password'
+
 function Gate() {
   const { session, loading } = useAuth()
 
   if (isOAuthConsentPath()) return <OAuthConsent />
+  if (isResetPasswordPath()) return <ResetPasswordPage />
 
   if (loading) return <LoadingScreen />
   return session ? (
