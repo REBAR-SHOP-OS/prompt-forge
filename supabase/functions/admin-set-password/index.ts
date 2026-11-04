@@ -31,8 +31,8 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 255) return json({ error: "Enter a valid email" }, 400);
-  if (password.length < 8 || password.length > 72) return json({ error: "Password must be 8–72 characters" }, 400);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 255) return json({ ok: false, error: "Enter a valid email" });
+  if (password.length < 8 || password.length > 72) return json({ ok: false, error: "Password must be 8–72 characters" });
 
   // Find the target user by email.
   let targetId: string | null = null;
@@ -42,10 +42,10 @@ Deno.serve(async (req) => {
     targetId = data.users.find((u) => (u.email ?? "").toLowerCase() === email)?.id ?? null;
     if (data.users.length < 200) break;
   }
-  if (!targetId) return json({ error: "No user with that email" }, 404);
+  if (!targetId) return json({ ok: false, error: "No user with that email" });
 
   const { error: updErr } = await admin.auth.admin.updateUserById(targetId, { password });
-  if (updErr) return json({ error: updErr.message }, 400);
+  if (updErr) return json({ ok: false, error: updErr.message });
 
   console.log(`admin-set-password: admin ${userData.user.id} updated user ${targetId}`);
   return json({ ok: true });

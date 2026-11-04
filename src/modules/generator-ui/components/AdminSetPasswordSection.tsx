@@ -32,8 +32,8 @@ export function AdminSetPasswordSection() {
     })
     setBusy(false)
     if (error || !data?.ok) {
-      let text = 'Could not update password'
-      try { text = (await (error as { context?: Response })?.context?.json())?.error ?? text } catch { /* ignore */ }
+      let text = data?.error ?? 'Could not update password'
+      if (error) try { text = (await (error as { context?: Response })?.context?.json())?.error ?? text } catch { /* ignore */ }
       setMsg({ ok: false, text })
       return
     }
