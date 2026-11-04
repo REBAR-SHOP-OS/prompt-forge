@@ -63,29 +63,60 @@ export function parseStorageObjectRef(
   return { bucket, ownerId: ownerFolder, path, canonical: `${bucket}/${path}` };
 }
 
-/** Exact storage_path spellings a stored asset row may use for this object. */
-export function storagePathCandidates(ref: StorageObjectRef, ownStorageOrigin: string): string[] {
-  return [
-    `${ownStorageOrigin}/storage/v1/object/public/${ref.canonical}`,
-    `${ownStorageOrigin}/storage/v1/object/${ref.canonical}`,
-    ref.canonical,
-    ref.path,
-  ];
+function encodePath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
 }
 
-/** Caller-scoped (RLS) lookup: returns the matching row's owner id, or null. */
-export type SharedAssetLookup = (ownerId: string, candidates: string[]) => Promise<string | null>;
+/**
+ * Exact storage_path spellings a stored asset row may use for this object:
+ * public / authenticated / bare object URLs, bucket-relative and owner-relative
+ * keys, each both decoded and percent-encoded. Exact equality only.
+ */
+export function storagePathCandidates(ref: StorageObjectRef, ownStorageOrigin: string): string[] {
+  const out = new Set<string>();
+  for (const key of [ref.path, encodePath(ref.path)]) {
+    const canonical = `${ref.bucket}/${key}`;
+    for (const mode of ["public/", "authenticated/", ""]) {
+      out.add(`${ownStorageOrigin}/storage/v1/object/${mode}${canonical}`);
+    }
+    out.add(canonical);
+    out.add(key);
+  }
+  return [...out];
+}
+
+/** A live (non-deleted) generator_user_images row visible to the caller. */
+export interface SharedAssetRow {
+  id: string;
+  ownerId: string;
+  category: string | null;
+  imageType: string | null;
+}
+
+/** Caller-scoped (RLS) lookup: returns the matching live row, or null. */
+export type SharedAssetLookup = (ownerId: string, candidates: string[]) => Promise<SharedAssetRow | null>;
+
+export type ReferenceRole = "product" | "character";
 
 export interface ReferenceAuthOptions {
   userId: string;
   ownStorageOrigin: string;
   extraHosts: readonly string[];
   lookup: SharedAssetLookup;
+  /** When given, a shared row explicitly tagged with the other role is rejected. */
+  role?: ReferenceRole;
 }
 
 export type ReferenceDecision =
-  | { ok: true; kind: "owned" | "shared" | "external"; ref: StorageObjectRef | null }
-  | { ok: false; reason: "invalid" | "not_authorized" | "mismatch" };
+  | { ok: true; kind: "owned" | "shared" | "external"; ref: StorageObjectRef | null; assetId: string | null; url: string }
+  | { ok: false; reason: "invalid" | "not_authorized" | "mismatch" | "role_mismatch" };
+
+function rowRole(row: SharedAssetRow): ReferenceRole | null {
+  const tag = (row.imageType ?? row.category ?? "").toLowerCase();
+  if (tag === "character") return "character";
+  if (tag === "product") return "product";
+  return null; // general / reframe / legacy rows carry no role claim
+}
 
 const REFERENCE_BUCKETS = ["user-images"] as const;
 const OWNED_ONLY_BUCKETS = ["user-images", "wan-frames"] as const;
@@ -102,29 +133,35 @@ export async function authorizeReference(url: string, opts: ReferenceAuthOptions
     if (parsed.protocol !== "https:") return { ok: false, reason: "invalid" };
     if (parsed.origin !== opts.ownStorageOrigin) {
       return opts.extraHosts.includes(parsed.hostname.toLowerCase())
-        ? { ok: true, kind: "external", ref: null }
+        ? { ok: true, kind: "external", ref: null, assetId: null, url }
         : { ok: false, reason: "invalid" };
     }
   }
 
   const ref = parseStorageObjectRef(url, opts.ownStorageOrigin, OWNED_ONLY_BUCKETS);
   if (!ref) return { ok: false, reason: "invalid" };
-  if (ref.ownerId === opts.userId) return { ok: true, kind: "owned", ref };
+  if (ref.ownerId === opts.userId) return { ok: true, kind: "owned", ref, assetId: null, url };
   if (!(REFERENCE_BUCKETS as readonly string[]).includes(ref.bucket)) return { ok: false, reason: "not_authorized" };
 
-  let matchedOwner: string | null = null;
+  let row: SharedAssetRow | null = null;
   try {
-    matchedOwner = await opts.lookup(ref.ownerId, storagePathCandidates(ref, opts.ownStorageOrigin));
+    row = await opts.lookup(ref.ownerId, storagePathCandidates(ref, opts.ownStorageOrigin));
   } catch {
     return { ok: false, reason: "not_authorized" };
   }
-  if (!matchedOwner) return { ok: false, reason: "not_authorized" };
-  if (matchedOwner !== ref.ownerId) return { ok: false, reason: "mismatch" };
-  return { ok: true, kind: "shared", ref };
+  if (!row || !row.id) return { ok: false, reason: "not_authorized" };
+  if (row.ownerId !== ref.ownerId) return { ok: false, reason: "mismatch" };
+  const tagged = rowRole(row);
+  if (opts.role && tagged && tagged !== opts.role) return { ok: false, reason: "role_mismatch" };
+  return { ok: true, kind: "shared", ref, assetId: row.id, url };
 }
 
-export async function authorizeReferences(urls: readonly string[], opts: ReferenceAuthOptions) {
-  const decisions = await Promise.all(urls.map((u) => authorizeReference(u, opts)));
+export async function authorizeReferences(
+  urls: readonly string[],
+  opts: ReferenceAuthOptions,
+  roles?: readonly (ReferenceRole | undefined)[],
+) {
+  const decisions = await Promise.all(urls.map((u, i) => authorizeReference(u, { ...opts, role: roles?.[i] ?? opts.role })));
   return { allOk: decisions.every((d) => d.ok), decisions };
 }
 
@@ -133,24 +170,37 @@ interface QueryClient {
   from(table: string): {
     select(cols: string): {
       eq(col: string, v: string): {
-        in(col: string, v: string[]): { limit(n: number): PromiseLike<{ data: unknown; error: unknown }> };
+        in(col: string, v: string[]): {
+          is(col: string, v: null): { limit(n: number): PromiseLike<{ data: unknown; error: unknown }> };
+        };
       };
     };
   };
 }
 
-/** Lookup bound to a user-scoped client so RLS decides own-or-shared access. */
+/**
+ * Lookup bound to a user-scoped client so RLS decides own-or-shared access.
+ * Soft-deleted rows never authorize. More than one live row for the same
+ * object is ambiguous and fails closed (no stable asset identity).
+ */
 export function rlsSharedAssetLookup(userClient: QueryClient): SharedAssetLookup {
   return async (ownerId, candidates) => {
     const { data, error } = await userClient
       .from("generator_user_images")
-      .select("user_id")
+      .select("id,user_id,category,image_type")
       .eq("user_id", ownerId)
       .in("storage_path", candidates)
-      .limit(1);
-    if (error || !Array.isArray(data) || data.length === 0) return null;
-    const owner = (data[0] as { user_id?: unknown }).user_id;
-    return typeof owner === "string" ? owner : null;
+      .is("deleted_at", null)
+      .limit(2);
+    if (error || !Array.isArray(data) || data.length !== 1) return null;
+    const r = data[0] as { id?: unknown; user_id?: unknown; category?: unknown; image_type?: unknown };
+    if (typeof r.id !== "string" || typeof r.user_id !== "string") return null;
+    return {
+      id: r.id,
+      ownerId: r.user_id,
+      category: typeof r.category === "string" ? r.category : null,
+      imageType: typeof r.image_type === "string" ? r.image_type : null,
+    };
   };
 }
 

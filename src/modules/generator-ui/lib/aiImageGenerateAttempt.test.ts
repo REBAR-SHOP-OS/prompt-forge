@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { decideAttempt } from '../../../../supabase/functions/ai-image-generate/candidate'
-import { bytesToBase64, createReferenceResolver } from '../../../../supabase/functions/ai-image-generate/references'
+import { bytesToBase64 } from '../../../../supabase/functions/_shared/core/reference-fetch'
 
 const safeActionFail = {
   perReference: [{ present: true, match: true, reason: 'same' }, { present: true, match: true, reason: 'same' }],
@@ -30,14 +30,6 @@ describe('ai-image-generate per-attempt decision', () => {
 })
 
 describe('ai-image-generate reference resolution', () => {
-  it('resolves each URL once per request, sharing in-flight results', async () => {
-    const fetcher = vi.fn(async (u: string) => `data:${u}`)
-    const resolve = createReferenceResolver(fetcher)
-    const results = await Promise.all([resolve('a'), resolve('a'), resolve('b')])
-    for (let i = 0; i < 3; i++) await resolve('a')
-    expect(results).toEqual(['data:a', 'data:a', 'data:b'])
-    expect(fetcher).toHaveBeenCalledTimes(2)
-  })
   it('chunked base64 matches the byte-wise encoding across chunk boundaries', () => {
     const bytes = new Uint8Array(0x8000 * 2 + 17).map((_, i) => (i * 31) % 256)
     let binary = ''

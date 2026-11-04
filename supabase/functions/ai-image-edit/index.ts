@@ -1,9 +1,15 @@
 // Edits an image (data URL or https URL) using Lovable AI Gateway (Nano Banana).
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
-import { getServiceClient, getUserScopedClient } from "../_shared/core/supabase.ts";
+import { getUserScopedClient } from "../_shared/core/supabase.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
-import { authorizeReference, rlsSharedAssetLookup } from "../_shared/core/reference-auth.ts";
+import { rlsSharedAssetLookup } from "../_shared/core/reference-auth.ts";
+import {
+  createByteBudget,
+  createReferenceSession,
+  ReferenceAccessError,
+  validateInlineImageDataUrl,
+} from "../_shared/core/reference-fetch.ts";
 import {
   buildIdentityEvalPrompt,
   buildEvaluationRetryFeedback,
@@ -18,42 +24,10 @@ import {
 } from "../_shared/identity-eval.ts";
 import { runIdentityCheckedEdit } from "./identity-retry.ts";
 
-// Our storage buckets are private, so public URLs return 400 when the AI gateway
-// tries to fetch them. Download via the service client and inline as a data URL.
-function bytesToBase64(bytes: Uint8Array): string {
-  let s = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    s += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(s);
-}
-
-const MAX_REFERENCE_BYTES = 15 * 1024 * 1024;
-
-async function toInlineDataUrl(url: string, userId: string, authHeader: string): Promise<string> {
-  if (url.startsWith("data:image/")) return url;
-  const supabaseOrigin = new URL(Deno.env.get("SUPABASE_URL") ?? "").origin;
-  // Owned objects, or exact generator_user_images rows visible to the caller
-  // through RLS (shared library). External hosts are not accepted here.
-  const decision = await authorizeReference(url, {
-    userId,
-    ownStorageOrigin: supabaseOrigin,
-    extraHosts: [],
-    lookup: rlsSharedAssetLookup(getUserScopedClient(authHeader)),
+const referenceAccessDenied = () =>
+  new Response(JSON.stringify({ error: "One or more reference images could not be validated. Re-select the product/character and try again." }), {
+    status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-  if (!decision.ok || !decision.ref) throw new Error("image reference is not authorized for the caller");
-  const ref = decision.ref;
-
-  const { data, error } = await getServiceClient().storage.from(ref.bucket).download(ref.path);
-  if (error || !data) throw new Error("image reference could not be downloaded");
-  if (data.size > MAX_REFERENCE_BYTES) throw new Error("image reference too large");
-  const bytes = new Uint8Array(await data.arrayBuffer());
-  let mime = data.type?.split(";")[0]?.trim() || "image/png";
-  if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) mime = "image/png";
-  return `data:${mime};base64,${bytesToBase64(bytes)}`;
-}
-
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -124,28 +98,15 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    // Data URLs are caller-provided bytes. Stored references must be the
-    // caller's own object or an exact generator_user_images row the caller can
-    // read through RLS (shared library) — service-role downloads bypass RLS, so
-    // authorization is decided before any download.
+    // Data URLs are caller-provided bytes (strict MIME + size). Stored
+    // references must be the caller's own object or an exact, live
+    // generator_user_images row the caller can read through RLS, and are
+    // downloaded with the CALLER's storage permissions — never service role.
     const supabaseOrigin = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").origin; } catch { return ""; }
     })();
-    const refLookup = rlsSharedAssetLookup(getUserScopedClient(authHeader));
-    const isUrlAllowed = async (url: string): Promise<boolean> => {
-      if (url.startsWith("data:image/")) return true;
-      if (!supabaseOrigin) return false;
-      const decision = await authorizeReference(url, {
-        userId, ownStorageOrigin: supabaseOrigin, extraHosts: [], lookup: refLookup,
-      });
-      return decision.ok && decision.kind !== "external";
-    };
+    if (!supabaseOrigin) return referenceAccessDenied();
     for (const url of imageUrls) {
-      if (!(await isUrlAllowed(url))) {
-        return new Response(JSON.stringify({ error: "One or more reference images could not be validated. Re-select the product/character and try again." }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
       if (url.length > 15_000_000) {
         return new Response(JSON.stringify({ error: "imageUrl too large" }), {
           status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -179,17 +140,32 @@ Deno.serve(async (req) => {
       ? `You will receive ${imageUrls.length} images. Image 1 is the BASE image to edit/transform. The remaining ${imageUrls.length - 1} image(s) are visual REFERENCES — use their style, subject, products, or details to guide the edit. Apply this instruction (which may be in any language, including Persian/Farsi/Arabic) to image 1: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the base image unless the instruction explicitly requires otherwise."} Respond with ONLY the resulting image — no text, captions, or explanations.`
       : `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."} Respond with ONLY the edited image — no text, captions, or explanations.`;
 
-    // Inline private-bucket URLs as data URLs so the AI gateway can read them.
     const generationSpecs = identitySpecs.length > 0
       ? identitySpecs
       : imageUrls.map((url) => ({ url, role: "product" as const, characterSheet: false }));
-    const inlinedUrls = await Promise.all(generationSpecs.map((s) => toInlineDataUrl(s.url, userId, authHeader)));
+    // One aggregate byte budget covers every reference image AND the mask.
+    const budget = createByteBudget();
+    const refSession = createReferenceSession(
+      generationSpecs.map((s) => ({ url: s.url, role: identitySpecs.length > 0 ? s.role : undefined })),
+      { userId, ownStorageOrigin: supabaseOrigin, extraHosts: [], lookup: rlsSharedAssetLookup(getUserScopedClient(authHeader)) },
+      { ownStorageOrigin: supabaseOrigin, authHeader, anonKey: Deno.env.get("SUPABASE_ANON_KEY") ?? "" },
+      budget,
+    );
+    let validatedMask = "";
+    try {
+      await refSession.prepare();
+      if (maskUrl) validatedMask = validateInlineImageDataUrl(maskUrl, budget);
+    } catch (e) {
+      console.error("ai-image-edit reference preparation failed", (e as Error).message);
+      return referenceAccessDenied();
+    }
+    const inlinedUrls = generationSpecs.map((s) => refSession.dataUrl(s.url));
 
     const messageContent = maskUrl
       ? [
           { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a strict edit MASK (transparent background; opaque/white pixels mark the editable region). Only the white/opaque pixels of the mask define the editable region — DO NOT alter pixels where the mask is transparent. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). The user instruction (which may be in any language, including Persian/Farsi/Arabic) describes what to put inside the masked region: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""} Respond with ONLY the edited image — no text.` },
           { type: "image_url", image_url: { url: inlinedUrls[0] } },
-          { type: "image_url", image_url: { url: maskUrl } },
+          { type: "image_url", image_url: { url: validatedMask } },
         ]
       : [
           { type: "text", text: multiRefText },
@@ -260,7 +236,7 @@ Deno.serve(async (req) => {
       for (let i = 0; i < evaluatedSpecs.length; i++) {
         const spec = evaluatedSpecs[i];
         baseEvalContent.push({ type: "text", text: `REF_${i + 1} (${spec.role.toUpperCase()}):` });
-        baseEvalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url, userId, authHeader) } });
+        baseEvalContent.push({ type: "image_url", image_url: { url: refSession.dataUrl(spec.url) } });
       }
 
       for (let attempt = 1; attempt <= MAX_EVALUATOR_ATTEMPTS; attempt++) {
@@ -273,6 +249,12 @@ Deno.serve(async (req) => {
                 text: "Your previous response was not a valid minified JSON object matching the exact schema. Output ONLY the JSON object now.",
               },
             ];
+        // Re-check caller access before every paid evaluator attempt.
+        try {
+          await refSession.revalidate();
+        } catch {
+          return { verdict: "error" as const, outcome: null, status: 400, error: "One or more reference images could not be validated. Re-select the product/character and try again." };
+        }
         const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -320,6 +302,13 @@ Deno.serve(async (req) => {
     }
 
     async function generateOnce(model: string, reviewFeedback?: string) {
+      // Re-check caller access (revocation / asset change) before every paid attempt.
+      try {
+        await refSession.revalidate();
+      } catch (e) {
+        if (!(e instanceof ReferenceAccessError)) throw e;
+        return { kind: "error" as const, status: 400, error: "One or more reference images could not be validated. Re-select the product/character and try again." };
+      }
       const resp = await callModel(model, reviewFeedback);
       if (resp.status === 429) return { kind: "error" as const, status: 429, error: "Rate limit reached. Try again in a moment." };
       if (resp.status === 402) return { kind: "error" as const, status: 402, error: "AI credits exhausted. Add credits to continue." };

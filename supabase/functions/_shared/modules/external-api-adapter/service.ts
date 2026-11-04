@@ -15,6 +15,7 @@ import type {
 import { getEnv } from "../../core/env.ts";
 import { logError, logInfo } from "../../core/observability.ts";
 import { assertSupportedCloudModel, computeUsd } from "./model-policy.ts";
+import { buildVeoReferenceImages } from "./veo-references.ts";
 
 /** Map the public model alias to a concrete provider model. The cheaper
  *  Veo 3.1 Fast tier is preferred by default; we fall back to Veo 3.1
@@ -1237,26 +1238,14 @@ async function startVeo(
   }
 
 
-  // Persistent identity anchor: forward reference (Character Sheet) images so
-  // the subject stays consistent across chained cards. Veo 3.1 only; capped at 3.
-  // Best-effort — a failed fetch for a reference image must never break the job.
-  if (input.referenceImageUrls && input.referenceImageUrls.length > 0) {
-    const references: Array<Record<string, unknown>> = [];
-    for (const url of input.referenceImageUrls.slice(0, 3)) {
-      try {
-        const ref = await fetchAsInlineData(url);
-        references.push({
-          image: { bytesBase64Encoded: ref.data, mimeType: ref.mimeType },
-          referenceType: "asset",
-        });
-      } catch (e) {
-        logError("veo reference image fetch failed, skipping", {
-          error: (e as Error).message,
-        });
-      }
-    }
-    if (references.length > 0) instance.referenceImages = references;
-  }
+  // Persistent identity anchor: forward reference (Character Sheet / product)
+  // images so the subject stays consistent across chained cards. Veo 3.1 only;
+  // capped at 3. References are REQUIRED once requested: they must arrive
+  // pre-authorized and caller-downloaded (input.referenceImages). A missing
+  // reference fails the start BEFORE the paid Veo call (the orchestrator then
+  // fails the job and refunds) — never a silent identity drop, and never a
+  // service-role re-fetch that would bypass the caller's storage permissions.
+  instance.referenceImages = buildVeoReferenceImages(input);
 
 
   const body = {

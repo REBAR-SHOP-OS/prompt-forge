@@ -3,12 +3,8 @@ import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import { getUserScopedClient } from "../_shared/core/supabase.ts";
-import {
-  authorizeReferences,
-  parseStorageObjectRef,
-  readExtraHosts,
-  rlsSharedAssetLookup,
-} from "../_shared/core/reference-auth.ts";
+import { readExtraHosts, rlsSharedAssetLookup } from "../_shared/core/reference-auth.ts";
+import { createReferenceSession, ReferenceAccessError } from "../_shared/core/reference-fetch.ts";
 import {
   validateReferenceSpecs,
   buildIdentityEvalPrompt,
@@ -23,7 +19,6 @@ import {
   type EvalVerdict,
 } from "../_shared/identity-eval.ts";
 import { decideAttempt } from "./candidate.ts";
-import { bytesToBase64, createReferenceResolver } from "./references.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 
@@ -35,32 +30,11 @@ const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 const STORAGE_ORIGIN = (() => {
   try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").origin; } catch { return ""; }
 })();
-const MAX_REFERENCE_BYTES = 15 * 1024 * 1024;
-const REFERENCE_FETCH_TIMEOUT_MS = 20_000;
 
-// The AI gateway fetches image URLs itself, but our storage buckets are private.
-// Download the already-authorized object server-side (bounded: timeout, size
-// cap, image MIME only) and inline it as a base64 data URL.
-async function resolveImageForGateway(url: string): Promise<string> {
-  const ref = parseStorageObjectRef(url, STORAGE_ORIGIN, ["user-images", "wan-frames"]);
-  if (!ref) return url; // allowlisted external host — gateway fetches it.
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!supabaseUrl || !serviceKey) throw new Error("reference download unavailable");
-  const objectUrl = `${supabaseUrl}/storage/v1/object/${ref.bucket}/${ref.path.split("/").map(encodeURIComponent).join("/")}`;
-  const res = await fetch(objectUrl, {
-    headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
-    signal: AbortSignal.timeout(REFERENCE_FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`reference download failed (${res.status})`);
-  const declared = Number(res.headers.get("content-length") ?? "0");
-  if (declared > MAX_REFERENCE_BYTES) throw new Error("reference image too large");
-  const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-  if (!/^image\/(png|jpe?g|webp)$/.test(mime)) throw new Error("reference is not a supported image");
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.byteLength > MAX_REFERENCE_BYTES) throw new Error("reference image too large");
-  return `data:${mime};base64,${bytesToBase64(bytes)}`;
-}
+const referenceAccessDenied = () =>
+  new Response(JSON.stringify({
+    error: "One or more reference images could not be validated. Re-select the product/character and try again.",
+  }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 function ratioGuidance(ratio: string): string {
   switch (ratio) {
@@ -128,25 +102,21 @@ Deno.serve(async (req) => {
     // here would silently truncate a multi-angle product folder that
     // validateReferenceSpecs would otherwise accept.
     const cappedSpecs = refSpecs.slice(0, MAX_REFERENCE_IMAGES);
-    const { decisions } = await authorizeReferences(cappedSpecs.map((s) => s.url), {
-      userId: auth.userId,
-      ownStorageOrigin: STORAGE_ORIGIN,
-      extraHosts: readExtraHosts(Deno.env.get("ALLOWED_PUBLIC_FRAME_HOSTS")),
-      lookup: rlsSharedAssetLookup(getUserScopedClient(auth.authHeader)),
-    });
-    const safeReferenceUrls = cappedSpecs.filter((_, i) => decisions[i].ok);
-    // A reference that was supplied but failed security validation is a hard
-    // error, not a silent drop — otherwise the model would render without the
-    // identity the user explicitly chose.
-    const droppedReferenceCount = refSpecs.length - safeReferenceUrls.length;
-    if (droppedReferenceCount > 0) {
-      return new Response(JSON.stringify({
-        error: "One or more reference images could not be validated. Re-select the product/character and try again.",
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Every supplied reference must authorize (owned, exact RLS-visible shared
+    // row with matching role, or allowlisted host) and download through the
+    // CALLER's storage permissions. Nothing is silently dropped.
+    const safeReferenceUrls = cappedSpecs;
+    if (refSpecs.length > cappedSpecs.length) return referenceAccessDenied();
+    const refSession = createReferenceSession(
+      cappedSpecs.map((s) => ({ url: s.url, role: s.role })),
+      {
+        userId: auth.userId,
+        ownStorageOrigin: STORAGE_ORIGIN,
+        extraHosts: readExtraHosts(Deno.env.get("ALLOWED_PUBLIC_FRAME_HOSTS")),
+        lookup: rlsSharedAssetLookup(getUserScopedClient(auth.authHeader)),
+      },
+      { ownStorageOrigin: STORAGE_ORIGIN, authHeader: auth.authHeader, anonKey: Deno.env.get("SUPABASE_ANON_KEY") ?? "" },
+    );
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
@@ -192,18 +162,12 @@ Deno.serve(async (req) => {
     // URLs as text. Private-bucket URLs are inlined as data URLs first. Each
     // image is preceded by an explicit role label so the model knows which
     // reference is the product vs the character.
-    // Request-scoped cache: every reference is downloaded/encoded once and
-    // reused by all generation and evaluation attempts.
-    const resolveRef = createReferenceResolver(resolveImageForGateway);
-    // Download every authorized reference BEFORE any paid model call; a failed
-    // or oversized download stops the request instead of rendering without it.
+    // Authorize and download every reference BEFORE any paid model call.
     try {
-      await Promise.all(safeReferenceUrls.map((spec) => resolveRef(spec.url)));
+      await refSession.prepare();
     } catch (e) {
-      console.error("reference download failed", (e as Error).message);
-      return new Response(JSON.stringify({
-        error: "One or more reference images could not be loaded. Re-select the product/character and try again.",
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      console.error("reference preparation failed", (e as Error).message);
+      return referenceAccessDenied();
     }
     const userContent: unknown[] = [{ type: "text", text: fullPrompt }];
     for (const spec of safeReferenceUrls) {
@@ -217,8 +181,7 @@ Deno.serve(async (req) => {
         type: "text",
         text: `${spec.role.toUpperCase()} reference image (preserve this exact ${spec.role} in the output):${characterNote}${sheetNote}`,
       });
-      const resolved = await resolveRef(spec.url);
-      userContent.push({ type: "image_url", image_url: { url: resolved } });
+      userContent.push({ type: "image_url", image_url: { url: refSession.dataUrl(spec.url) } });
     }
 
     const extractImage = (data: unknown): string | undefined => {
@@ -276,9 +239,10 @@ Deno.serve(async (req) => {
           type: "text",
           text: `REF_${i + 1} (${spec.role.toUpperCase()}):`,
         });
-        const resolved = await resolveRef(spec.url);
-        evalContent.push({ type: "image_url", image_url: { url: resolved } });
+        evalContent.push({ type: "image_url", image_url: { url: refSession.dataUrl(spec.url) } });
       }
+      // Re-check access immediately before the paid evaluator call.
+      await refSession.revalidate();
       const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -325,6 +289,13 @@ Deno.serve(async (req) => {
             },
           ]
         : userContent;
+      // Re-check caller access (revocation / asset change) before every paid attempt.
+      try {
+        await refSession.revalidate();
+      } catch (e) {
+        console.error("reference revalidation failed", (e as Error).message);
+        return referenceAccessDenied();
+      }
       const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -364,7 +335,13 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const evalResult = await evaluateIdentity(dataUrl);
+      let evalResult: Awaited<ReturnType<typeof evaluateIdentity>>;
+      try {
+        evalResult = await evaluateIdentity(dataUrl);
+      } catch (e) {
+        if (e instanceof ReferenceAccessError) return referenceAccessDenied();
+        throw e;
+      }
       lastEval = evalResult.outcome;
       lastVerdict = evalResult.verdict;
       const decision = decideAttempt({

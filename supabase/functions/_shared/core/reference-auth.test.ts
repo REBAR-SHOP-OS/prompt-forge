@@ -10,16 +10,18 @@ const stranger = "33333333-3333-4333-8333-333333333333";
 const sharedFile = `${origin}/storage/v1/object/public/user-images/${sharer}/stirrup.png`;
 
 // Simulates the RLS-scoped table: rows visible to the caller = own + shared owners.
-function rlsTable(visibleOwners: string[], rows: { user_id: string; storage_path: string }[]): SharedAssetLookup {
+type Row = { id: string; user_id: string; storage_path: string; category?: string; deleted_at?: string | null };
+function rlsTable(visibleOwners: string[], rows: Row[]): SharedAssetLookup {
   return async (ownerId, candidates) => {
-    const row = rows.find((r) => visibleOwners.includes(r.user_id) && r.user_id === ownerId && candidates.includes(r.storage_path));
-    return row?.user_id ?? null;
+    const row = rows.find((r) => !r.deleted_at && visibleOwners.includes(r.user_id) && r.user_id === ownerId && candidates.includes(r.storage_path));
+    return row ? { id: row.id, ownerId: row.user_id, category: row.category ?? null, imageType: null } : null;
   };
 }
-const rows = [
-  { user_id: sharer, storage_path: sharedFile },
-  { user_id: stranger, storage_path: `${origin}/storage/v1/object/public/user-images/${stranger}/x.png` },
+const rows: Row[] = [
+  { id: "asset-stirrup", user_id: sharer, storage_path: sharedFile, category: "product" },
+  { id: "asset-x", user_id: stranger, storage_path: `${origin}/storage/v1/object/public/user-images/${stranger}/x.png` },
 ];
+const rowFor = (owner: string) => async () => ({ id: "asset-1", ownerId: owner, category: null, imageType: null });
 const opts = (lookup: SharedAssetLookup) => ({ userId: caller, ownStorageOrigin: origin, extraHosts: ["cdn.example.com"], lookup });
 
 describe("authorizeReference", () => {
@@ -50,7 +52,7 @@ describe("authorizeReference", () => {
   });
 
   it("mismatched: lookup returning a different owner fails closed", async () => {
-    expect(await authorizeReference(sharedFile, opts(async () => stranger))).toEqual({ ok: false, reason: "mismatch" });
+    expect(await authorizeReference(sharedFile, opts(rowFor(stranger)))).toEqual({ ok: false, reason: "mismatch" });
   });
 
   it("legacy: bucket-relative path matches a row stored as a full URL", async () => {
@@ -60,11 +62,11 @@ describe("authorizeReference", () => {
 
   it("shared access never extends to other buckets such as wan-frames", async () => {
     const url = `${origin}/storage/v1/object/public/wan-frames/${sharer}/stirrup.png`;
-    expect(await authorizeReference(url, opts(async () => sharer))).toEqual({ ok: false, reason: "not_authorized" });
+    expect(await authorizeReference(url, opts(rowFor(sharer)))).toEqual({ ok: false, reason: "not_authorized" });
   });
 
   it("SSRF: http, lookalike origins, unknown hosts and traversal are rejected; allowlisted host passes", async () => {
-    const o = opts(async () => sharer);
+    const o = opts(rowFor(sharer));
     expect((await authorizeReference(sharedFile.replace("https:", "http:"), o)).ok).toBe(false);
     expect((await authorizeReference(`https://evil-project.supabase.co/storage/v1/object/public/user-images/${sharer}/stirrup.png`, o)).ok).toBe(false);
     expect((await authorizeReference("https://169.254.169.254/latest", o)).ok).toBe(false);
@@ -82,29 +84,69 @@ describe("authorizeReference", () => {
   });
 });
 
+describe("asset identity across URL variants", () => {
+  const lookup = rlsTable([caller, sharer], rows);
+  it.each([
+    ["public", `${origin}/storage/v1/object/public/user-images/${sharer}/stirrup.png`],
+    ["signed", `${origin}/storage/v1/object/sign/user-images/${sharer}/stirrup.png?token=abc`],
+    ["authenticated", `${origin}/storage/v1/object/authenticated/user-images/${sharer}/stirrup.png`],
+    ["encoded", `${origin}/storage/v1/object/public/user-images/${sharer}/stirr%75p.png`],
+    ["bucket-relative", `user-images/${sharer}/stirrup.png`],
+  ])("%s URL resolves to the same stable asset id", async (_n, url) => {
+    expect(await authorizeReference(url, opts(lookup))).toMatchObject({ ok: true, kind: "shared", assetId: "asset-stirrup" });
+  });
+
+  it("a row stored with a percent-encoded path matches its decoded URL", async () => {
+    const enc = `${origin}/storage/v1/object/public/user-images/${sharer}/rebar%20stirrup.png`;
+    const l = rlsTable([caller, sharer], [{ id: "asset-sp", user_id: sharer, storage_path: enc }]);
+    expect(await authorizeReference(`${origin}/storage/v1/object/sign/user-images/${sharer}/rebar%20stirrup.png?token=t`, opts(l)))
+      .toMatchObject({ ok: true, assetId: "asset-sp" });
+  });
+
+  it("soft-deleted shared rows never authorize", async () => {
+    const l = rlsTable([caller, sharer], [{ id: "d", user_id: sharer, storage_path: sharedFile, deleted_at: "2026-01-01" }]);
+    expect(await authorizeReference(sharedFile, opts(l))).toEqual({ ok: false, reason: "not_authorized" });
+  });
+
+  it("role check: a shared product cannot be used as the character reference", async () => {
+    expect(await authorizeReference(sharedFile, { ...opts(rlsTable([caller, sharer], rows)), role: "character" }))
+      .toEqual({ ok: false, reason: "role_mismatch" });
+    expect(await authorizeReference(sharedFile, { ...opts(rlsTable([caller, sharer], rows)), role: "product" }))
+      .toMatchObject({ ok: true });
+  });
+});
+
 describe("paid-render guards (source wiring)", () => {
   const gw = readFileSync(resolve(process.cwd(), "supabase/functions/_shared/modules/job-orchestrator/gateway.ts"), "utf8");
   const gen = readFileSync(resolve(process.cwd(), "supabase/functions/ai-image-generate/index.ts"), "utf8");
+  const edit = readFileSync(resolve(process.cwd(), "supabase/functions/ai-image-edit/index.ts"), "utf8");
+  const svc = readFileSync(resolve(process.cwd(), "supabase/functions/_shared/modules/external-api-adapter/service.ts"), "utf8");
 
   it("video jobs reject unauthorized references before createJob debits credits", () => {
     const reject = gw.indexOf('"REFERENCE_NOT_AUTHORIZED"');
     expect(reject).toBeGreaterThan(0);
     expect(reject).toBeLessThan(gw.indexOf("jobService.createJob(svc"));
-    expect(gw).not.toMatch(/referenceImageUrls \?\? \[\]\)\.filter/);
   });
 
-  it("references are revalidated before every provider start (incl. redispatch)", () => {
+  it("references are re-authorized and caller-downloaded before every provider start", () => {
     const start = gw.indexOf("async function startProviderGenerationInBackground");
-    const reval = gw.indexOf("authorizeJobReferences(params.userId, params.authHeader", start);
-    expect(reval).toBeGreaterThan(start);
-    expect(reval).toBeLessThan(gw.indexOf("aiGateway.startGeneration(", start));
+    const load = gw.indexOf("loadCallerReferenceImages(params.userId, params.authHeader", start);
+    expect(load).toBeGreaterThan(start);
+    expect(load).toBeLessThan(gw.indexOf("aiGateway.startGeneration(", start));
   });
 
-  it("image generation downloads all references before calling the model", () => {
-    const preload = gen.indexOf("Promise.all(safeReferenceUrls.map((spec) => resolveRef(spec.url)))");
-    const modelCall = gen.indexOf("ai.gateway.lovable.dev");
-    expect(preload).toBeGreaterThan(0);
-    expect(modelCall).toBeGreaterThan(preload);
-    expect(gen).toContain("rlsSharedAssetLookup(getUserScopedClient(auth.authHeader))");
+  it("Veo never skips or service-role-fetches reference images", () => {
+    expect(svc).not.toContain("skipping");
+    expect(svc).toContain("instance.referenceImages = buildVeoReferenceImages(input)");
+  });
+
+  it("image endpoints revalidate before each paid call and never use the service role for references", () => {
+    for (const src of [gen, edit]) {
+      expect(src).toContain("refSession.revalidate()");
+      expect(src).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+      expect(src).not.toContain("getServiceClient");
+    }
+    const firstPaid = gen.indexOf("const resp = await fetch(");
+    expect(gen.lastIndexOf("refSession.revalidate()", firstPaid)).toBeGreaterThan(gen.indexOf("refSession.prepare()"));
   });
 });

@@ -20,6 +20,12 @@ export interface GenerationStartInput {
    * that support reference-guided generation (Veo 3.1); ignored otherwise.
    */
   referenceImageUrls?: string[] | null;
+  /**
+   * Reference images already authorized and downloaded with the CALLER's
+   * storage permissions (aligned 1:1 with referenceImageUrls). Providers that
+   * inline references must use these and never re-fetch the URLs themselves.
+   */
+  referenceImages?: Array<{ mimeType: string; data: string }> | null;
   /** Requested clip length in seconds (5, 10, or 15). Defaults to 5. */
   durationSeconds?: 5 | 10 | 15 | null;
   /** Requested output aspect ratio. Defaults to 16:9. */

@@ -20,6 +20,7 @@ import { writeAuditLog } from "../../core/audit.ts";
 import { rateLimit } from "../../core/ratelimit.ts";
 import { parseOwnedStorageRef } from "../../core/owned-storage.ts";
 import { authorizeReferences, rlsSharedAssetLookup } from "../../core/reference-auth.ts";
+import { createReferenceSession } from "../../core/reference-fetch.ts";
 import { jobService } from "./service.ts";
 import { aiGateway } from "../external-api-adapter/service.ts";
 import type { ProviderKey } from "../external-api-adapter/contract.ts";
@@ -196,6 +197,34 @@ async function authorizeJobReferences(userId: string, authHeader: string, urls: 
     lookup: rlsSharedAssetLookup(getUserScopedClient(authHeader)),
   });
   return allOk;
+}
+
+export async function loadCallerReferenceImages(
+  userId: string,
+  authHeader: string,
+  urls: readonly string[],
+): Promise<Array<{ mimeType: string; data: string }> | null> {
+  if (urls.length === 0) return null;
+  const session = createReferenceSession(
+    urls.map((url) => ({ url })),
+    {
+      userId,
+      ownStorageOrigin: SUPABASE_STORAGE_ORIGIN,
+      extraHosts: EXTRA_PUBLIC_FRAME_HOSTS,
+      lookup: rlsSharedAssetLookup(getUserScopedClient(authHeader)),
+    },
+    { ownStorageOrigin: SUPABASE_STORAGE_ORIGIN, authHeader, anonKey: getEnv("SUPABASE_ANON_KEY") },
+  );
+  try {
+    await session.prepare();
+  } catch (e) {
+    throw new Error(`Reference image access could not be validated for this user (${(e as Error).message})`);
+  }
+  return urls.map((url) => {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(session.dataUrl(url));
+    if (!m) throw new Error("Reference image access could not be validated for this user");
+    return { mimeType: m[1], data: m[2] };
+  });
 }
 
 // Estimate render progress when the provider hasn't reported one yet.
@@ -376,15 +405,19 @@ async function startProviderGenerationInBackground(
       model: params.resolvedModel,
     });
 
-    if (!(await authorizeJobReferences(params.userId, params.authHeader, params.referenceImageUrls))) {
-      throw new Error("Reference image access could not be validated for this user");
-    }
+    // Re-authorize AND download every required reference with the caller's
+    // own storage permissions immediately before the paid provider start (and
+    // every redispatch). Revocation since job creation, a missing/expired
+    // object, a network failure or a bad image all throw here -> failJob with
+    // refund below, and the provider is never called.
+    const referenceImages = await loadCallerReferenceImages(params.userId, params.authHeader, params.referenceImageUrls);
 
     const gen = await aiGateway.startGeneration(params.providerKey, params.resolvedModel, {
       prompt: params.prompt,
       firstFrameUrl: params.firstFrameUrl,
       lastFrameUrl: params.lastFrameUrl,
       referenceImageUrls: params.referenceImageUrls.length > 0 ? params.referenceImageUrls : null,
+      referenceImages,
       durationSeconds: params.durationSeconds,
       aspectRatio: params.aspectRatio,
     });
