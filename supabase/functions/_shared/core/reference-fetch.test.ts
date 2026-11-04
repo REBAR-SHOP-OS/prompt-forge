@@ -6,7 +6,12 @@ import {
   ReferenceAccessError,
   validateInlineImageDataUrl,
 } from "./reference-fetch";
-import { buildVeoReferenceImages, guardedProviderStart } from "../modules/external-api-adapter/reference-guards";
+import {
+  buildVeoReferenceImages,
+  guardedProviderStart,
+  ReferenceStartBlockedError,
+  runGuardedCreateAttempts,
+} from "../modules/external-api-adapter/reference-guards";
 
 const origin = "https://project.supabase.co";
 const caller = "11111111-1111-4111-8111-111111111111";
@@ -217,5 +222,56 @@ describe("rowRole: image_type only wins when it names a role", () => {
       expect(await authorizeReference(sharedUrl, { ...base, lookup: lookupWith("product", "character"), role }))
         .toEqual({ ok: false, reason: "role_mismatch" });
     }
+  });
+});
+
+describe("local video create fallback loops (ComfyUI and OpenAI-compatible)", () => {
+  const routes = {
+    comfy: ["http://router/prompt", "http://router/api/prompt", "http://router/v1/prompt"],
+    openai: ["http://router/v1/videos", "http://router/v1/video/generations", "http://router/videos"],
+  };
+  it.each(Object.entries(routes))("%s: re-checks access before EVERY POST and stops once revoked", async (_name, urls) => {
+    const w = world();
+    const s = w.session([sharedUrl]);
+    await s.prepare();
+    const revalidate = vi.fn(() => s.revalidate());
+    const post = vi.fn(async (url: string) => {
+      // First endpoint 404s; the share is revoked before the fallback retry.
+      if (url === urls[0]) { w.state.shared = false; return new Response("nf", { status: 404 }); }
+      return new Response("{}", { status: 200 });
+    });
+    await expect(runGuardedCreateAttempts(
+      { referenceImageUrls: [sharedUrl], revalidateReferences: revalidate },
+      urls, post, { method: "POST" },
+    )).rejects.toBeInstanceOf(ReferenceStartBlockedError);
+    expect(revalidate).toHaveBeenCalledTimes(2); // before POST #1 and before the retry
+    expect(post).toHaveBeenCalledTimes(1); // no provider call after revocation
+    expect(post.mock.calls[0][0]).toBe(urls[0]);
+  });
+
+  it.each(Object.entries(routes))("%s: authorized fallback re-checks before each attempt and returns the first non-404", async (_name, urls) => {
+    const w = world();
+    const s = w.session([sharedUrl]);
+    await s.prepare();
+    const revalidate = vi.fn(() => s.revalidate());
+    const post = vi.fn(async (url: string) => new Response("{}", { status: url === urls[2] ? 200 : 404 }));
+    const res = await runGuardedCreateAttempts(
+      { referenceImageUrls: [sharedUrl], revalidateReferences: revalidate }, urls, post, { method: "POST" },
+    );
+    expect(res?.status).toBe(200);
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(revalidate).toHaveBeenCalledTimes(3);
+  });
+
+  it("revoked before the first attempt: zero provider calls", async () => {
+    const w = world();
+    const s = w.session([sharedUrl]);
+    await s.prepare();
+    w.state.shared = false;
+    const post = vi.fn(async () => new Response("{}"));
+    await expect(runGuardedCreateAttempts(
+      { referenceImageUrls: [sharedUrl], revalidateReferences: () => s.revalidate() }, routes.comfy, post, {},
+    )).rejects.toBeInstanceOf(ReferenceStartBlockedError);
+    expect(post).not.toHaveBeenCalled();
   });
 });

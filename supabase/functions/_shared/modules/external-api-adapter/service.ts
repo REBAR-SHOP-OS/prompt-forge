@@ -15,7 +15,12 @@ import type {
 import { getEnv } from "../../core/env.ts";
 import { logError, logInfo } from "../../core/observability.ts";
 import { assertSupportedCloudModel, computeUsd } from "./model-policy.ts";
-import { buildVeoReferenceImages, guardedProviderStart as guardStart } from "./reference-guards.ts";
+import {
+  buildVeoReferenceImages,
+  guardedProviderStart as guardStart,
+  ReferenceStartBlockedError,
+  runGuardedCreateAttempts,
+} from "./reference-guards.ts";
 
 const guardedProviderStart = (
   input: Pick<GenerationStartInput, "referenceImageUrls" | "revalidateReferences">,
@@ -1674,38 +1679,23 @@ async function startLocalVideo(
     response_format: "url",
   };
 
-  async function postCreate(url: string): Promise<Response> {
-    return await localVideoFetch(url, {
-      method: "POST",
-      headers: localVideoHeaders(localConfig),
-      body: JSON.stringify(body),
-    }, localConfig.timeoutMs);
-  }
 
   // Try each configured create attempt in order. A 404 means "wrong path on a
   // reachable router" — move on to the next candidate. Any non-404 response
   // (success or a real error) is the authoritative one we act on.
   const attempted = localConfig.createAttempts.map((u) => `POST ${urlPath(u)}`);
   let res: Response | null = null;
-  // Same last-moment reference re-check as the cloud providers.
-  await guardedProviderStart(input, "", {}, async () => new Response(null));
   try {
-    for (let i = 0; i < localConfig.createAttempts.length; i++) {
-      const url = localConfig.createAttempts[i];
-      const candidate = await postCreate(url);
-      if (candidate.status === 404 && i < localConfig.createAttempts.length - 1) {
-        logInfo("local video create fallback", {
-          from: urlPath(url),
-          to: urlPath(localConfig.createAttempts[i + 1]),
-          model: resolvedModel,
-        });
-        await candidate.body?.cancel().catch(() => {});
-        continue;
-      }
-      res = candidate;
-      break;
-    }
+    // Every real POST re-checks reference access immediately before the call.
+    res = await runGuardedCreateAttempts(
+      input,
+      localConfig.createAttempts,
+      (url, init) => localVideoFetch(url, init, localConfig.timeoutMs),
+      { method: "POST", headers: localVideoHeaders(localConfig), body: JSON.stringify(body) },
+      (from, to) => logInfo("local video create fallback", { from: urlPath(from), to: urlPath(to), model: resolvedModel }),
+    );
   } catch (err) {
+    if (err instanceof ReferenceStartBlockedError) throw err;
     logError("local video create unreachable", { error: (err as Error).message, model: resolvedModel });
     if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
     throw err;
@@ -1820,26 +1810,20 @@ async function startComfyVideo(
   const attempted = config.createAttempts.map((u) => `POST ${urlPath(u)}`);
   let res: Response | null = null;
   try {
-    for (let i = 0; i < config.createAttempts.length; i++) {
-      const url = config.createAttempts[i];
-      const candidate = await localVideoFetch(url, {
+    // Every real POST re-checks reference access immediately before the call.
+    res = await runGuardedCreateAttempts(
+      input,
+      config.createAttempts,
+      (url, init) => localVideoFetch(url, init, config.timeoutMs),
+      {
         method: "POST",
         headers: localVideoHeaders(config),
         body: JSON.stringify({ prompt: workflow, client_id: "local-video-router" }),
-      }, config.timeoutMs);
-      if (candidate.status === 404 && i < config.createAttempts.length - 1) {
-        logInfo("comfy create fallback", {
-          from: urlPath(url),
-          to: urlPath(config.createAttempts[i + 1]),
-          model: resolvedModel,
-        });
-        await candidate.body?.cancel().catch(() => {});
-        continue;
-      }
-      res = candidate;
-      break;
-    }
+      },
+      (from, to) => logInfo("comfy create fallback", { from: urlPath(from), to: urlPath(to), model: resolvedModel }),
+    );
   } catch (err) {
+    if (err instanceof ReferenceStartBlockedError) throw err;
     logError("comfy create unreachable", { error: (err as Error).message, model: resolvedModel });
     if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
     throw err;

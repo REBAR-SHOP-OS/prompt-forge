@@ -37,13 +37,47 @@ export async function guardedProviderStart(
   doFetch: (url: string, init: RequestInit) => Promise<Response>,
 ): Promise<Response> {
   if ((input.referenceImageUrls?.length ?? 0) > 0) {
-    if (!input.revalidateReferences) throw new Error("Reference access check unavailable; provider start aborted");
+    if (!input.revalidateReferences) throw new ReferenceStartBlockedError("Reference access check unavailable; provider start aborted");
     try {
       await input.revalidateReferences();
     } catch (e) {
-      throw new Error(`Reference image access changed; provider start aborted (${(e as Error).message})`);
+      throw new ReferenceStartBlockedError(`Reference image access changed; provider start aborted (${(e as Error).message})`);
     }
   }
   return await doFetch(url, init);
 }
 
+
+/** Thrown when a reference re-check blocks a start; never a network error. */
+export class ReferenceStartBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReferenceStartBlockedError";
+  }
+}
+
+/**
+ * Local-router create fallback loop. EVERY real POST attempt is wrapped in
+ * guardedProviderStart, so access is re-checked immediately before each call
+ * (a revocation between a 404 fallback and the next endpoint stops the loop
+ * with no further provider call). Returns the authoritative response, or null
+ * when every endpoint 404'd.
+ */
+export async function runGuardedCreateAttempts(
+  input: Pick<GenerationStartInput, "referenceImageUrls" | "revalidateReferences">,
+  urls: readonly string[],
+  post: (url: string, init: RequestInit) => Promise<Response>,
+  init: RequestInit,
+  onFallback?: (from: string, to: string) => void,
+): Promise<Response | null> {
+  for (let i = 0; i < urls.length; i++) {
+    const candidate = await guardedProviderStart(input, urls[i], init, post);
+    if (candidate.status === 404 && i < urls.length - 1) {
+      onFallback?.(urls[i], urls[i + 1]);
+      await candidate.body?.cancel().catch(() => {});
+      continue;
+    }
+    return candidate;
+  }
+  return null;
+}

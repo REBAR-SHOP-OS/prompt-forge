@@ -140,7 +140,10 @@ describe("paid-render guards (source wiring)", () => {
     expect(gw).toContain("await session.revalidate();");
     // Only the Veo extension call (no references) may hit providerStartFetch directly.
     expect(svc.match(/await providerStartFetch\(/g)?.length).toBe(1);
-    expect(svc.match(/await guardedProviderStart\(input/g)?.length).toBe(4);
+    expect(svc.match(/await guardedProviderStart\(input/g)?.length).toBe(3);
+    // Both local fallback loops (ComfyUI + OpenAI-compatible) guard each real POST.
+    expect(svc.match(/await runGuardedCreateAttempts\(/g)?.length).toBe(2);
+    expect(svc).not.toMatch(/new Response\(null\)\)/);
   });
 
   it("Veo never skips or service-role-fetches reference images", () => {
