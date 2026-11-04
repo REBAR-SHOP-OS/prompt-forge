@@ -135,6 +135,14 @@ describe("paid-render guards (source wiring)", () => {
     expect(load).toBeLessThan(gw.indexOf("aiGateway.startGeneration(", start));
   });
 
+  it("orchestrator hands the adapter a revalidation hook; every reference-bearing start goes through the guard", () => {
+    expect(gw).toContain("revalidateReferences: callerRefs?.revalidate ?? null");
+    expect(gw).toContain("await session.revalidate();");
+    // Only the Veo extension call (no references) may hit providerStartFetch directly.
+    expect(svc.match(/await providerStartFetch\(/g)?.length).toBe(1);
+    expect(svc.match(/await guardedProviderStart\(input/g)?.length).toBe(4);
+  });
+
   it("Veo never skips or service-role-fetches reference images", () => {
     expect(svc).not.toContain("skipping");
     expect(svc).toContain("instance.referenceImages = buildVeoReferenceImages(input)");

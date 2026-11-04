@@ -203,7 +203,7 @@ export async function loadCallerReferenceImages(
   userId: string,
   authHeader: string,
   urls: readonly string[],
-): Promise<Array<{ mimeType: string; data: string }> | null> {
+): Promise<{ images: Array<{ mimeType: string; data: string }>; revalidate: () => Promise<void> } | null> {
   if (urls.length === 0) return null;
   const session = createReferenceSession(
     urls.map((url) => ({ url })),
@@ -217,14 +217,18 @@ export async function loadCallerReferenceImages(
   );
   try {
     await session.prepare();
+    // A share revoked while a LATER reference was downloading must not leave
+    // earlier bytes usable: re-check every reference once all are downloaded.
+    await session.revalidate();
   } catch (e) {
     throw new Error(`Reference image access could not be validated for this user (${(e as Error).message})`);
   }
-  return urls.map((url) => {
+  const images = urls.map((url) => {
     const m = /^data:([^;]+);base64,(.*)$/.exec(session.dataUrl(url));
     if (!m) throw new Error("Reference image access could not be validated for this user");
     return { mimeType: m[1], data: m[2] };
   });
+  return { images, revalidate: () => session.revalidate() };
 }
 
 // Estimate render progress when the provider hasn't reported one yet.
@@ -410,14 +414,16 @@ async function startProviderGenerationInBackground(
     // every redispatch). Revocation since job creation, a missing/expired
     // object, a network failure or a bad image all throw here -> failJob with
     // refund below, and the provider is never called.
-    const referenceImages = await loadCallerReferenceImages(params.userId, params.authHeader, params.referenceImageUrls);
+    const callerRefs = await loadCallerReferenceImages(params.userId, params.authHeader, params.referenceImageUrls);
 
     const gen = await aiGateway.startGeneration(params.providerKey, params.resolvedModel, {
       prompt: params.prompt,
       firstFrameUrl: params.firstFrameUrl,
       lastFrameUrl: params.lastFrameUrl,
       referenceImageUrls: params.referenceImageUrls.length > 0 ? params.referenceImageUrls : null,
-      referenceImages,
+      referenceImages: callerRefs?.images ?? null,
+      // Adapter calls this right before each paid start request.
+      revalidateReferences: callerRefs?.revalidate ?? null,
       durationSeconds: params.durationSeconds,
       aspectRatio: params.aspectRatio,
     });

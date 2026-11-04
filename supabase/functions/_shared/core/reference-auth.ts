@@ -111,11 +111,24 @@ export type ReferenceDecision =
   | { ok: true; kind: "owned" | "shared" | "external"; ref: StorageObjectRef | null; assetId: string | null; url: string }
   | { ok: false; reason: "invalid" | "not_authorized" | "mismatch" | "role_mismatch" };
 
-function rowRole(row: SharedAssetRow): ReferenceRole | null {
-  const tag = (row.imageType ?? row.category ?? "").toLowerCase();
-  if (tag === "character") return "character";
-  if (tag === "product") return "product";
-  return null; // general / reframe / legacy rows carry no role claim
+/** Maps one metadata value to a role only when it unambiguously names one. */
+function roleOf(value: string | null): ReferenceRole | null {
+  const v = (value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (v === "character" || v === "charactersheet") return "character";
+  if (v === "product") return "product";
+  return null; // photo / general / reframe / legacy values carry no role claim
+}
+
+/**
+ * Role claimed by a row: image_type when it unambiguously names a role, else
+ * category. If both name DIFFERENT roles the metadata conflicts -> "conflict",
+ * which never satisfies a requested role (fail closed).
+ */
+export function rowRole(row: Pick<SharedAssetRow, "category" | "imageType">): ReferenceRole | "conflict" | null {
+  const fromType = roleOf(row.imageType);
+  const fromCategory = roleOf(row.category);
+  if (fromType && fromCategory && fromType !== fromCategory) return "conflict";
+  return fromType ?? fromCategory;
 }
 
 const REFERENCE_BUCKETS = ["user-images"] as const;

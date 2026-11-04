@@ -26,6 +26,12 @@ export interface GenerationStartInput {
    * inline references must use these and never re-fetch the URLs themselves.
    */
   referenceImages?: Array<{ mimeType: string; data: string }> | null;
+  /**
+   * Re-checks caller access to every reference. Called by the adapter
+   * immediately before each paid provider start request (after all frame and
+   * reference downloads); throwing aborts the start with no provider call.
+   */
+  revalidateReferences?: (() => Promise<void>) | null;
   /** Requested clip length in seconds (5, 10, or 15). Defaults to 5. */
   durationSeconds?: 5 | 10 | 15 | null;
   /** Requested output aspect ratio. Defaults to 16:9. */

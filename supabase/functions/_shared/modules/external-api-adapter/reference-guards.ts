@@ -23,3 +23,27 @@ export function buildVeoReferenceImages(
   });
 }
 
+
+/**
+ * Paid start request guard: revalidates every reference for the caller AFTER
+ * all frame/reference downloads and immediately before the provider call, so
+ * a share revoked mid-preparation never reaches a paid request. Required when
+ * references are present (fail closed if the orchestrator omitted it).
+ */
+export async function guardedProviderStart(
+  input: Pick<GenerationStartInput, "referenceImageUrls" | "revalidateReferences">,
+  url: string,
+  init: RequestInit,
+  doFetch: (url: string, init: RequestInit) => Promise<Response>,
+): Promise<Response> {
+  if ((input.referenceImageUrls?.length ?? 0) > 0) {
+    if (!input.revalidateReferences) throw new Error("Reference access check unavailable; provider start aborted");
+    try {
+      await input.revalidateReferences();
+    } catch (e) {
+      throw new Error(`Reference image access changed; provider start aborted (${(e as Error).message})`);
+    }
+  }
+  return await doFetch(url, init);
+}
+

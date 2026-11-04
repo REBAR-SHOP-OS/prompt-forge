@@ -15,7 +15,14 @@ import type {
 import { getEnv } from "../../core/env.ts";
 import { logError, logInfo } from "../../core/observability.ts";
 import { assertSupportedCloudModel, computeUsd } from "./model-policy.ts";
-import { buildVeoReferenceImages } from "./veo-references.ts";
+import { buildVeoReferenceImages, guardedProviderStart as guardStart } from "./reference-guards.ts";
+
+const guardedProviderStart = (
+  input: Pick<GenerationStartInput, "referenceImageUrls" | "revalidateReferences">,
+  url: string,
+  init: RequestInit,
+  doFetch: (url: string, init: RequestInit) => Promise<Response> = providerStartFetch,
+) => guardStart(input, url, init, doFetch);
 
 /** Map the public model alias to a concrete provider model. The cheaper
  *  Veo 3.1 Fast tier is preferred by default; we fall back to Veo 3.1
@@ -774,7 +781,7 @@ async function startWanI2V(
     },
   };
 
-  const res = await providerStartFetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+  const res = await guardedProviderStart(input, `${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -830,7 +837,7 @@ async function startWanT2V(
     },
   };
 
-  const res = await providerStartFetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+  const res = await guardedProviderStart(input, `${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -1259,7 +1266,7 @@ async function startVeo(
     },
   };
 
-  const res = await providerStartFetch(
+  const res = await guardedProviderStart(input, 
     `${GEMINI_BASE}/models/${encodeURIComponent(veoModel)}:predictLongRunning?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
@@ -1680,6 +1687,8 @@ async function startLocalVideo(
   // (success or a real error) is the authoritative one we act on.
   const attempted = localConfig.createAttempts.map((u) => `POST ${urlPath(u)}`);
   let res: Response | null = null;
+  // Same last-moment reference re-check as the cloud providers.
+  await guardedProviderStart(input, "", {}, async () => new Response(null));
   try {
     for (let i = 0; i < localConfig.createAttempts.length; i++) {
       const url = localConfig.createAttempts[i];

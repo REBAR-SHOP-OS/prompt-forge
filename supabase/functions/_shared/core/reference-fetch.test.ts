@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SharedAssetLookup } from "./reference-auth";
+import { authorizeReference, rowRole, type SharedAssetLookup } from "./reference-auth";
 import {
   createByteBudget,
   createReferenceSession,
   ReferenceAccessError,
   validateInlineImageDataUrl,
 } from "./reference-fetch";
-import { buildVeoReferenceImages } from "../modules/external-api-adapter/veo-references";
+import { buildVeoReferenceImages, guardedProviderStart } from "../modules/external-api-adapter/reference-guards";
 
 const origin = "https://project.supabase.co";
 const caller = "11111111-1111-4111-8111-111111111111";
@@ -148,5 +148,74 @@ describe("Veo required references", () => {
     expect(buildVeoReferenceImages({ referenceImageUrls: ["a"], referenceImages: [{ mimeType: "image/png", data: "x" }] }))
       .toEqual([{ image: { bytesBase64Encoded: "x", mimeType: "image/png" }, referenceType: "asset" }]);
     expect(buildVeoReferenceImages({ referenceImageUrls: [] })).toBeUndefined();
+  });
+});
+
+describe("video: revalidate after all downloads and right before the paid start", () => {
+  it("a share revoked while a later reference downloads fails the post-download revalidation", async () => {
+    const w = world();
+    // Revoke the share while the SECOND download is in flight.
+    w.fetchImpl.mockImplementationOnce(async () => imageResponse(PNG))
+      .mockImplementationOnce(async () => { w.state.shared = false; return imageResponse(PNG); });
+    const s = w.session([sharedUrl, ownUrl]);
+    await s.prepare(); // both downloads succeed...
+    await expect(s.revalidate()).rejects.toMatchObject({ code: "not_authorized" }); // ...but the bytes are not usable
+  });
+
+  it("guardedProviderStart revalidates before EVERY start call (incl. retries) and never calls the provider after revocation", async () => {
+    const w = world();
+    const s = w.session([sharedUrl]);
+    await s.prepare();
+    const provider = vi.fn(async () => new Response("{}"));
+    const input = { referenceImageUrls: [sharedUrl], revalidateReferences: () => s.revalidate() };
+    await guardedProviderStart(input, "https://provider/start", {}, provider);
+    expect(provider).toHaveBeenCalledTimes(1);
+    w.state.shared = false; // revoked before the retry
+    await expect(guardedProviderStart(input, "https://provider/start", {}, provider)).rejects.toThrow(/provider start aborted/);
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when references exist but no revalidation hook was supplied; no-op without references", async () => {
+    const provider = vi.fn(async () => new Response("{}"));
+    await expect(guardedProviderStart({ referenceImageUrls: ["x"] }, "u", {}, provider)).rejects.toThrow(/aborted/);
+    await guardedProviderStart({ referenceImageUrls: [] }, "u", {}, provider);
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("rowRole: image_type only wins when it names a role", () => {
+  it.each([
+    [{ category: "product", imageType: "photo" }, "product"],
+    [{ category: "character", imageType: "photo" }, "character"],
+    [{ category: "product", imageType: null }, "product"],
+    [{ category: "general", imageType: "character" }, "character"],
+    [{ category: null, imageType: "character_sheet" }, "character"],
+    [{ category: "character", imageType: "Character Sheet" }, "character"],
+    [{ category: "general", imageType: "character-sheet" }, "character"],
+    [{ category: "general", imageType: "photo" }, null],
+    [{ category: "product", imageType: "character" }, "conflict"],
+    [{ category: "character", imageType: "product" }, "conflict"],
+  ] as const)("%o -> %s", (row, expected) => {
+    expect(rowRole(row)).toBe(expected);
+  });
+
+  const lookupWith = (category: string | null, imageType: string | null): SharedAssetLookup => async () =>
+    ({ id: "a1", ownerId: sharer, category, imageType });
+  const base = { userId: caller, ownStorageOrigin: origin, extraHosts: [] as string[] };
+
+  it("{category: product, imageType: photo} is rejected as a character and accepted as a product", async () => {
+    expect(await authorizeReference(sharedUrl, { ...base, lookup: lookupWith("product", "photo"), role: "character" }))
+      .toEqual({ ok: false, reason: "role_mismatch" });
+    expect(await authorizeReference(sharedUrl, { ...base, lookup: lookupWith("product", "photo"), role: "product" }))
+      .toMatchObject({ ok: true });
+  });
+
+  it("character-sheet rows pass as character; conflicting metadata fails for either role", async () => {
+    expect(await authorizeReference(sharedUrl, { ...base, lookup: lookupWith("general", "character_sheet"), role: "character" }))
+      .toMatchObject({ ok: true });
+    for (const role of ["product", "character"] as const) {
+      expect(await authorizeReference(sharedUrl, { ...base, lookup: lookupWith("product", "character"), role }))
+        .toEqual({ ok: false, reason: "role_mismatch" });
+    }
   });
 });
