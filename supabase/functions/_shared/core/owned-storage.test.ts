@@ -36,7 +36,7 @@ describe("parseOwnedStorageRef", () => {
       resolve(process.cwd(), "supabase/functions/_shared/modules/job-orchestrator/gateway.ts"),
       "utf8",
     );
-    expect(aiImageEdit).toContain("parseOwnedStorageRef(url, supabaseOrigin, userId");
+    expect(aiImageEdit).toContain("const decision = await authorizeReference(url, {");
     expect(uploadJob).toContain("const ownedUpload = parseOwnedStorageRef(");
     expect(uploadJob).toContain("storagePath: ownedUpload.canonical");
     expect(orchestrator).toContain("parseOwnedStorageRef(raw, SUPABASE_STORAGE_ORIGIN, auth.userId");

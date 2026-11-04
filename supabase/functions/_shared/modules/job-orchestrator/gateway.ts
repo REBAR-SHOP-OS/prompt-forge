@@ -19,6 +19,7 @@ import { logError, logInfo, writeApiRequestLog } from "../../core/observability.
 import { writeAuditLog } from "../../core/audit.ts";
 import { rateLimit } from "../../core/ratelimit.ts";
 import { parseOwnedStorageRef } from "../../core/owned-storage.ts";
+import { authorizeReferences, rlsSharedAssetLookup } from "../../core/reference-auth.ts";
 import { jobService } from "./service.ts";
 import { aiGateway } from "../external-api-adapter/service.ts";
 import type { ProviderKey } from "../external-api-adapter/contract.ts";
@@ -182,21 +183,19 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
 // storage origin under the caller's own user folder, or an explicitly allowlisted
 // public host. Prevents SSRF to arbitrary URLs while accepting signed/public
 // object URLs for the user's character assets.
-function isAllowedReferenceUrl(url: string, userId: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "https:") return false;
-  if (parsed.origin === SUPABASE_STORAGE_ORIGIN) {
-    // Accept any of the caller's own object URLs (public or signed) that are
-    // scoped to their user folder.
-    return parsed.pathname.startsWith("/storage/v1/object/") &&
-      parsed.pathname.includes(`/${userId}/`);
-  }
-  return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
+// Authorizes every reference for the caller (own folder, exact RLS-visible
+// generator_user_images row incl. library shares, or allowlisted host).
+// Used at job creation AND again right before every provider start/retry so a
+// revoked share can never reach a paid render.
+async function authorizeJobReferences(userId: string, authHeader: string, urls: readonly string[]): Promise<boolean> {
+  if (urls.length === 0) return true;
+  const { allOk } = await authorizeReferences(urls, {
+    userId,
+    ownStorageOrigin: SUPABASE_STORAGE_ORIGIN,
+    extraHosts: EXTRA_PUBLIC_FRAME_HOSTS,
+    lookup: rlsSharedAssetLookup(getUserScopedClient(authHeader)),
+  });
+  return allOk;
 }
 
 // Estimate render progress when the provider hasn't reported one yet.
@@ -315,6 +314,8 @@ type EdgeRuntimeGlobal = typeof globalThis & {
 
 interface BackgroundStartParams {
   userId: string;
+  /** Caller's bearer header, used to revalidate references under RLS. */
+  authHeader: string;
   jobId: string;
   requestId: string;
   providerKey: ProviderKey;
@@ -374,6 +375,10 @@ async function startProviderGenerationInBackground(
       provider: params.providerKey,
       model: params.resolvedModel,
     });
+
+    if (!(await authorizeJobReferences(params.userId, params.authHeader, params.referenceImageUrls))) {
+      throw new Error("Reference image access could not be validated for this user");
+    }
 
     const gen = await aiGateway.startGeneration(params.providerKey, params.resolvedModel, {
       prompt: params.prompt,
@@ -696,6 +701,7 @@ export const jobOrchestratorGateway = {
                 );
                 providerStartRedispatched = await dispatchProviderStartIfClaimed(svc, {
                   userId: auth.userId,
+                  authHeader: auth.authHeader,
                   jobId: detail.id,
                   requestId: ctx.requestId,
                   providerKey: redispatchRoute.providerKey,
@@ -850,9 +856,14 @@ export const jobOrchestratorGateway = {
           // Persistent character/reference image(s). Filtered to the caller's own
           // assets; any URL that fails the safety check is dropped (non-fatal) so
           // generation still proceeds with the frame-based continuation.
-          const referenceImageUrls = (parsed.data.referenceImageUrls ?? []).filter((u) =>
-            isAllowedReferenceUrl(u, auth.userId)
-          );
+          // Required references are never silently dropped: any reference the
+          // caller cannot access fails the request BEFORE a job is created or
+          // credits are debited.
+          const referenceImageUrls = parsed.data.referenceImageUrls ?? [];
+          if (!(await authorizeJobReferences(auth.userId, auth.authHeader, referenceImageUrls))) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "REFERENCE_NOT_AUTHORIZED" });
+            return errorResponse("REFERENCE_NOT_AUTHORIZED", "One or more reference images could not be validated. Re-select the product/character and try again.", 400, ctx.requestId);
+          }
 
           // Image-to-video accepts one or both frames; text-to-video provides
           // neither. No additional cross-frame validation needed here.
@@ -950,6 +961,7 @@ export const jobOrchestratorGateway = {
           }
           const providerStartParams = {
             userId: auth.userId,
+            authHeader: auth.authHeader,
             jobId,
             requestId: ctx.requestId,
             providerKey: route.providerKey,

@@ -2,6 +2,13 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+import { getUserScopedClient } from "../_shared/core/supabase.ts";
+import {
+  authorizeReferences,
+  parseStorageObjectRef,
+  readExtraHosts,
+  rlsSharedAssetLookup,
+} from "../_shared/core/reference-auth.ts";
 import {
   validateReferenceSpecs,
   buildIdentityEvalPrompt,
@@ -20,66 +27,39 @@ import { bytesToBase64, createReferenceResolver } from "./references.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 
-// Reference (product / character) images come from the user's own image buckets
-// (e.g. user-images / generator assets). Accept HTTPS URLs that are either hosted
-// on our own Supabase storage origin under the caller's own user folder, or an
-// explicitly allowlisted public host. This mirrors the job-orchestrator gateway's
-// isAllowedReferenceUrl and prevents SSRF to arbitrary URLs.
-function isAllowedReferenceUrl(url: string, userId: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "https:") return false;
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  let storageOrigin = "";
-  try {
-    storageOrigin = new URL(supabaseUrl).origin;
-  } catch {
-    storageOrigin = "";
-  }
-  if (storageOrigin && parsed.origin === storageOrigin) {
-    return parsed.pathname.startsWith("/storage/v1/object/") &&
-      parsed.pathname.includes(`/${userId}/`);
-  }
-  const extraHosts = (Deno.env.get("ALLOWED_PUBLIC_FRAME_HOSTS") ?? "")
-    .split(",")
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean);
-  return extraHosts.includes(parsed.hostname.toLowerCase());
-}
+// Reference (product / character) images are authorized per caller by the
+// shared reference-auth helper: own-folder objects, objects whose exact
+// generator_user_images row is visible to the caller through RLS (owned or
+// shared via library_shares), or allowlisted public hosts. Anything else is a
+// hard error (SSRF guard + no silent identity drop).
+const STORAGE_ORIGIN = (() => {
+  try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").origin; } catch { return ""; }
+})();
+const MAX_REFERENCE_BYTES = 15 * 1024 * 1024;
+const REFERENCE_FETCH_TIMEOUT_MS = 20_000;
 
-// The AI gateway fetches image URLs itself, but our storage buckets are private,
-// so a public object URL returns 400. Download the object server-side with the
-// service role and inline it as a base64 data URL (same approach as scenario-write).
+// The AI gateway fetches image URLs itself, but our storage buckets are private.
+// Download the already-authorized object server-side (bounded: timeout, size
+// cap, image MIME only) and inline it as a base64 data URL.
 async function resolveImageForGateway(url: string): Promise<string> {
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const marker = "/storage/v1/object/";
-    const idx = url.indexOf(marker);
-    if (!idx || idx < 0 || !supabaseUrl || !serviceKey) return url;
-
-    let objectPath = url.slice(idx + marker.length);
-    if (objectPath.startsWith("public/")) objectPath = objectPath.slice("public/".length);
-    const authUrl = `${supabaseUrl}/storage/v1/object/${objectPath}`;
-
-    const res = await fetch(authUrl, {
-      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
-    });
-    if (!res.ok) {
-      console.error("resolveImageForGateway fetch failed", res.status, authUrl);
-      return url;
-    }
-    const contentType = res.headers.get("content-type") || "image/png";
-    const b64 = bytesToBase64(new Uint8Array(await res.arrayBuffer()));
-    return `data:${contentType};base64,${b64}`;
-  } catch (e) {
-    console.error("resolveImageForGateway error", e);
-    return url;
-  }
+  const ref = parseStorageObjectRef(url, STORAGE_ORIGIN, ["user-images", "wan-frames"]);
+  if (!ref) return url; // allowlisted external host — gateway fetches it.
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl || !serviceKey) throw new Error("reference download unavailable");
+  const objectUrl = `${supabaseUrl}/storage/v1/object/${ref.bucket}/${ref.path.split("/").map(encodeURIComponent).join("/")}`;
+  const res = await fetch(objectUrl, {
+    headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+    signal: AbortSignal.timeout(REFERENCE_FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`reference download failed (${res.status})`);
+  const declared = Number(res.headers.get("content-length") ?? "0");
+  if (declared > MAX_REFERENCE_BYTES) throw new Error("reference image too large");
+  const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!/^image\/(png|jpe?g|webp)$/.test(mime)) throw new Error("reference is not a supported image");
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.byteLength > MAX_REFERENCE_BYTES) throw new Error("reference image too large");
+  return `data:${mime};base64,${bytesToBase64(bytes)}`;
 }
 
 function ratioGuidance(ratio: string): string {
@@ -147,9 +127,14 @@ Deno.serve(async (req) => {
     // cap is identity-eval's own MAX_REFERENCE_IMAGES — a local, smaller cap
     // here would silently truncate a multi-angle product folder that
     // validateReferenceSpecs would otherwise accept.
-    const safeReferenceUrls = refSpecs
-      .slice(0, MAX_REFERENCE_IMAGES)
-      .filter((s) => s.url.length <= 2048 && isAllowedReferenceUrl(s.url, auth.userId));
+    const cappedSpecs = refSpecs.slice(0, MAX_REFERENCE_IMAGES);
+    const { decisions } = await authorizeReferences(cappedSpecs.map((s) => s.url), {
+      userId: auth.userId,
+      ownStorageOrigin: STORAGE_ORIGIN,
+      extraHosts: readExtraHosts(Deno.env.get("ALLOWED_PUBLIC_FRAME_HOSTS")),
+      lookup: rlsSharedAssetLookup(getUserScopedClient(auth.authHeader)),
+    });
+    const safeReferenceUrls = cappedSpecs.filter((_, i) => decisions[i].ok);
     // A reference that was supplied but failed security validation is a hard
     // error, not a silent drop — otherwise the model would render without the
     // identity the user explicitly chose.
@@ -210,6 +195,16 @@ Deno.serve(async (req) => {
     // Request-scoped cache: every reference is downloaded/encoded once and
     // reused by all generation and evaluation attempts.
     const resolveRef = createReferenceResolver(resolveImageForGateway);
+    // Download every authorized reference BEFORE any paid model call; a failed
+    // or oversized download stops the request instead of rendering without it.
+    try {
+      await Promise.all(safeReferenceUrls.map((spec) => resolveRef(spec.url)));
+    } catch (e) {
+      console.error("reference download failed", (e as Error).message);
+      return new Response(JSON.stringify({
+        error: "One or more reference images could not be loaded. Re-select the product/character and try again.",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     const userContent: unknown[] = [{ type: "text", text: fullPrompt }];
     for (const spec of safeReferenceUrls) {
       const characterNote = spec.role === "character"

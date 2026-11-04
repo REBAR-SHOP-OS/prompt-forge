@@ -61,3 +61,4 @@ If identity is wrong, unknown, or unavailable, stop before writing.
   `AGENT-DEPLOYMENT-HANDOFF.md` packet and stop at Sattar's production gate.
 
 - Cross-user library access goes only through `public.library_shares` + `can_view_owner()` / `visible_owner_ids()`; shared viewers get SELECT-only policies and the client refuses edit/delete of non-owned items. Why: keeps sharing revocable by one row and never grants write access to another user's data.
+- Edge functions authorize reference images only via `_shared/core/reference-auth.ts` (own folder, or exact `generator_user_images` row visible through a caller-scoped RLS query), and revalidate before every paid provider start. Why: shared-library refs work without widening service-role access, and revoked shares can never be rendered.

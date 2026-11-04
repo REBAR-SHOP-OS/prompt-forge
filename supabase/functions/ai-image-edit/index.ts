@@ -1,9 +1,9 @@
 // Edits an image (data URL or https URL) using Lovable AI Gateway (Nano Banana).
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
-import { getServiceClient } from "../_shared/core/supabase.ts";
+import { getServiceClient, getUserScopedClient } from "../_shared/core/supabase.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
-import { parseOwnedStorageRef } from "../_shared/core/owned-storage.ts";
+import { authorizeReference, rlsSharedAssetLookup } from "../_shared/core/reference-auth.ts";
 import {
   buildIdentityEvalPrompt,
   buildEvaluationRetryFeedback,
@@ -29,14 +29,25 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-async function toInlineDataUrl(url: string, userId: string): Promise<string> {
+const MAX_REFERENCE_BYTES = 15 * 1024 * 1024;
+
+async function toInlineDataUrl(url: string, userId: string, authHeader: string): Promise<string> {
   if (url.startsWith("data:image/")) return url;
   const supabaseOrigin = new URL(Deno.env.get("SUPABASE_URL") ?? "").origin;
-  const owned = parseOwnedStorageRef(url, supabaseOrigin, userId, ["user-images", "wan-frames"]);
-  if (!owned) throw new Error("image reference is not owned by the caller");
+  // Owned objects, or exact generator_user_images rows visible to the caller
+  // through RLS (shared library). External hosts are not accepted here.
+  const decision = await authorizeReference(url, {
+    userId,
+    ownStorageOrigin: supabaseOrigin,
+    extraHosts: [],
+    lookup: rlsSharedAssetLookup(getUserScopedClient(authHeader)),
+  });
+  if (!decision.ok || !decision.ref) throw new Error("image reference is not authorized for the caller");
+  const ref = decision.ref;
 
-  const { data, error } = await getServiceClient().storage.from(owned.bucket).download(owned.path);
+  const { data, error } = await getServiceClient().storage.from(ref.bucket).download(ref.path);
   if (error || !data) throw new Error("image reference could not be downloaded");
+  if (data.size > MAX_REFERENCE_BYTES) throw new Error("image reference too large");
   const bytes = new Uint8Array(await data.arrayBuffer());
   let mime = data.type?.split(";")[0]?.trim() || "image/png";
   if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) mime = "image/png";
@@ -55,6 +66,7 @@ Deno.serve(async (req) => {
       });
     }
     const userId = auth.userId;
+    const authHeader = auth.authHeader;
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
@@ -112,24 +124,25 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    // Data URLs are caller-provided bytes. Stored references must resolve to an
-    // allowed bucket under this caller's exact top-level folder; domain-only
-    // allowlisting is insufficient because service-role downloads bypass RLS.
+    // Data URLs are caller-provided bytes. Stored references must be the
+    // caller's own object or an exact generator_user_images row the caller can
+    // read through RLS (shared library) — service-role downloads bypass RLS, so
+    // authorization is decided before any download.
     const supabaseOrigin = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").origin; } catch { return ""; }
     })();
-    const isUrlAllowed = (url: string): boolean => {
+    const refLookup = rlsSharedAssetLookup(getUserScopedClient(authHeader));
+    const isUrlAllowed = async (url: string): Promise<boolean> => {
       if (url.startsWith("data:image/")) return true;
-      return Boolean(supabaseOrigin && parseOwnedStorageRef(
-        url,
-        supabaseOrigin,
-        userId,
-        ["user-images", "wan-frames"],
-      ));
+      if (!supabaseOrigin) return false;
+      const decision = await authorizeReference(url, {
+        userId, ownStorageOrigin: supabaseOrigin, extraHosts: [], lookup: refLookup,
+      });
+      return decision.ok && decision.kind !== "external";
     };
     for (const url of imageUrls) {
-      if (!isUrlAllowed(url)) {
-        return new Response(JSON.stringify({ error: "each image must be a data URL or supabase https URL" }), {
+      if (!(await isUrlAllowed(url))) {
+        return new Response(JSON.stringify({ error: "One or more reference images could not be validated. Re-select the product/character and try again." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -170,7 +183,7 @@ Deno.serve(async (req) => {
     const generationSpecs = identitySpecs.length > 0
       ? identitySpecs
       : imageUrls.map((url) => ({ url, role: "product" as const, characterSheet: false }));
-    const inlinedUrls = await Promise.all(generationSpecs.map((s) => toInlineDataUrl(s.url, userId)));
+    const inlinedUrls = await Promise.all(generationSpecs.map((s) => toInlineDataUrl(s.url, userId, authHeader)));
 
     const messageContent = maskUrl
       ? [
@@ -247,7 +260,7 @@ Deno.serve(async (req) => {
       for (let i = 0; i < evaluatedSpecs.length; i++) {
         const spec = evaluatedSpecs[i];
         baseEvalContent.push({ type: "text", text: `REF_${i + 1} (${spec.role.toUpperCase()}):` });
-        baseEvalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url, userId) } });
+        baseEvalContent.push({ type: "image_url", image_url: { url: await toInlineDataUrl(spec.url, userId, authHeader) } });
       }
 
       for (let attempt = 1; attempt <= MAX_EVALUATOR_ATTEMPTS; attempt++) {
