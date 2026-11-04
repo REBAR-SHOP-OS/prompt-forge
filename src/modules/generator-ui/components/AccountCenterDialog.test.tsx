@@ -78,6 +78,8 @@ function chain(final: unknown) {
   return b
 }
 
+vi.mock('./AdminSetPasswordSection', () => ({ AdminSetPasswordSection: () => null }))
+
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {

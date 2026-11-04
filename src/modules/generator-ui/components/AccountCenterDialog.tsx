@@ -26,6 +26,7 @@ import {
 } from '@/modules/generator-ui/hooks/useUsageStats'
 import { useProfileEdit } from '@/modules/generator-ui/hooks/useProfileEdit'
 import { initialsFor, initialsForName } from '@/modules/generator-ui/lib/initials'
+import { AdminSetPasswordSection } from './AdminSetPasswordSection'
 
 interface AccountCenterDialogProps {
   open: boolean
@@ -74,6 +75,8 @@ export function AccountCenterDialog({ open, onOpenChange }: AccountCenterDialogP
         </DialogHeader>
 
         <div className="max-h-[calc(90vh-4rem)] space-y-5 overflow-y-auto px-5 py-5 text-sm">
+          <AdminSetPasswordSection />
+
           {/* Profile — editable */}
           <section className="space-y-4">
             {/* Avatar */}
