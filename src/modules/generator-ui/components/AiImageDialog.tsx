@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
 import { normalizeImageAspect } from '@/modules/generator-ui/lib/normalizeImageAspect'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
+import { chooseDriveImages, getDrivePickerConfig, prepareDrivePicker } from '@/modules/generator-ui/lib/googleDriveReference'
 
 import themeMinimalist from '@/assets/theme-previews/minimalist.jpg'
 import themeDarkMoody from '@/assets/theme-previews/dark-moody.jpg'
@@ -279,6 +280,12 @@ export default function AiImageDialog({
   const [refineReferenceImages, setRefineReferenceImages] = useState<AiReferenceImage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isReadingReference, setIsReadingReference] = useState(false)
+  const [driveReady, setDriveReady] = useState(false)
+  const [isChoosingDrive, setIsChoosingDrive] = useState(false)
+  const [driveStatus, setDriveStatus] = useState<string | null>(null)
+  const driveOperation = useRef<AbortController | null>(null)
+  const driveConfig = getDrivePickerConfig()
   const [error, setError] = useState<string | null>(null)
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
@@ -320,6 +327,18 @@ export default function AiImageDialog({
   const referenceInputRef = useRef<HTMLInputElement | null>(null)
   const refineReferenceInputRef = useRef<HTMLInputElement | null>(null)
   const isDrawingRef = useRef(false)
+  const referenceReadSession = useRef<{ active: boolean; pending: boolean } | null>(null)
+
+  // File reads belong to this dialog/account/editor session. A late read must
+  // never populate a reopened dialog or release a newer session's busy state.
+  useEffect(() => {
+    const session = { active: open, pending: false }
+    referenceReadSession.current = session
+    setIsReadingReference(false)
+    setIsChoosingDrive(false)
+    setDriveStatus(null)
+    return () => { session.active = false; driveOperation.current?.abort() }
+  }, [open, userId, defaultAspect, initialImageUrl, imageDataUrl])
   const productSignature = products.map((product) => `${product.id}:${product.url}`).join('|')
 
   useEffect(() => {
@@ -349,7 +368,7 @@ export default function AiImageDialog({
         refineReferenceInputRef.current.value = ''
       }
     }
-  }, [open, defaultAspect, initialImageUrl])
+  }, [open, userId, defaultAspect, initialImageUrl])
 
   useEffect(() => {
     setBrokenProductIds(new Set())
@@ -415,41 +434,112 @@ export default function AiImageDialog({
     }
   }
 
-  async function handleReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? [])
-    if (files.length === 0) return
+  async function handleReferenceFiles(event: React.ChangeEvent<HTMLInputElement>, refine = false) {
+    const files = Array.from(event.currentTarget.files ?? [])
+    // Reset synchronously, including failure/cancel paths, so the same file can
+    // be selected again. Do not retain a DOM event across the asynchronous read.
+    event.currentTarget.value = ''
+    const session = referenceReadSession.current
+    if (files.length === 0 || !session?.active || session.pending || isLoading || isSaving ||
+      productLoadingId || isGrabbingFrame || (refine && isMaskMode)) return
 
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'))
     if (imageFiles.length === 0) {
       setError('Please choose image files.')
-      event.target.value = ''
+      return
+    }
+    const current = refine ? refineReferenceImages : referenceImages
+    const remaining = MAX_REFERENCE_IMAGES - current.length
+    if (remaining <= 0) {
+      setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
       return
     }
 
+    session.pending = true
+    setIsReadingReference(true)
     setError(null)
     try {
-      const remaining = MAX_REFERENCE_IMAGES - referenceImages.length
-      if (remaining <= 0) {
-        setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
-        event.target.value = ''
-        return
-      }
-      const toAdd = imageFiles.slice(0, remaining)
-      const added = await Promise.all(
-        toAdd.map(async (file) => ({ name: file.name, dataUrl: await fileToDataUrl(file) })),
-      )
-      setReferenceImages((prev) => [...prev, ...added])
+      const added = await Promise.all(imageFiles.slice(0, remaining).map(async (file) => ({
+        name: file.name, dataUrl: await fileToDataUrl(file),
+      })))
+      if (!session.active || referenceReadSession.current !== session) return
+      const update = (previous: AiReferenceImage[]) => [...previous, ...added].slice(0, MAX_REFERENCE_IMAGES)
+      if (refine) setRefineReferenceImages(update)
+      else setReferenceImages(update)
       if (imageFiles.length > remaining) {
         setError(`Only ${MAX_REFERENCE_IMAGES} reference images are allowed. Extra files were ignored.`)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to read image.')
+      if (session.active && referenceReadSession.current === session) {
+        setError(e instanceof Error ? e.message : 'Failed to read image.')
+      }
     } finally {
-      event.target.value = ''
+      session.pending = false
+      if (session.active && referenceReadSession.current === session) setIsReadingReference(false)
     }
   }
 
+  async function handleDriveReference(refine = false) {
+    const session = referenceReadSession.current
+    const remaining = MAX_REFERENCE_IMAGES - (refine ? refineReferenceImages : referenceImages).length
+    if (!driveConfig || !userId || !session?.active || session.pending || remaining <= 0 ||
+      isLoading || isSaving || productLoadingId || isGrabbingFrame || (refine && isMaskMode)) return
+    const controller = new AbortController()
+    driveOperation.current = controller
+    session.pending = true
+    setIsReadingReference(true)
+    setError(null)
+    setDriveStatus(null)
+    try {
+      if (!driveReady) {
+        await prepareDrivePicker(controller.signal)
+        if (!session.active || referenceReadSession.current !== session) return
+        setDriveReady(true)
+        setDriveStatus('Google picker loaded. Choose from Drive again to connect and select images.')
+        return
+      }
+      setIsChoosingDrive(true)
+      // Called before any await in this branch, so OAuth retains user activation.
+      const images = await chooseDriveImages(driveConfig, remaining, controller.signal)
+      if (!session.active || referenceReadSession.current !== session || controller.signal.aborted) return
+      const update = (previous: AiReferenceImage[]) => [...previous, ...images].slice(0, MAX_REFERENCE_IMAGES)
+      if (refine) setRefineReferenceImages(update)
+      else setReferenceImages(update)
+      if (images.length) setDriveStatus('Drive images added as temporary references. Nothing has been uploaded or generated.')
+    } catch (e) {
+      if (session.active && referenceReadSession.current === session && !controller.signal.aborted) {
+        setError(e instanceof Error ? e.message : 'Drive selection failed.')
+      }
+    } finally {
+      session.pending = false
+      if (driveOperation.current === controller) driveOperation.current = null
+      if (session.active && referenceReadSession.current === session) {
+        setIsReadingReference(false)
+        setIsChoosingDrive(false)
+      }
+    }
+  }
+
+  function driveReferenceControl(refine = false) {
+    const count = refine ? refineReferenceImages.length : referenceImages.length
+    return (
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => { void handleDriveReference(refine) }}
+          disabled={!driveConfig || !userId || isLoading || isSaving || isReadingReference || Boolean(productLoadingId) || isGrabbingFrame || count >= MAX_REFERENCE_IMAGES || (refine && isMaskMode)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          title={driveConfig ? 'Select PNG, JPEG, or WebP files directly in the configured Drive folder' : 'Google Drive is not configured or authorized for this app'}
+        >
+          Choose from Drive
+        </button>
+        {!driveConfig && <span className="text-[11px] text-muted-foreground">Drive setup required</span>}
+      </span>
+    )
+  }
+
   async function handleSelectProduct(product: AiProductOption) {
+    if (referenceReadSession.current?.pending) return
     setError(null)
     if (referenceImages.length >= MAX_REFERENCE_IMAGES) {
       setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
@@ -506,6 +596,7 @@ export default function AiImageDialog({
   }
 
   async function handleUseFilmFrame() {
+    if (referenceReadSession.current?.pending) return
     setError(null)
     if (!filmFrameSourceUrl) {
       setError('No film clip available yet. Add a clip to your project first.')
@@ -741,40 +832,6 @@ export default function AiImageDialog({
     }
   }
 
-  async function handleRefineReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? [])
-    if (files.length === 0) return
-
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
-    if (imageFiles.length === 0) {
-      setError('Please choose image files.')
-      event.target.value = ''
-      return
-    }
-
-    setError(null)
-    try {
-      const remaining = MAX_REFERENCE_IMAGES - refineReferenceImages.length
-      if (remaining <= 0) {
-        setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
-        event.target.value = ''
-        return
-      }
-      const toAdd = imageFiles.slice(0, remaining)
-      const added = await Promise.all(
-        toAdd.map(async (file) => ({ name: file.name, dataUrl: await fileToDataUrl(file) })),
-      )
-      setRefineReferenceImages((prev) => [...prev, ...added])
-      if (imageFiles.length > remaining) {
-        setError(`Only ${MAX_REFERENCE_IMAGES} reference images are allowed. Extra files were ignored.`)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to read image.')
-    } finally {
-      event.target.value = ''
-    }
-  }
-
   function exportMaskDataUrl(): string | null {
     const c = maskCanvasRef.current
     if (!c || !hasMask) return null
@@ -847,7 +904,7 @@ export default function AiImageDialog({
   }
 
   const handleGenerate = async () => {
-    if (!prompt.trim() || isLoading) return
+    if (!prompt.trim() || isLoading || referenceReadSession.current?.pending) return
     setIsLoading(true)
     setError(null)
     try {
@@ -891,7 +948,7 @@ export default function AiImageDialog({
   }
 
   const handleRefine = async () => {
-    if (!editPrompt.trim() || !imageDataUrl || isLoading) return
+    if (!editPrompt.trim() || !imageDataUrl || isLoading || referenceReadSession.current?.pending) return
     setIsLoading(true)
     setError(null)
     try {
@@ -925,7 +982,7 @@ export default function AiImageDialog({
   }
 
   const handleUse = async () => {
-    if (!imageDataUrl || !userId || isSaving) return
+    if (!imageDataUrl || !userId || isSaving || referenceReadSession.current?.pending) return
     setIsSaving(true)
     setError(null)
     try {
@@ -965,8 +1022,8 @@ export default function AiImageDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+    <Dialog open={open} onOpenChange={onOpenChange} modal={!isChoosingDrive}>
+      <DialogContent className="max-w-xl" onInteractOutside={(event) => { if (isChoosingDrive) event.preventDefault() }}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-accent-warm" />
@@ -976,6 +1033,13 @@ export default function AiImageDialog({
             Pick an aspect ratio, describe the image, then optionally refine it with another prompt.
           </DialogDescription>
         </DialogHeader>
+        {driveStatus && <p role="status" className="text-xs text-muted-foreground">{driveStatus}</p>}
+        {isChoosingDrive && (
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span role="status">Choose images in Google Drive. Only selected files are imported.</span>
+            <button type="button" className="underline" onClick={() => driveOperation.current?.abort()}>Cancel Drive selection</button>
+          </div>
+        )}
 
         {!imageDataUrl ? (
           <div className="space-y-4">
@@ -1036,14 +1100,6 @@ export default function AiImageDialog({
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-                <input
-                  ref={referenceInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={handleReferenceChange}
-                />
               </div>
               {optimizeError ? (
                 <div
@@ -1079,16 +1135,24 @@ export default function AiImageDialog({
                 </div>
               ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => referenceInputRef.current?.click()}
-                  disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                  className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                <label
+                  className={`relative inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition focus-within:ring-2 focus-within:ring-ring ${isLoading || isReadingReference || productLoadingId || isGrabbingFrame || referenceImages.length >= MAX_REFERENCE_IMAGES ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent/80 hover:text-foreground'}`}
                   title="Upload reference images"
                 >
-                  <ImagePlus className="h-4 w-4" />
-                  <span>{referenceImages.length > 0 ? 'Add image' : 'Upload image'}</span>
-                </button>
+                  <input
+                    ref={referenceInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    aria-label="Upload reference images"
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                    disabled={isLoading || isReadingReference || Boolean(productLoadingId) || isGrabbingFrame || referenceImages.length >= MAX_REFERENCE_IMAGES}
+                    onChange={(event) => { void handleReferenceFiles(event) }}
+                  />
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                  <span>{isReadingReference ? 'Reading image…' : referenceImages.length > 0 ? 'Add image' : 'Upload image'}</span>
+                </label>
+                {driveReferenceControl()}
                 <Popover open={themeMenuOpen} onOpenChange={setThemeMenuOpen}>
                   <PopoverTrigger asChild>
                     <button
@@ -1176,7 +1240,7 @@ export default function AiImageDialog({
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
+                      disabled={isLoading || isReadingReference || referenceImages.length >= MAX_REFERENCE_IMAGES}
                       className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                       title="Use one of your saved products as a reference"
                     >
@@ -1240,7 +1304,7 @@ export default function AiImageDialog({
                 <button
                   type="button"
                   onClick={() => void handleUseFilmFrame()}
-                  disabled={isLoading || isGrabbingFrame || !filmFrameSourceUrl || referenceImages.length >= MAX_REFERENCE_IMAGES}
+                  disabled={isLoading || isReadingReference || isGrabbingFrame || !filmFrameSourceUrl || referenceImages.length >= MAX_REFERENCE_IMAGES}
                   className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-xs font-medium text-foreground/90 transition hover:border-border hover:bg-accent/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   title={filmFrameSourceUrl ? "Use the first frame of your film as a reference" : "No film clip available yet"}
                 >
@@ -1264,7 +1328,7 @@ export default function AiImageDialog({
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      disabled={isLoading || isWritingPrompt}
+                      disabled={isLoading || isReadingReference || isWritingPrompt}
                       className="inline-flex items-center gap-2 rounded-full border border-accent-warm/40 bg-accent-warm/10 px-3 py-1.5 text-xs font-medium text-accent-warm transition hover:border-accent-warm/70 hover:bg-accent-warm/20 disabled:cursor-not-allowed disabled:opacity-50"
                       title="Write a professional prompt from your references & theme"
                     >
@@ -1383,7 +1447,7 @@ export default function AiImageDialog({
               )}
             </div>
             {error ? (
-              <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+              <div role="alert" className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
                 {error}
               </div>
             ) : null}
@@ -1391,7 +1455,7 @@ export default function AiImageDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isLoading}>
                 Cancel
               </Button>
-              <Button onClick={handleGenerate} disabled={!prompt.trim() || isLoading}>
+              <Button onClick={handleGenerate} disabled={!prompt.trim() || isLoading || isReadingReference}>
                 {isLoading ? (
                   <>
                     <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
@@ -1453,26 +1517,27 @@ export default function AiImageDialog({
                   Refine with AI (Nano Banana edit)
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    ref={refineReferenceInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={handleRefineReferenceChange}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => refineReferenceInputRef.current?.click()}
-                    disabled={isLoading || isSaving || isMaskMode || refineReferenceImages.length >= MAX_REFERENCE_IMAGES}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-accent/40 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition hover:border-border hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-40"
+                  <label
+                    className={`relative inline-flex items-center gap-1.5 rounded-full border border-border bg-accent/40 px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition focus-within:ring-2 focus-within:ring-ring ${isLoading || isSaving || isReadingReference || isMaskMode || refineReferenceImages.length >= MAX_REFERENCE_IMAGES ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:bg-accent/80'}`}
                     title={isMaskMode ? 'Exit edit-area mode to add reference images' : 'Add reference images'}
                   >
-                    <ImagePlus className="h-3.5 w-3.5" />
-                    Add image
-                  </button>
+                    <input
+                      ref={refineReferenceInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      aria-label="Add refinement reference images"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                      disabled={isLoading || isSaving || isReadingReference || isMaskMode || refineReferenceImages.length >= MAX_REFERENCE_IMAGES}
+                      onChange={(event) => { void handleReferenceFiles(event, true) }}
+                    />
+                    <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>{isReadingReference ? 'Reading image…' : 'Add image'}</span>
+                  </label>
+                  {driveReferenceControl(true)}
                   <button
                     type="button"
+                    disabled={isReadingReference}
                     onClick={() => { setIsMaskMode((m) => !m); requestAnimationFrame(() => syncCanvasSize()) }}
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                       isMaskMode
@@ -1550,7 +1615,7 @@ export default function AiImageDialog({
                   size="sm"
                   variant="secondary"
                   onClick={handleRefine}
-                  disabled={!editPrompt.trim() || isLoading || isSaving}
+                  disabled={!editPrompt.trim() || isLoading || isSaving || isReadingReference}
                 >
                   <Wand2 className="mr-2 h-4 w-4" />
                   Apply edit
@@ -1559,13 +1624,13 @@ export default function AiImageDialog({
             </div>
 
             {error ? (
-              <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+              <div role="alert" className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
                 {error}
               </div>
             ) : null}
 
             {inspectError ? (
-              <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+              <div role="alert" className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
                 {inspectError}
               </div>
             ) : null}
@@ -1686,7 +1751,7 @@ export default function AiImageDialog({
                   variant="ghost"
                   size="sm"
                   onClick={handleGenerate}
-                  disabled={isLoading || isSaving || !prompt.trim()}
+                  disabled={isLoading || isSaving || isReadingReference || !prompt.trim()}
                 >
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Regenerate
@@ -1730,7 +1795,7 @@ export default function AiImageDialog({
                   {isInspecting ? 'Checking…' : 'Guardian'}
                 </Button>
               </div>
-              <Button onClick={handleUse} disabled={isLoading || isSaving || !userId}>
+              <Button onClick={handleUse} disabled={isLoading || isSaving || isReadingReference || !userId}>
                 {isSaving ? (
                   <>
                     <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
