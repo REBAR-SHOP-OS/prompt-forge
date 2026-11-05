@@ -166,8 +166,6 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model,
         modalities: ["image", "text"],
-        responseFormat: { image: { aspectRatio: "16:9", imageSize: "1K" } },
-        response_format: { image: { aspect_ratio: "16:9", image_size: "1K" } },
         messages: [
           {
             role: "user",
