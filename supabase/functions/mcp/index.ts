@@ -144,7 +144,7 @@ var get_credit_balance_default = defineTool4({
 });
 
 // src/lib/mcp/index.ts
-var projectRef = "";
+var projectRef = "sacxoanuyetjfrfllkzx";
 var mcp_default = defineMcp({
   name: "prompt-forge-mcp",
   title: "Prompt Forge MCP",
